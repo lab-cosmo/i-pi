@@ -1,4 +1,4 @@
-ENV_BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_BASE_DIR="$(realpath $(dirname $0))"
 
 export PATH=$ENV_BASE_DIR/bin:$PATH
 export PYTHONPATH=$ENV_BASE_DIR:$PYTHONPATH
