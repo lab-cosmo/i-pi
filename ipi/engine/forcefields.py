@@ -649,6 +649,7 @@ class FFSirius(ForceField):
         pos = pos.reshape(-1, 3)
         sirius.set_atom_positions(ctx.unit_cell(),
                            np.mod(np.dot(self.invL, pos.T).T, 1))
+        self.dft_gs.update()
 
         rjson = self.dft_gs.find(
             self.potential_tol,
@@ -662,7 +663,6 @@ class FFSirius(ForceField):
         v = self.dft_gs.total_energy()
         vir = np.zeros((3, 3))
 
-        print "POTENTIAL ", v
         r["result"] = [v, forces.reshape(-1), vir, ""]
         r["status"] = "Done"
         r["t_finished"] = time.time()
