@@ -1,0 +1,32 @@
+<simulation verbosity='high'>
+  <output prefix='simulation'>
+    <properties stride='1' filename='out'>  [ time{picosecond}, conserved, temperature{kelvin}, kinetic_md, potential, pressure_md] </properties>
+    <trajectory stride='1' filename='pos'> positions </trajectory>
+    <trajectory stride='1' filename='frc'> forces </trajectory>
+    <checkpoint stride='20'/>
+  </output>
+  <total_steps> 1000 </total_steps>
+  <prng>
+    <seed> 31415 </seed>
+  </prng>
+   <ffsirius name="sirius">
+     <siriusjson> sirius.json </siriusjson>
+   </ffsirius>
+  <system>
+    <forces>
+      <force forcefield='sirius'/>
+    </forces>
+    <initialize nbeads='1'>
+      <file mode='pdb'> init.pdb </file>
+      <velocities mode='thermal' units='kelvin'> 300 </velocities>
+    </initialize>
+    <ensemble>
+      <temperature units='kelvin'> 300 </temperature>
+    </ensemble>
+    <motion mode='dynamics'>
+      <dynamics mode='nve'>
+        <timestep units='femtosecond'> 1.5 </timestep>
+      </dynamics>
+    </motion>
+  </system>
+</simulation>
