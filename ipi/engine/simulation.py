@@ -14,6 +14,7 @@ choosing which properties to initialise, and which properties to output.
 import os
 import threading
 import time
+from ipi.utils.parallel import IPIMPI
 from copy import deepcopy
 
 from ipi.utils.depend import depend_value, dobject, dd
@@ -125,6 +126,9 @@ class Simulation(dobject):
         """
 
         info(" # Initializing simulation object ", verbosity.low)
+        
+        self.mpi = IPIMPI()
+        
         self.prng = prng
         self.mode = mode
         self.threading = threads
@@ -169,23 +173,24 @@ class Simulation(dobject):
         if len(filename_list) > len(set(filename_list)):
             raise ValueError("Output filenames are not unique. Modify filename attributes.")
 
-        self.outputs = []
-        for o in self.outtemplate:
-            if type(o) is eoutputs.CheckpointOutput:    # checkpoints are output per simulation
-                o.bind(self)
-                self.outputs.append(o)
-            else:   # properties and trajectories are output per system
-                isys = 0
-                for s in self.syslist:   # create multiple copies
-                    no = deepcopy(o)
-                    if s.prefix != "":
-                        no.filename = s.prefix + "_" + no.filename
-                    no.bind(s)
-                    self.outputs.append(no)
-                    isys += 1
+        if self.mpi.is_master(): # only creates outputs on the master rank
+            self.outputs = []
+            for o in self.outtemplate:
+                if type(o) is eoutputs.CheckpointOutput:    # checkpoints are output per simulation
+                    o.bind(self)
+                    self.outputs.append(o)
+                else:   # properties and trajectories are output per system
+                    isys = 0
+                    for s in self.syslist:   # create multiple copies
+                        no = deepcopy(o)
+                        if s.prefix != "":
+                            no.filename = s.prefix + "_" + no.filename
+                        no.bind(s)
+                        self.outputs.append(no)
+                        isys += 1
 
-        self.chk = eoutputs.CheckpointOutput("RESTART", 1, True, 0)
-        self.chk.bind(self)
+            self.chk = eoutputs.CheckpointOutput("RESTART", 1, True, 0)
+            self.chk.bind(self)
 
         if not self.smotion is None:
             self.smotion.bind(self.syslist, self.prng)
@@ -199,11 +204,13 @@ class Simulation(dobject):
 
         if self.step < self.tsteps:
             self.step += 1
-        if not self.rollback:
-            info("SOFTEXIT: Saving the latest status at the end of the step")
-            self.chk.store()
 
-        self.chk.write(store=False)
+        if self.mpi.is_master():
+            if not self.rollback:
+                info("SOFTEXIT: Saving the latest status at the end of the step")
+                self.chk.store()
+
+            self.chk.write(store=False)
 
     def run(self):
         """Runs the simulation.
@@ -213,9 +220,14 @@ class Simulation(dobject):
         in the communication between the driver and the PIMD code.
         """
 
+
         # registers the softexit routine
         softexit.register_function(self.softexit)
         softexit.start(self.ttime)
+
+        if not self.mpi.is_master(): # do nothing on every node but master
+            while True:
+                time.sleep(1)
 
         for k, f in self.fflist.iteritems():
             f.run()
