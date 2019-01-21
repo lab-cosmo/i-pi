@@ -125,17 +125,11 @@ class SCPhononsMover(Motion):
             softexit.trigger("Reached maximum iterations. Exiting simulation")
         if(self.imc == 0):
             self.phononator.reset()
-            self.xfile = open(self.prefix + ".x." + str(self.isc), 'w')
-            self.ffile = open(self.prefix + ".f." + str(self.isc), 'w')
-            self.vfile = open(self.prefix + ".v." + str(self.isc), 'w')
         elif(self.imc >= 1 and self.imc <= self.max_steps):
             self.phononator.step(step)
         elif(self.imc > self.max_steps):
             self.phononator.print_energetics()
             self.phononator.displace()
-            self.xfile.close()
-            self.ffile.close()
-            self.vfile.close()
 
 
 class DummyPhononator(dobject):
@@ -176,6 +170,7 @@ class SCPhononator(DummyPhononator):
         super(SCPhononator, self).bind(dm)
         sb(self.dm.dof, 0)
         self.fginv = np.vectorize(gaussian_inv)
+        self.v = np.zeros((self.dm.max_iter, self.dm.max_steps))
         self.x = np.zeros((self.dm.max_iter, self.dm.max_steps, self.dm.dof))
         self.q = np.zeros((self.dm.max_iter, 1, self.dm.dof))
         self.f = np.zeros((self.dm.max_iter, self.dm.max_steps, self.dm.dof))
@@ -224,6 +219,13 @@ class SCPhononator(DummyPhononator):
         np.savetxt(self.dm.prefix + ".q." + str(self.dm.isc), self.dm.beads.q)
         np.savetxt(self.dm.prefix + ".w." + str(self.dm.isc), self.dm.w)
         np.savetxt(self.dm.prefix + ".V0." + str(self.dm.isc), self.dm.forces.pots)
+       
+        # Also saves the sampled configurations and their energetics.
+
+        np.savetxt(self.dm.prefix + ".v." + str(self.dm.isc), self.v[self.dm.isc])
+        np.savetxt(self.dm.prefix + ".x." + str(self.dm.isc), self.x[self.dm.isc])
+        np.savetxt(self.dm.prefix + ".f." + str(self.dm.isc), self.f[self.dm.isc])
+       
         
         # Creates a list of configurations that are to be sampled.
         while self.dm.imc <= self.dm.max_steps:
@@ -262,10 +264,6 @@ class SCPhononator(DummyPhononator):
 
         self.f[self.dm.isc, self.dm.imc - 1] = f[-1]
 
-        print >> self.dm.xfile, ' '.join(map(str, self.dm.dbeads.q[-1]))
-        print >> self.dm.ffile, ' '.join(map(str, f[-1]))
-        print >> self.dm.vfile, v
-
         self.dm.imc += 1
 
     def print_energetics(self):
@@ -297,7 +295,6 @@ class SCPhononator(DummyPhononator):
         if self.precheck:
           f, ferr, swl  = self.weightedforce(self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
           fnm = np.dot(self.dm.V.T, f)
-          #ferrnm = np.sqrt(np.einsum("ij,j->i",self.dm.V.T**2, ferr**2))
           ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
           fnm[self.z] = 0.0
           if np.all(np.abs(fnm) < ferrnm):
