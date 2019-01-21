@@ -239,13 +239,11 @@ class SCPhononator(DummyPhononator):
           # Transforms the "normal" random number and stores it.
           x = np.dot(self.dm.isqM, np.dot(self.dm.sqtD, x)) * self.widening
           self.x[self.dm.isc, self.dm.imc - 1] = (self.dm.beads.q + x.T)[-1]
-          print self.x[self.dm.isc, self.dm.imc - 1]
           self.dm.imc += 1
 
           # Performs an inversion to the displacement and samples another configuration.
           x = -x 
           self.x[self.dm.isc, self.dm.imc - 1] = (self.dm.beads.q + x.T)[-1]
-          print self.x[self.dm.isc, self.dm.imc - 1]
           self.dm.imc += 1
 
         # Resets the number of MC steps to 1.
