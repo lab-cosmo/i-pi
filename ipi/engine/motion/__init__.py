@@ -17,3 +17,4 @@ from .phonons import DynMatrixMover
 from .scphonons import SCPhononsMover
 from .multi import MultiMotion
 from .alchemy import AlchemyMC
+from .nm import NormalModeMover

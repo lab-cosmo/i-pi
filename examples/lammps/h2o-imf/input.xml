@@ -20,7 +20,7 @@
       <temperature units='kelvin'> 100 </temperature>
     </ensemble>
     <motion mode='normalmodes'>
-      <normalmodes mode='imf'>
+      <normalmodes mode='vscf'>
         <dynmat mode='file'> data.dynmat </dynmat>
         <prefix> simulation </prefix>
         <asr> poly </asr>
