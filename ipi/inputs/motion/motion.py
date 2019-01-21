@@ -24,7 +24,7 @@ Classes:
 import numpy as np
 from copy import copy
 import ipi.engine.initializer
-from ipi.engine.motion import Motion, Dynamics, Replay, GeopMotion, NEBMover, DynMatrixMover, MultiMotion, AlchemyMC, InstantonMotion
+from ipi.engine.motion import Motion, Dynamics, Replay, GeopMotion, NEBMover, DynMatrixMover, SCPhononsMover, MultiMotion, AlchemyMC, InstantonMotion
 from ipi.utils.inputvalue import *
 from ipi.inputs.thermostats import *
 from ipi.inputs.initializer import *
@@ -33,6 +33,7 @@ from .instanton import InputInst
 from .neb import InputNEB
 from .dynamics import InputDynamics
 from .phonons import InputDynMatrix
+from .scphonons import InputSCPhonons
 from .alchemy import InputAlchemy
 from ipi.utils.units import *
 
@@ -57,7 +58,7 @@ class InputMotionBase(Input):
 
     attribs = {"mode": (InputAttribute, {"dtype": str,
                                          "help": "How atoms should be moved at each step in the simulatio. 'replay' means that a simulation is restarted from a previous simulation.",
-                                         "options": ['vibrations', 'minimize', 'replay', 'neb', 'dynamics', 'alchemy', 'instanton', 'dummy']})}
+                                         "options": ['vibrations', 'minimize', 'replay', 'neb', 'dynamics', 'alchemy', 'instanton', 'dummy', 'scp']})}
 
     fields = {"fixcom": (InputValue, {"dtype": bool,
                                       "default": True,
@@ -75,6 +76,8 @@ class InputMotionBase(Input):
                                        "help": "This describes the location to read a trajectory file from."}),
               "vibrations": (InputDynMatrix, {"default": {},
                                               "help": "Option for phonon computation"}),
+              "scp": (InputSCPhonons, {"default": {},
+                                              "help": "Option for self consistent phonons computation"}),
               "alchemy": (InputAlchemy, {"default": {},
                                          "help": "Option for alchemical exchanges"}),
               "instanton": (InputInst, {"default": {},
@@ -115,6 +118,10 @@ class InputMotionBase(Input):
             self.mode.store("vibrations")
             self.vibrations.store(sc)
             tsc = 1
+        elif type(sc) is SCPhononsMover:
+            self.mode.store("scp")
+            self.scp.store(sc)
+            tsc = 1
         elif type(sc) is AlchemyMC:
             self.mode.store("alchemy")
             self.alchemy.store(sc)
@@ -152,6 +159,8 @@ class InputMotionBase(Input):
             sc = Dynamics(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.dynamics.fetch())
         elif self.mode.fetch() == "vibrations":
             sc = DynMatrixMover(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.vibrations.fetch())
+        elif self.mode.fetch() == "scp":
+            sc = SCPhononsMover(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.scp.fetch())
         elif self.mode.fetch() == "alchemy":
             sc = AlchemyMC(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.alchemy.fetch())
         elif self.mode.fetch() == "instanton":

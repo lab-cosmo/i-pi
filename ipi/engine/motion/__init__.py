@@ -14,5 +14,6 @@ from .geop import GeopMotion
 from .instanton import InstantonMotion
 from .neb import NEBMover
 from .phonons import DynMatrixMover
+from .scphonons import SCPhononsMover
 from .multi import MultiMotion
 from .alchemy import AlchemyMC
