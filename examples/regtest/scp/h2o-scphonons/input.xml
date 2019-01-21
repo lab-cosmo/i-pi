@@ -1,0 +1,42 @@
+<!-- REGTEST
+DEPENDENCIES init.xyz  in.lmp data.lmp dynmat.data
+COMMAND(1) lmp_serial -i in.lmp
+ENDREGTEST -->
+<simulation mode='static' verbosity='medium'>
+  <output prefix='simulation'>
+    <properties stride='10000' filename='out'>[ step, time{picosecond}, conserved{electronvolt}, temperature{kelvin}, kinetic_cv{electronvolt}, potential{electronvolt}, pressure_cv{megapascal}]</properties>
+    <trajectory filename='pos' stride='10000'>positions{angstrom}</trajectory>
+  </output>
+  <total_steps>50000000</total_steps>
+  <prng>
+    <seed>32342</seed>
+  </prng>
+  <ffsocket name='lmp' mode='unix' pbc='false'>
+    <address> driver_01 </address>
+  </ffsocket>
+  <system>
+  <initialize nbeads='1'>
+    <file mode='xyz' > init.xyz </file>
+    <cell mode='abc'> [35.233, 35.233,35.233]   </cell>
+  </initialize>
+  <forces>
+  <force forcefield='lmp'> </force>
+  </forces>
+  <motion mode='scp'>
+    <scp mode='qn'>
+      <dynmat mode='file'> dynmat.data  </dynmat>
+      <asr> molecule </asr>
+      <max_steps> 100 </max_steps>
+      <max_iter> 2 </max_iter>
+      <prefix> simulation </prefix>
+      <tau> 10 </tau>
+      <chop> [1e-9,1000] </chop>
+      <random_type> sobol </random_type>
+      <displace_mode> nmik </displace_mode>
+    </scp>
+  </motion>
+  <ensemble>
+  <temperature units='kelvin'> 100 </temperature>
+  </ensemble>
+   </system>
+</simulation>
