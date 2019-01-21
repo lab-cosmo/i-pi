@@ -1,0 +1,30 @@
+<simulation mode='static' verbosity='low'>
+  <output prefix='simulation'>
+    <properties stride='10' filename='out'>  [ step, potential ] </properties>
+  </output>
+  <total_steps> 5000 </total_steps>
+  <prng>
+    <seed> 32342 </seed>
+  </prng>
+  <ffsocket name='lmp' mode='unix' pbc='true'>
+    <address> h2o-imf </address>
+  </ffsocket>
+  <system>
+    <initialize nbeads='1'>
+      <file mode='xyz'> init.xyz </file>
+    </initialize>
+    <forces>
+      <force forcefield='lmp'> </force>
+    </forces>
+    <ensemble>
+      <temperature units='kelvin'> 100 </temperature>
+    </ensemble>
+    <motion mode='normalmodes'>
+      <normalmodes mode='imf'>
+        <dynmat mode='file'> data.dynmat </dynmat>
+        <prefix> simulation </prefix>
+        <asr> poly </asr>
+      </normalmodes>
+    </motion>
+  </system>
+</simulation>
