@@ -131,7 +131,7 @@ class SCPhononsMover(Motion):
         elif(self.imc >= 1 and self.imc <= self.max_steps):
             self.phononator.step(step)
         elif(self.imc > self.max_steps):
-            self.phononator.evaluate_avg()
+            self.phononator.print_energetics()
             self.phononator.displace()
             self.xfile.close()
             self.ffile.close()
@@ -156,8 +156,8 @@ class DummyPhononator(dobject):
         """Dummy simulation step which does nothing."""
         pass
 
-    def evaluate_avg(self):
-        """Dummy evaluation step which does nothing."""
+    def print_energetics(self):
+        """Dummy print step which does nothing."""
         pass
 
     def displace(self):
@@ -180,6 +180,7 @@ class SCPhononator(DummyPhononator):
         self.q = np.zeros((self.dm.max_iter, 1, self.dm.dof))
         self.f = np.zeros((self.dm.max_iter, self.dm.max_steps, self.dm.dof))
         self.iD = np.zeros((self.dm.max_iter, self.dm.dof, self.dm.dof))
+
         # New variables added to dampen the displacements (between scp steps)
         self.dq_old = np.zeros(self.dm.dof)
         self.dq = np.zeros(self.dm.dof)
@@ -215,31 +216,52 @@ class SCPhononator(DummyPhononator):
         self.dm.oldK = self.dm.K
         self.dm.imc = 1
 
+        # Saves the Hessian, the displacement correlation, reference positions
+        # frequencies and the absolute energy of the reference.
         np.savetxt(self.dm.prefix + ".K." + str(self.dm.isc), self.dm.K)
         np.savetxt(self.dm.prefix + ".D." + str(self.dm.isc), self.dm.D)
         np.savetxt(self.dm.prefix + ".iD." + str(self.dm.isc), self.dm.iD)
         np.savetxt(self.dm.prefix + ".q." + str(self.dm.isc), self.dm.beads.q)
         np.savetxt(self.dm.prefix + ".w." + str(self.dm.isc), self.dm.w)
         np.savetxt(self.dm.prefix + ".V0." + str(self.dm.isc), self.dm.forces.pots)
+        
+        # Creates a list of configurations that are to be sampled.
+        while self.dm.imc <= self.dm.max_steps:
+
+          # Selects a suitable random number generator and samples random numbers from a multivariate
+          # normal distribution.
+
+          if(self.dm.random_type == "pseudo"):
+              x = np.random.multivariate_normal(np.zeros(self.dm.dof), np.eye(self.dm.dof)).reshape((self.dm.dof, 1))
+          elif(self.dm.random_type == "sobol"):
+              x = self.sobol_vector(self.dm.dof, (self.dm.isc) * self.dm.max_steps / 2  + (self.dm.imc + 1) / 2).reshape((self.dm.dof, 1))
+
+          # Transforms the "normal" random number and stores it.
+          x = np.dot(self.dm.isqM, np.dot(self.dm.sqtD, x)) * self.widening
+          self.x[self.dm.isc, self.dm.imc - 1] = (self.dm.beads.q + x.T)[-1]
+          print self.x[self.dm.isc, self.dm.imc - 1]
+          self.dm.imc += 1
+
+          # Performs an inversion to the displacement and samples another configuration.
+          x = -x 
+          self.x[self.dm.isc, self.dm.imc - 1] = (self.dm.beads.q + x.T)[-1]
+          print self.x[self.dm.isc, self.dm.imc - 1]
+          self.dm.imc += 1
+
+        # Resets the number of MC steps to 1.
+        self.dm.imc = 1
 
     def step(self, step=None):
         """
         Executes one monte carlo step.
         """
 
-        if(self.dm.random_type == "pseudo"):
-            x = np.random.multivariate_normal(np.zeros(self.dm.dof), np.eye(self.dm.dof)).reshape((self.dm.dof, 1))
-        elif(self.dm.random_type == "sobol"):
-            x = self.sobol_vector(self.dm.dof, (self.dm.isc) * self.dm.max_steps / 2  + (self.dm.imc + 1) / 2).reshape((self.dm.dof, 1))
-
-        x = np.dot(self.dm.isqM, np.dot(self.dm.sqtD, x)) * self.widening
-        #x = np.dot(self.dm.isqM, np.dot(self.dm.sqtDm, x))
-        self.dm.dbeads.q = self.dm.beads.q + x.T
+        x = self.x[self.dm.isc, self.dm.imc - 1]
+        self.dm.dbeads.q = x.T
 
         v = dstrip(self.dm.dforces.pot).copy()
         f = dstrip(self.dm.dforces.f).copy()
 
-        self.x[self.dm.isc, self.dm.imc - 1] = self.dm.dbeads.q[-1]
         self.f[self.dm.isc, self.dm.imc - 1] = f[-1]
 
         print >> self.dm.xfile, ' '.join(map(str, self.dm.dbeads.q[-1]))
@@ -248,25 +270,9 @@ class SCPhononator(DummyPhononator):
 
         self.dm.imc += 1
 
-        # Performs an inversion to the displacement and performs another MC step
-        x = -x 
-        self.dm.dbeads.q = self.dm.beads.q + x.T
-
-        v = dstrip(self.dm.dforces.pot).copy()
-        f = dstrip(self.dm.dforces.f).copy()
-
-        self.x[self.dm.isc, self.dm.imc - 1] = self.dm.dbeads.q[-1]
-        self.f[self.dm.isc, self.dm.imc - 1] = f[-1]
-
-        print >> self.dm.xfile, ' '.join(map(str, self.dm.dbeads.q[-1]))
-        print >> self.dm.ffile, ' '.join(map(str, f[-1]))
-        print >> self.dm.vfile, v
-
-        self.dm.imc += 1
-
-    def evaluate_avg(self):
+    def print_energetics(self):
         """
-        Evaluates averages.
+        Prints the energetics of the sampled configurations.
         """
 
         self.dm.avgPot = self.dm.avgForce / self.dm.imc
