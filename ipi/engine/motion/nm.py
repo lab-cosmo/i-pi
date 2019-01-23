@@ -244,11 +244,10 @@ class IMF(DummyCalculator):
         for i in xrange(len(self.imm.V)):
             self.imm.V[:, i] *= self.imm.ism
 
-        x = np.exp(np.sqrt(dstrip(self.imm.w2)) / dstrip(self.imm.temp))
-        # calculates the r.m.s displacement along each mode 
-        self.imm.nmrms = np.sqrt((1 / (x - 1) + 0.5 ) / np.sqrt(self.imm.w2))
-        # calculates the harmonic vibrational energy of each mode.
-        self.imm.nmevib = (0.5 + 1 / (x - 1)) * np.sqrt(dstrip(self.imm.w2))
+        # not temperature dependent so that sampled potentials can easily be reused to evaluate free energy at different temp
+        self.imm.nmrms = np.sqrt( 0.5 / np.sqrt(self.imm.w2)) # harm ZP RMS displacement along normal mode
+        # not temperature dependent so that sampled potentials can easily be reused to evaluate free energy at different temp
+        self.imm.nmevib =  0.5 * np.sqrt(dstrip(self.imm.w2)) # harm vibr energy at finite temp
 
         self.fnmrms = self.imm.fnmrms # 4.0 # fraction of the harmonic RMS displacement used to sample along a normal mode
         self.nevib = self.imm.nevib # multiple of harmonic vibrational energy up to which the BO surface is sampled
@@ -612,13 +611,6 @@ class VSCFMapper(IMF):
         """ Reference all the variables for simpler access."""
         super(VSCFMapper, self).bind(imm)
 
-        #x = np.exp(1.0 * np.sqrt(dstrip(self.imm.w2)) / dstrip(self.imm.temp))
-        # not temperature dependent so that sampled potentials can easily be reused to evaluate free energy at different temp
-        #self.imm.nmrms = np.sqrt((1 / (x - 1) + 0.5 ) / np.sqrt(self.imm.w2)) # harm RMS displacement along normal mode
-        self.imm.nmrms = np.sqrt( 0.5 / np.sqrt(self.imm.w2)) # harm ZP RMS displacement along normal mode
-        # not temperature dependent so that sampled potentials can easily be reused to evaluate free energy at different temp
-        #self.imm.nmevib =  (0.5 + 1 / (x - 1)) * np.sqrt(dstrip(self.imm.w2)) # harm vibr energy at finite temp
-        self.imm.nmevib =  0.5 * np.sqrt(dstrip(self.imm.w2)) # harm vibr energy at finite temp
         self.vcoupledmap = self.imm.vcoupledmap
         self.threebody = self.imm.threebody
 
@@ -662,6 +654,7 @@ class VSCFMapper(IMF):
             for inm in inms:
                 vi = np.loadtxt('vindeps.'+str(inm)+'.dat')
                 vis.append(vi)
+
         # if mapping has NOT been perfomed previously, actually map full 2D surface
         else:
             for inm in inms:
