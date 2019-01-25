@@ -391,7 +391,7 @@ class IMF(DummyCalculator):
             vspline = interp1d(qexlist, vexlist, kind='cubic', bounds_error=False)
             vtspline = interp1d(qexlist, vtexlist, kind='cubic', bounds_error=False)
             grid = np.linspace(np.min(qexlist), np.max(qexlist), 100)
-            np.savetxt(self.imm.prefix + '_' + str(step) + '.vfit', np.column_stack((grid, vspline(grid))))
+            np.savetxt(self.imm.prefix + '.' + str(step) + '.vfit', np.column_stack((grid, vspline(grid))))
             
             print "# SOLVING THE 1D SCHROEDINGER EQUATION"
             # Set up the wavefunction basis
@@ -566,9 +566,9 @@ class PC(IMF):
         print "# NUMBER OF FORCE EVALUATIONS ALONG THE +VE DIRECTION:", counter
         print "# PRINTING"
 
-        np.savetxt(self.imm.prefix + '_' + str(step) + '.v', np.asarray(vlist))
-        np.savetxt(self.imm.prefix + '_' + str(step) + '.f', np.asarray(flist))
-        np.savetxt(self.imm.prefix + '_' + str(step) + '.q', np.asarray(qlist))
+        np.savetxt(self.imm.prefix + '.' + str(step) + '.v', np.asarray(vlist))
+        np.savetxt(self.imm.prefix + '.' + str(step) + '.f', np.asarray(flist))
+        np.savetxt(self.imm.prefix + '.' + str(step) + '.q', np.asarray(qlist))
 
         print "# FITS A QUADRATIC TO THE DATA"
         a,b,c = np.polyfit(x = qlist, y = vlist, deg = 2)
