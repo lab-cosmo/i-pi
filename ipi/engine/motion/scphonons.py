@@ -220,11 +220,6 @@ class SCPhononator(DummyPhononator):
         np.savetxt(self.dm.prefix + ".w." + str(self.dm.isc), self.dm.w)
         np.savetxt(self.dm.prefix + ".V0." + str(self.dm.isc), self.dm.forces.pots)
        
-        # Also saves the sampled configurations and their energetics.
-
-        np.savetxt(self.dm.prefix + ".v." + str(self.dm.isc), self.v[self.dm.isc])
-        np.savetxt(self.dm.prefix + ".x." + str(self.dm.isc), self.x[self.dm.isc])
-        np.savetxt(self.dm.prefix + ".f." + str(self.dm.isc), self.f[self.dm.isc])
        
         
         # Creates a list of configurations that are to be sampled.
@@ -271,13 +266,13 @@ class SCPhononator(DummyPhononator):
         Prints the energetics of the sampled configurations.
         """
 
-        self.dm.avgPot = self.dm.avgForce / self.dm.imc
-        self.dm.avgForce = self.dm.avgForce / self.dm.imc
-        self.dm.avgHessian = 1.0 / self.dm.imc * np.dot(self.dm.iD, self.dm.avgHessian)
+        # Also saves the sampled configurations and their energetics.
+        np.savetxt(self.dm.prefix + ".v." + str(self.dm.isc), self.v[self.dm.isc])
+        np.savetxt(self.dm.prefix + ".x." + str(self.dm.isc), self.x[self.dm.isc])
+        np.savetxt(self.dm.prefix + ".f." + str(self.dm.isc), self.f[self.dm.isc])
 
         self.dm.isc += 1
         self.dm.imc = 0
-
 
     def displace(self):
         """

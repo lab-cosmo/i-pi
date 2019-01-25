@@ -83,12 +83,15 @@ class InputNormalMode(InputDictionary):
                 "mptwo": (InputValue, {"dtype": bool,
                                         "default": False,
                                         "help": "Flag determining whether MP2 correction is calculated."}),
-                "mftpot": (InputValue, {"dtype": bool,
+                "print_mftpot": (InputValue, {"dtype": bool,
                                         "default": False,
                                         "help": "Flag determining whether MFT potentials are printed to file."}),
-                "vcoupledmap": (InputValue, {"dtype": bool,
+                "print_2b_map": (InputValue, {"dtype": bool,
                                         "default": False,
                                         "help": "Flag determining whether mapped coupling potentials are printed to file."}),
+                "print_vib_density": (InputValue, {"dtype": bool,
+                                        "default": False,
+                                        "help": "Flag determining whether the vibrational density (|psi|^2) are printed to file."}),
                 "threebody": (InputValue, {"dtype": bool,
                                         "default": False,
                                         "help": "Flag determining whether three-mode coupling terms are accounted for."}),
@@ -119,8 +122,9 @@ class InputNormalMode(InputDictionary):
         self.nkbt.store(nm.nkbt) #"4.0"
         self.nexc.store(nm.nexc) #"5"
         self.mptwo.store(nm.mptwo) #False
-        self.mftpot.store(nm.mftpot) #False
-        self.vcoupledmap.store(nm.vcoupledmap) #False
+        self.print_mftpot.store(nm.print_mftpot) #False
+        self.print_2b_map.store(nm.print_2b_map) #False
+        self.print_vib_density.store(nm.print_vib_density) #False
         self.threebody.store(nm.threebody) #False
 
     def fetch(self):

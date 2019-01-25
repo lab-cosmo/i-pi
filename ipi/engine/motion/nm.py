@@ -45,7 +45,7 @@ class NormalModeMover(Motion):
     """Normal Mode analysis.
     """
 
-    def __init__(self, fixcom=False, fixatoms=None, mode="imf", dynmat=np.zeros(0, float), refdynmat=np.zeros(0, float), prefix="", asr="none", nprim="1", fnmrms="1.0", nevib="25.0", nint="101", nbasis="10", athresh="1e-2", ethresh="1e-2", nkbt="4.0", nexc="5", mptwo=False, mftpot=False, vcoupledmap=False, threebody=False):
+    def __init__(self, fixcom=False, fixatoms=None, mode="imf", dynmat=np.zeros(0, float), refdynmat=np.zeros(0, float), prefix="", asr="none", nprim="1", fnmrms="1.0", nevib="25.0", nint="101", nbasis="10", athresh="1e-2", ethresh="1e-2", nkbt="4.0", nexc="5", mptwo=False, print_mftpot=False, print_2b_map=False, threebody=False, print_vib_density=False):
         """Initialises NormalModeMover.
         Args:
         fixcom	: An optional boolean which decides whether the centre of mass
@@ -85,9 +85,10 @@ class NormalModeMover(Motion):
         self.nkbt = nkbt #4.0
         self.nexc = nexc #5
         self.mptwo = mptwo #False
-        self.mftpot = mftpot #False
-        self.vcoupledmap = vcoupledmap #False
+        self.print_mftpot = print_mftpot #False
+        self.print_2b_map = print_2b_map #False
         self.threebody = threebody #False
+        self.print_vib_density = print_vib_density #False
 
         if self.prefix == "":
             self.prefix = "PHONONS"
@@ -417,7 +418,7 @@ class IMF(DummyCalculator):
                 for j in xrange(i,self.nbasis,1):
                     dv0 = np.dot(psiigrid[i][j], vsplinegrid) / np.sqrt(normi[i]*normi[j])
                     h[i][j] = dv0
-                h[i][i] *= 0.5 #eae32
+                h[i][i] *= 0.5
                 h[i][i] += 0.5 * (i + 0.5) * np.sqrt(self.imm.w2[step])
             h += h.T # fill in the lower triangle 
     
@@ -460,7 +461,7 @@ class IMF(DummyCalculator):
                 for j in xrange(i,nnbasis,1):
                     dv0 = np.dot(psiigrid[i][j], vsplinegrid) / np.sqrt(normi[i]*normi[j])
                     h[i][j] = dv0
-                h[i][i] *= 0.5 #eae32
+                h[i][i] *= 0.5
                 h[i][i] += 0.5 * (i + 0.5) * np.sqrt(self.imm.w2[step])
             h += h.T # fill in the lower triangle 
 
@@ -469,8 +470,6 @@ class IMF(DummyCalculator):
 
             Aanh.append(-np.log(np.sum(np.exp(-1.0 * evals / dstrip(self.imm.temp))))*dstrip(self.imm.temp))
             Adiff.append(Aanh-Ahar)
-
-	    print Aanh[-1]
 
             # Check whether anharmonic frequency is converged
             if ( (np.abs(Aanh[-1]-Aanh[-2])/np.abs(Aanh[-2])) < Athresh ): break
@@ -611,7 +610,7 @@ class VSCFMapper(IMF):
         """ Reference all the variables for simpler access."""
         super(VSCFMapper, self).bind(imm)
 
-        self.vcoupledmap = self.imm.vcoupledmap
+        self.print_2b_map = self.imm.print_2b_map
         self.threebody = self.imm.threebody
 
     def step(self, step=None):
@@ -704,6 +703,51 @@ class VSCFMapper(IMF):
             np.savetxt('nptsmin.dat',nptsmin, fmt='%i')
             np.savetxt('nptsmax.dat',nptsmax, fmt='%i')
 
+            # By replacing the previous paragraph with the below one can enforce sampling of a regular symmetric 
+            # grid of points. This allows the output of the mapping to be fed in B. Monserrat implementation of IMF/VSCF.
+                # eae32
+#                f0 = np.dot(dstrip(self.imm.forces.f).copy()[0], np.real(self.imm.V.T[inm]))
+#                nmd = self.fnmrms * self.imm.nmrms[inm]
+#                dev = np.real(self.imm.V.T[inm]) * nmd
+#                vi = []
+#                qi = []
+#                vi.append(v0)
+#                qi.append(0.0)
+#                counter = -1
+#                for i in range(4):
+#                    self.imm.dbeads.q = self.imm.beads.q + dev * counter
+#                    qi.append(nmd * counter)
+#                    dv = dstrip(self.imm.dforces.pots).copy()[0] - 0.50 * self.imm.w2[inm] * (nmd * counter)**2 - v0
+#                    vi.append(v0 + 0.50 * self.imm.w2[inm] * (nmd * counter)**2 + dv)
+#                    counter -= 1
+#                self.imm.dbeads.q -= dev
+#                vi.append(dstrip(self.imm.dforces.pots).copy()[0])
+#                self.imm.dbeads.q -= dev
+#                vi.append(dstrip(self.imm.dforces.pots).copy()[0])
+#
+#                nptsmin[inm] = -counter -1
+#                vi = vi[::-1]
+#                qi = qi[::-1]
+#                counter = 1
+#                for i in range(4):
+#                    self.imm.dbeads.q = self.imm.beads.q + dev * counter
+#                    qi.append(nmd * counter)
+#                    dv = dstrip(self.imm.dforces.pots).copy()[0] - 0.50 * self.imm.w2[inm] * (nmd * counter)**2 - v0
+#                    vi.append(v0 + 0.50 * self.imm.w2[inm] * (nmd * counter)**2 + dv)
+#                    counter += 1
+#                self.imm.dbeads.q += dev
+#                vi.append(dstrip(self.imm.dforces.pots).copy()[0])
+#                self.imm.dbeads.q += dev
+#                vi.append(dstrip(self.imm.dforces.pots).copy()[0])
+#
+#                nptsmax[inm] = counter -1
+#                npts[inm] = nptsmin[inm] + nptsmax[inm] + 1
+#                vis.append(vi)
+#                np.savetxt('qindeps.'+str(inm)+'.dat',qi)
+#                np.savetxt('vindeps.'+str(inm)+'.dat',vi)
+#            np.savetxt('nptsmin.dat',nptsmin, fmt='%i')
+#            np.savetxt('nptsmax.dat',nptsmax, fmt='%i')
+#
         print "# NUMBER OF POINTS"
         print npts
 
@@ -731,7 +775,7 @@ class VSCFMapper(IMF):
                             nmjs = np.zeros(npts[jnm]+4)
                             dnmi = self.fnmrms * self.imm.nmrms[inm]
                             dnmj = self.fnmrms * self.imm.nmrms[jnm]
-        
+                            
                             for i in range(npts[inm]+4):
                                 nmi = (-nptsmin[inm]+i-2.0)*dnmi
                                 nmis[i] = nmi
@@ -756,14 +800,15 @@ class VSCFMapper(IMF):
                                         vtots[k] = dstrip(self.imm.dforces.pots)[0]
     
                             # Store mapped coupling
-                            if self.vcoupledmap:
+                            if self.print_2b_map:
                                 nmijs = np.zeros(((npts[inm]+4)*(npts[jnm]+4),3))
                                 k = -1
                                 for nmi in nmis:
                                     for nmj in nmjs:
                                         k += 1
                                         nmijs[k] = [nmi,nmj,vtots[k]-v0]
-                                np.savetxt('vcoupledmap.'+str(inm)+'.'+str(jnm)+'.dat',nmijs)
+                                np.savetxt('print_2b_map.'+str(inm)+'.'+str(jnm)+'.dat',nmijs)
+
     
                             #print hpyobject.heap()
 
@@ -911,8 +956,9 @@ class VSCFSolver(IMF):
         self.nkbt = self.imm.nkbt # thresh for (e - e_gs)/(kB T) of vibr state to be incl in the VSCF and partition function
         self.nexc = self.imm.nexc # minimum number of excited n-body states to calculate (also in MP2 correction)
         self.mptwo = self.imm.mptwo # flag for calculation of MP2 correction
-        self.mftpot = self.imm.mftpot # flag for printing of MFT anharmonic corrections to file
+        self.print_mftpot = self.imm.print_mftpot # flag for printing of MFT anharmonic corrections to file
         self.threebody = self.imm.threebody
+        self.print_vib_density = self.imm.print_vib_density
 
         self.total_anhar_free_energy = 0.0
         self.total_har_free_energy = 0.0
@@ -1023,11 +1069,13 @@ class VSCFSolver(IMF):
             for ibasis in xrange(self.nbasis):
                 for iinm in xrange(self.nint):
                     psigrid[inm][iinm][ibasis] = psi(ibasis,mass,np.sqrt(self.imm.w2[inm]), igrid[inm][iinm])
-                norm[inm][ibasis] = np.dot(psigrid[inm].T[ibasis],psigrid[inm].T[ibasis])
+                norm[inm][ibasis] = np.sum(psigrid[inm,:,ibasis]**2)
+                psigrid[inm,:,ibasis] /= np.sqrt(norm[inm][ibasis])
             for ibasis in xrange(self.nbasis):
                 for jbasis in xrange(self.nbasis):
                     for iinm in xrange(self.nint):
                         psiigrid[inm][ibasis][jbasis][iinm] = psi(ibasis,mass,np.sqrt(self.imm.w2[inm]), igrid[inm][iinm]) * psi(jbasis,mass,np.sqrt(self.imm.w2[inm]), igrid[inm][iinm])
+                    psiigrid[inm][ibasis][jbasis] /= np.sqrt(norm[inm][ibasis]*norm[inm][jbasis])
             print "# WVFN INITIALISED"
 
         ## SAVE HARMONIC FREQUENCIES TO FILE FOR VISUALISATIONS
@@ -1049,14 +1097,11 @@ class VSCFSolver(IMF):
             h = np.zeros((self.nbasis,self.nbasis))
             for ibasis in xrange(self.nbasis):
                 for jbasis in xrange(ibasis,self.nbasis,1):
-                    dv0 = np.dot(psiigrid[inm][ibasis][jbasis], vigrid[inm]) / np.sqrt(norm[inm][ibasis]*norm[inm][jbasis])
+                    dv0 = np.dot(psiigrid[inm][ibasis][jbasis], vigrid[inm])
                     h[ibasis][jbasis] = dv0
                 h[ibasis][ibasis] *= 0.5
                 h[ibasis][ibasis] += 0.5 * (ibasis + 0.5) * np.sqrt(self.imm.w2[inm])
             h += h.T # fill in the lower triangle 
-
-            # Clear potential to clear memory : eae32
-
 
             # Diagonalise Hamiltonian matrix
             evals[inm], U = np.linalg.eigh(h)
@@ -1105,6 +1150,7 @@ class VSCFSolver(IMF):
         ## IF THERE ARE TOO FEW LOW-ENERGY EIGENSTATES OF COMPLETE SYSTEM FOR REASONABLE MP2 CORRECTION
         #if nstates < self.nexc:
             # manually add some low-lying states
+        # TOCHECK
 
         ## SOLVE VSCF PROBLEM ONE EIGENSTATE (OUT OF THE RELEVANT ONES) AT A TIME
         print "# SOLVING VSCF PROBLEM"
@@ -1136,6 +1182,10 @@ class VSCFSolver(IMF):
                 evaltotold = evaltot
                 ## SAVE IMF EIGENVALUE FOR GIVEN STATE TO ARRAY
                 evaltotindep.append(evaltot)
+
+                print 'Iteration = HAR , state = ',istate,' , evals = ',np.asarray([ np.sqrt(self.imm.w2[inm]) * (0.5+s[istate][inm]) for inm in inms ])
+                print 'Iteration = IMF , state = ',istate,' , evals = ',np.asarray([ evalsnew[istate][inm][s[istate][inm]] for inm in inms ])
+
                 while True:
                     iiter += 1
         
@@ -1151,8 +1201,7 @@ class VSCFSolver(IMF):
                                 continue
                             # sum up all MFT two-body contributions
                             psjgrid = np.dot(psigrid[jnm],evecsmix[istate][jnm][s[istate][jnm]])
-                            normj = np.dot(psjgrid,psjgrid)
-                            vmft += np.dot(vijgrid[inm][jnm].T,psjgrid**2)/normj
+                            vmft += np.dot(vijgrid[inm][jnm].T,psjgrid**2)
 
                             # ===========================================
                             # if three-body terms are to be accounted for
@@ -1162,12 +1211,13 @@ class VSCFSolver(IMF):
                                         continue
                                     # sum up all MFT three-body contributions
                                     pskgrid = np.dot(psigrid[knm],evecsmix[istate][knm][s[istate][knm]])
-                                    normk = np.dot(pskgrid,pskgrid)
-                                    vmft += 0.5 * np.dot(np.dot(vijkgrid[inm][jnm][knm].T,pskgrid**2)/normk,psjgrid**2)/normj
+                                    #eae32 normk = np.dot(pskgrid,pskgrid)
+                                    vmft += 0.5 * np.dot(np.dot(vijkgrid[inm][jnm][knm].T,pskgrid**2),psjgrid**2)
+                                    #eae32 vmft += 0.5 * np.dot(np.dot(vijkgrid[inm][jnm][knm].T,pskgrid**2)/normk,psjgrid**2)/normj
                             # ===========================================
 
                         # Save MFT anharmonic correction to file for visualisation
-                        if self.mftpot:
+                        if self.print_mftpot:
                             if self.threebody == False:
                                 np.savetxt('vmft_twobody.'+str(istate)+'.'+str(inm)+'.dat',np.column_stack((igrid[inm],vigrid[inm],vmft)))
                             else:
@@ -1175,27 +1225,32 @@ class VSCFSolver(IMF):
 
                         # Construct Hamiltonian matrices
                         h = np.zeros((self.nbasis,self.nbasis))
-                        mass = 1.0
                         for ibasis in xrange(self.nbasis):
                             for jbasis in xrange(ibasis,self.nbasis,1):
                                 # mode inm MFT Hamiltonian
-                                dv0 = np.dot(psiigrid[inm][ibasis][jbasis], vmft) / np.sqrt(norm[inm][ibasis]*norm[inm][jbasis])
+                                dv0 = np.dot(psiigrid[inm][ibasis][jbasis], vmft)
                                 h[ibasis][jbasis] = dv0
                             h[ibasis][ibasis] *= 0.5
                             h[ibasis][ibasis] += 0.5 * (ibasis + 0.5) * np.sqrt(self.imm.w2[inm])
                         h += h.T # fill in the lower triangle 
+
                         # Diagonalise Hamiltonian matrix given mode 0 in state s0 and mode 1 in state s1
                         evalstmp, U = np.linalg.eigh(h)
                         evecstmp = U.T
-                        # Mixing of states for improved convergence --> used for next VSCF iteration
-                        evalsmix[istate][inm] = 0.5 * evalsnew[istate][inm] + 0.5 * evalstmp
-                        evecsmix[istate][inm] = 0.5 * evecsnew[istate][inm] + 0.5 * evecstmp
-                        # New eigenvalues and -vectors used when convergence is achieved (ensuring orthonormality)
+                        ## Mixing of states for improved convergence --> used for next VSCF iteration
+                        #evalsmix[istate][inm] = 0.5 * evalsnew[istate][inm] + 0.5 * evalstmp
+                        #evecsmix[istate][inm] = 0.5 * evecsnew[istate][inm] + 0.5 * evecstmp
+                        ## New eigenvalues and -vectors used when convergence is achieved (ensuring orthonormality)
+                        #evalsnew[istate][inm] = evalstmp
+                        #evecsnew[istate][inm] = evecstmp
+                        ## Renormalise eigenvectors after mixing
+                        #for knm in xrange(self.nbasis):
+                        #  evecsmix[istate][inm][knm] /= np.sqrt(np.dot(evecsmix[istate][inm][knm],evecsmix[istate][inm][knm]))
+                        evalsmix[istate][inm] = evalstmp
+                        evecsmix[istate][inm] = evecstmp
+                        ## New eigenvalues and -vectors used when convergence is achieved (ensuring orthonormality)
                         evalsnew[istate][inm] = evalstmp
                         evecsnew[istate][inm] = evecstmp
-                        # Renormalise eigenvectors after mixing
-                        for knm in xrange(self.nbasis):
-                          evecsmix[istate][inm][knm] /= np.sqrt(np.dot(evecsmix[istate][inm][knm],evecsmix[istate][inm][knm]))
         
                     ## CHECK THAT ALL MODES HAVE CONVERGED
                     evaltot = np.sum(np.asarray([ evalsnew[istate][inm][s[istate][inm]] for inm in inms ]))
@@ -1215,14 +1270,20 @@ class VSCFSolver(IMF):
                 np.savetxt('eigvalext.'+str(istate)+'.dat',np.column_stack((np.asarray([ evals[inm][s[istate][inm]] for inm in inms ]),np.asarray([ evalsnew[istate][inm][s[istate][inm]] for inm in inms ]))))
 
 
+        if self.print_vib_density == True:
+          for inm in inms:
+            psjgrid = np.dot(psigrid[inm],evecsmix[0][inm][0])
+            normj = np.dot(psjgrid,psjgrid)
+            np.savetxt('rho.'+str(istate)+str(inm)+'.dat',np.c_[igrid[inm],psjgrid**2,psjgrid**2/normj])
+
         ## ALREADY PRINT OUT IN CASE MP2 CRASHES
         aharm = np.sum(np.asarray([ -np.log(np.sum([np.exp(-1.0 * np.sqrt(self.imm.w2[inm]) * (0.5+i) / dstrip(self.imm.temp)) for i in range(self.nbasis)]))*dstrip(self.imm.temp) for inm in inms ]))
-        aindep = np.sum(ai)
+        aindep = -np.log(np.sum(np.exp(-1.0 * np.asarray(evaltotindep) / dstrip(self.imm.temp)))) * dstrip(self.imm.temp)
         acoupled = -np.log(np.sum(np.exp(-1.0 * np.asarray(evaltotcoupled) / dstrip(self.imm.temp)))) * dstrip(self.imm.temp)
         print 'POTENTIAL OFFSET      = ', v0/self.nprim
         print 'TOTAL HAR FREE ENERGY = ', (aharm + v0)/self.nprim
-        print 'TOTAL IMF FREE ENERGY = ', (aindep + v0)/self.nprim
-        print 'TOTAL MFT FREE ENERGY = ', (acoupled + v0)/self.nprim
+        #print 'TOTAL IMF FREE ENERGY = ', (aindep + v0)/self.nprim
+        #print 'TOTAL MFT FREE ENERGY = ', (acoupled + v0)/self.nprim
         print 'COUPLING CORRECTION   = ', (acoupled - aindep)/self.nprim
 
 
@@ -1257,8 +1318,8 @@ class VSCFSolver(IMF):
                             continue
                         # sum up all MFT contributions
                         psjgrid = np.dot((psigrid[jnm]/np.sqrt(np.sum(psigrid[jnm]**2, axis=0))),evecsnew[istate][jnm][s[istate][jnm]])
-                        normj = np.dot(psjgrid,psjgrid)
-                        vmft += np.dot(vijgrid[inm][jnm].T,psjgrid**2)/normj
+                        #eae32 normj = np.dot(psjgrid,psjgrid)
+                        vmft += np.dot(vijgrid[inm][jnm].T,psjgrid**2)#eae32 /normj
                     dvmfti[inm] = vmft
     
                 demptwo = 0.0
@@ -1309,7 +1370,7 @@ class VSCFSolver(IMF):
     
             ## PRINT OUT FINAL RESULTS
             acoupledmp2 = -np.log(np.sum(np.exp(-1.0 * (np.asarray(evaltotcoupled) + np.asarray(devaltotcoupledmp2)) / dstrip(self.imm.temp)))) * dstrip(self.imm.temp)
-            print 'TOTAL MP2 FREE ENERGY = ', (acoupledmp2 + v0)/self.nprim
+            #print 'TOTAL MP2 FREE ENERGY = ', (acoupledmp2 + v0)/self.nprim
             print 'MP2 CORRECTION        = ', (acoupledmp2 - acoupled)/self.nprim
 
         print 'ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE)'
