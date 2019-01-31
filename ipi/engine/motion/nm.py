@@ -261,6 +261,8 @@ class IMF(DummyCalculator):
 
         self.total_anhar_free_energy = 0.0
         self.total_har_free_energy = 0.0
+        self.total_anhar_internal_energy = 0.0
+        self.total_har_internal_energy = 0.0
         self.v0 = 0 # potential energy (offset) at equilibrium positions per primitve unit (cell)
 
     def step(self, step=None):
@@ -306,8 +308,11 @@ class IMF(DummyCalculator):
         qlist.append(q0)
 
         # Converge anharmonic vibrational energies w.r.t. density of sampling points
-        Ahar = -np.log(np.sum([np.exp(-1.0 * np.sqrt(self.imm.w2[step]) * (0.5+i) / dstrip(self.imm.temp)) for i in range(self.nbasis)]))*dstrip(self.imm.temp)
+        Ahar = -logsumexp( [ -1.0 * np.sqrt(self.imm.w2[step]) * (0.5+i) / dstrip(self.imm.temp) for i in range(self.nbasis) ] ) * dstrip(self.imm.temp)
+        Zhar =  np.sum([np.exp(-1.0 * np.sqrt(self.imm.w2[step]) * (0.5+i) / dstrip(self.imm.temp)) for i in range(self.nbasis)])
+        Ehar =  np.sum([np.sqrt(self.imm.w2[step]) * (0.5+i) * np.exp(  -1.0 * np.sqrt(self.imm.w2[step]) * (0.5+i) / dstrip(self.imm.temp)) for i in range(self.nbasis)]) / Zhar
         Aanh = []
+        Eanh = []
         Adiff = []
         Aanh.append(1e-20)
         Adiff.append(0.0)
@@ -426,7 +431,7 @@ class IMF(DummyCalculator):
             # Diagonalise Hamiltonian matrix and evaluate anharmonic free energy and vibrational freq
             evals, evecs = np.linalg.eigh(h)
     
-            Aanh.append(-np.log(np.sum(np.exp(-1.0 * evals / dstrip(self.imm.temp))))*dstrip(self.imm.temp))
+            Aanh.append(-logsumexp(-1.0 * evals / dstrip(self.imm.temp)) * dstrip(self.imm.temp))
             Adiff.append(Aanh-Ahar)
 	    #print Aanh[-1]
     
@@ -473,7 +478,8 @@ class IMF(DummyCalculator):
             # Diagonalise Hamiltonian matrix and evaluate anharmonic free energy and vibrational freq
             evals, evecs = np.linalg.eigh(h)
 
-            Aanh.append(-np.log(np.sum(np.exp(-1.0 * evals / dstrip(self.imm.temp))))*dstrip(self.imm.temp))
+            Aanh.append(-logsumexp(-1.0 * evals / dstrip(self.imm.temp)) * dstrip(self.imm.temp))
+            Eanh.append(np.sum(evals * np.exp(-1.0 * evals / dstrip(self.imm.temp)))  / np.sum(np.exp(-1.0 * evals / dstrip(self.imm.temp)))  )
             Adiff.append(Aanh-Ahar)
 
             print " Converging w.r.t the basis : nbasis = ", nnbasis, " anharmonic free = ", Aanh[-1], " diff / threshold", (np.abs(Aanh[-1]-Aanh[-2])/np.abs(Aanh[-2])), Athresh
@@ -490,13 +496,16 @@ class IMF(DummyCalculator):
         print 'anharmonic free = ',Aanh[-1]
         self.total_anhar_free_energy += Aanh[-1]
         self.total_har_free_energy += Ahar
+        self.total_anhar_internal_energy += Eanh[-1]
+        self.total_har_internal_energy += Ehar
 
     def transform(self):
         """ Does nothing """
-        print self.imm.temp
-        print 'POTENTIAL OFFSET                = ', self.v0
-        print 'TOTAL HARMONIC FREE ENERGY      = ', self.total_har_free_energy / self.nprim + self.v0
-        print 'TOTAL ANHARMONIC FREE ENERGY    = ', self.total_anhar_free_energy / self.nprim + self.v0
+        print 'POTENTIAL OFFSET         = ', self.v0
+        print 'HAR FREE ENERGY          = ', np.sum((0.5 * np.sqrt(self.imm.w2[3:]) + self.imm.temp * np.log(1.0 - np.exp(-np.sqrt(self.imm.w2[3:]) / self.imm.temp)))) / self.nprim + self.v0
+        print 'IMF FREE ENERGY CORR     = ', (self.total_anhar_free_energy - self.total_har_free_energy) / self.nprim + self.v0
+        print 'HAR INTERNAL ENERGY      = ', np.sum(np.sqrt(self.imm.w2[3:]) * (0.5 + 1.0 / (np.exp(np.sqrt(self.imm.w2[3:]) / self.imm.temp) -1))) / self.nprim + self.v0
+        print 'IMF INTERNAL ENERGY CORR = ', (self.total_anhar_internal_energy -self.total_har_internal_energy) / self.nprim + self.v0
         print 'ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE)'
 
 
@@ -1288,8 +1297,8 @@ class VSCFSolver(IMF):
         acoupled = -logsumexp(-1.0 * np.asarray(evaltotcoupled) / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
 
         print 'POTENTIAL OFFSET      = ', v0/self.nprim
-        print 'TOTAL HAR FREE ENERGY = ', (aharm + v0)/self.nprim
-        print 'COUPLING CORRECTION   = ', (acoupled - aindep)/self.nprim
+        print 'HAR FREE ENERGY       = ', (aharm + v0)/self.nprim
+        print 'VSCF FREE ENERGY CORR = ', (acoupled - aindep)/self.nprim
 
 
         if self.mptwo:
