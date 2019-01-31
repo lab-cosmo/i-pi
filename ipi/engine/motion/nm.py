@@ -1005,7 +1005,7 @@ class VSCFSolver(IMF):
 
         ## READ IN POTENTIAL OFFSET
         if os.path.exists('potoffset.dat'):
-            v0 = np.loadtxt('potoffset.dat')
+            self.v0 = np.loadtxt('potoffset.dat')
         else:
             softexit.trigger("ERROR : Potential offset v0 not available. Exiting.")
 
