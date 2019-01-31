@@ -503,9 +503,9 @@ class IMF(DummyCalculator):
         """ Does nothing """
         print 'POTENTIAL OFFSET         = ', self.v0
         print 'HAR FREE ENERGY          = ', np.sum((0.5 * np.sqrt(self.imm.w2[3:]) + self.imm.temp * np.log(1.0 - np.exp(-np.sqrt(self.imm.w2[3:]) / self.imm.temp)))) / self.nprim + self.v0
-        print 'IMF FREE ENERGY CORR     = ', (self.total_anhar_free_energy - self.total_har_free_energy) / self.nprim + self.v0
+        print 'IMF FREE ENERGY CORR     = ', (self.total_anhar_free_energy - self.total_har_free_energy) / self.nprim 
         print 'HAR INTERNAL ENERGY      = ', np.sum(np.sqrt(self.imm.w2[3:]) * (0.5 + 1.0 / (np.exp(np.sqrt(self.imm.w2[3:]) / self.imm.temp) -1))) / self.nprim + self.v0
-        print 'IMF INTERNAL ENERGY CORR = ', (self.total_anhar_internal_energy -self.total_har_internal_energy) / self.nprim + self.v0
+        print 'IMF INTERNAL ENERGY CORR = ', (self.total_anhar_internal_energy -self.total_har_internal_energy) / self.nprim 
         print 'ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE)'
 
 
@@ -1293,12 +1293,23 @@ class VSCFSolver(IMF):
 
         ## ALREADY PRINT OUT IN CASE MP2 CRASHES
         aharm = np.sum(np.asarray([ -np.log(np.sum([np.exp(-1.0 * np.sqrt(self.imm.w2[inm]) * (0.5+i) / dstrip(self.imm.temp)) for i in range(self.nbasis)]))*dstrip(self.imm.temp) for inm in inms ]))
-        aindep = -logsumexp(-1.0 * np.asarray(evaltotindep) / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
-        acoupled = -logsumexp(-1.0 * np.asarray(evaltotcoupled) / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
 
-        print 'POTENTIAL OFFSET      = ', v0/self.nprim
-        print 'HAR FREE ENERGY       = ', (aharm + v0)/self.nprim
-        print 'VSCF FREE ENERGY CORR = ', (acoupled - aindep)/self.nprim
+        aindep = -logsumexp(-1.0 * np.asarray(evaltotindep) / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
+        eindep = np.sum(np.asarray(evaltotindep) * np.exp(-1.0 * np.asarray(evaltotindep) / dstrip(self.imm.temp)))i
+	eindep /= np.sum(np.exp(-1.0 * np.asarray(evaltotindep) / dstrip(self.imm.temp)))
+
+        acoupled = -logsumexp(-1.0 * np.asarray(evaltotcoupled) / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
+        ecoupled = np.sum(np.asarray(evaltotcoupled) * np.exp(-1.0 * np.asarray(evaltotcoupled) / dstrip(self.imm.temp)))i
+	ecoupled /= np.sum(np.exp(-1.0 * np.asarray(evaltotcoupled) / dstrip(self.imm.temp)))
+
+        print 'POTENTIAL OFFSET          = ', self.v0 / self.nprim
+        print 'HAR FREE ENERGY           = ', (np.sum((0.5 * np.sqrt(self.imm.w2[3:]) + self.imm.temp * np.log(1.0 - np.exp(-np.sqrt(self.imm.w2[3:]) / self.imm.temp)))) / self.nprim + self.v0) / self.nprim
+        print 'VSCF FREE ENERGY CORR     = ', (acoupled - aindep) / self.nprim
+        print 'HAR INTERNAL ENERGY       = ', (np.sum(np.sqrt(self.imm.w2[3:]) * (0.5 + 1.0 / (np.exp(np.sqrt(self.imm.w2[3:]) / self.imm.temp) -1))) + self.v0) / self.nprim 
+        print 'VSCF INTERNAL ENERGY CORR = ', (ecoupled - eindep) / self.nprim
+        print 'ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE)'
+
+
 
 
         if self.mptwo:
