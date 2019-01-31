@@ -1295,11 +1295,11 @@ class VSCFSolver(IMF):
         aharm = np.sum(np.asarray([ -np.log(np.sum([np.exp(-1.0 * np.sqrt(self.imm.w2[inm]) * (0.5+i) / dstrip(self.imm.temp)) for i in range(self.nbasis)]))*dstrip(self.imm.temp) for inm in inms ]))
 
         aindep = -logsumexp(-1.0 * np.asarray(evaltotindep) / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
-        eindep = np.sum(np.asarray(evaltotindep) * np.exp(-1.0 * np.asarray(evaltotindep) / dstrip(self.imm.temp)))i
+        eindep = np.sum(np.asarray(evaltotindep) * np.exp(-1.0 * np.asarray(evaltotindep) / dstrip(self.imm.temp)))
 	eindep /= np.sum(np.exp(-1.0 * np.asarray(evaltotindep) / dstrip(self.imm.temp)))
 
         acoupled = -logsumexp(-1.0 * np.asarray(evaltotcoupled) / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
-        ecoupled = np.sum(np.asarray(evaltotcoupled) * np.exp(-1.0 * np.asarray(evaltotcoupled) / dstrip(self.imm.temp)))i
+        ecoupled = np.sum(np.asarray(evaltotcoupled) * np.exp(-1.0 * np.asarray(evaltotcoupled) / dstrip(self.imm.temp)))
 	ecoupled /= np.sum(np.exp(-1.0 * np.asarray(evaltotcoupled) / dstrip(self.imm.temp)))
 
         print 'POTENTIAL OFFSET          = ', self.v0 / self.nprim
