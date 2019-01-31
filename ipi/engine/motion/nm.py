@@ -35,6 +35,7 @@ from scipy.special import hermite
 from scipy.interpolate import interp1d
 from scipy.interpolate import interp2d
 from scipy.interpolate import RegularGridInterpolator
+from scipy.misc import logsumexp
 #from guppy import hpy
 
 #==========================================================================
@@ -276,7 +277,7 @@ class IMF(DummyCalculator):
 
         # initializes the SHO wvfn basis for solving the 1D Schroedinger equ
         hf = []
-        for i in xrange(4*self.nbasis):
+        for i in xrange(4 * self.nbasis):
             hf.append(hermite(i))
 
         def psi(n,mass,freq,x):
@@ -383,9 +384,9 @@ class IMF(DummyCalculator):
                 ftexlist.append(dft)
                 qexlist.append(dq)
     
-            np.savetxt(self.imm.prefix + '_' + str(step) + '.v', np.asarray(vexlist))
-            np.savetxt(self.imm.prefix + '_' + str(step) + '.f', np.asarray(fexlist))
-            np.savetxt(self.imm.prefix + '_' + str(step) + '.q', np.asarray(qexlist))
+            np.savetxt(self.imm.prefix + '.' + str(step) + '.v', np.asarray(vexlist))
+            np.savetxt(self.imm.prefix + '.' + str(step) + '.f', np.asarray(fexlist))
+            np.savetxt(self.imm.prefix + '.' + str(step) + '.q', np.asarray(qexlist))
     
             print "# FITTING A CUBIC SPLINE TO THE DATA"
             vspline = interp1d(qexlist, vexlist, kind='cubic', bounds_error=False)
@@ -440,7 +441,11 @@ class IMF(DummyCalculator):
             biter += 1
             nnbasis = self.nbasis + 5*biter
 
-            print "# SOLVING THE 1D SCHROEDINGER EQUATION"
+	    if nnbasis > len(hf):
+		print "# COVERGENCE W.R.T BASIS SET FAILED."
+            else:
+                print "# SOLVING THE 1D SCHROEDINGER EQUATION"
+
             # Set up the wavefunction basis
             psigrid = np.zeros((self.nint, nnbasis))
             normi = np.zeros(nnbasis)
@@ -471,8 +476,11 @@ class IMF(DummyCalculator):
             Aanh.append(-np.log(np.sum(np.exp(-1.0 * evals / dstrip(self.imm.temp))))*dstrip(self.imm.temp))
             Adiff.append(Aanh-Ahar)
 
+            print " Converging w.r.t the basis : nbasis = ", nnbasis, " anharmonic free = ", Aanh[-1], " diff / threshold", (np.abs(Aanh[-1]-Aanh[-2])/np.abs(Aanh[-2])), Athresh
+
             # Check whether anharmonic frequency is converged
-            if ( (np.abs(Aanh[-1]-Aanh[-2])/np.abs(Aanh[-2])) < Athresh ): break
+            if ( (np.abs(Aanh[-1]-Aanh[-2])/np.abs(Aanh[-2])) < Athresh ):
+                break
 
         # Done converging wrt size of SHO basis
 
@@ -807,7 +815,7 @@ class VSCFMapper(IMF):
                                     for nmj in nmjs:
                                         k += 1
                                         nmijs[k] = [nmi,nmj,vtots[k]-v0]
-                                np.savetxt('print_2b_map.'+str(inm)+'.'+str(jnm)+'.dat',nmijs)
+                                np.savetxt('vcoupledmap.'+str(inm)+'.'+str(jnm)+'.dat',nmijs)
 
     
                             #print hpyobject.heap()
@@ -1153,7 +1161,7 @@ class VSCFSolver(IMF):
         # TOCHECK
 
         ## SOLVE VSCF PROBLEM ONE EIGENSTATE (OUT OF THE RELEVANT ONES) AT A TIME
-        print "# SOLVING VSCF PROBLEM"
+        print "# SOLVING VSCF PROBLEM FOR", nstates, "STATE(S)!"
 
         # START WITH GS
         evaltotindep = []
@@ -1201,7 +1209,7 @@ class VSCFSolver(IMF):
                                 continue
                             # sum up all MFT two-body contributions
                             psjgrid = np.dot(psigrid[jnm],evecsmix[istate][jnm][s[istate][jnm]])
-                            vmft += np.dot(vijgrid[inm][jnm].T,psjgrid**2)
+                            vmft += np.dot(vijgrid[inm][jnm].T,psjgrid**2) / self.nprim 
 
                             # ===========================================
                             # if three-body terms are to be accounted for
@@ -1211,9 +1219,7 @@ class VSCFSolver(IMF):
                                         continue
                                     # sum up all MFT three-body contributions
                                     pskgrid = np.dot(psigrid[knm],evecsmix[istate][knm][s[istate][knm]])
-                                    #eae32 normk = np.dot(pskgrid,pskgrid)
-                                    vmft += 0.5 * np.dot(np.dot(vijkgrid[inm][jnm][knm].T,pskgrid**2),psjgrid**2)
-                                    #eae32 vmft += 0.5 * np.dot(np.dot(vijkgrid[inm][jnm][knm].T,pskgrid**2)/normk,psjgrid**2)/normj
+                                    vmft += 0.5 * np.dot(np.dot(vijkgrid[inm][jnm][knm].T,pskgrid**2),psjgrid**2) / self.nprim**2 
                             # ===========================================
 
                         # Save MFT anharmonic correction to file for visualisation
@@ -1270,20 +1276,19 @@ class VSCFSolver(IMF):
                 np.savetxt('eigvalext.'+str(istate)+'.dat',np.column_stack((np.asarray([ evals[inm][s[istate][inm]] for inm in inms ]),np.asarray([ evalsnew[istate][inm][s[istate][inm]] for inm in inms ]))))
 
 
-        if self.print_vib_density == True:
-          for inm in inms:
-            psjgrid = np.dot(psigrid[inm],evecsmix[0][inm][0])
-            normj = np.dot(psjgrid,psjgrid)
-            np.savetxt('rho.'+str(istate)+str(inm)+'.dat',np.c_[igrid[inm],psjgrid**2,psjgrid**2/normj])
+            if self.print_vib_density == True:
+                for inm in inms:
+                    psjgrid = np.dot(psigrid[inm],evecsmix[0][inm][0])
+                    normj = np.dot(psjgrid,psjgrid)
+                    np.savetxt('rho.'+str(istate)+str(inm)+'.dat',np.c_[igrid[inm],psjgrid**2,psjgrid**2/normj])
 
         ## ALREADY PRINT OUT IN CASE MP2 CRASHES
         aharm = np.sum(np.asarray([ -np.log(np.sum([np.exp(-1.0 * np.sqrt(self.imm.w2[inm]) * (0.5+i) / dstrip(self.imm.temp)) for i in range(self.nbasis)]))*dstrip(self.imm.temp) for inm in inms ]))
-        aindep = -np.log(np.sum(np.exp(-1.0 * np.asarray(evaltotindep) / dstrip(self.imm.temp)))) * dstrip(self.imm.temp)
-        acoupled = -np.log(np.sum(np.exp(-1.0 * np.asarray(evaltotcoupled) / dstrip(self.imm.temp)))) * dstrip(self.imm.temp)
+        aindep = -logsumexp(-1.0 * np.asarray(evaltotindep) / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
+        acoupled = -logsumexp(-1.0 * np.asarray(evaltotcoupled) / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
+
         print 'POTENTIAL OFFSET      = ', v0/self.nprim
         print 'TOTAL HAR FREE ENERGY = ', (aharm + v0)/self.nprim
-        #print 'TOTAL IMF FREE ENERGY = ', (aindep + v0)/self.nprim
-        #print 'TOTAL MFT FREE ENERGY = ', (acoupled + v0)/self.nprim
         print 'COUPLING CORRECTION   = ', (acoupled - aindep)/self.nprim
 
 
@@ -1318,8 +1323,7 @@ class VSCFSolver(IMF):
                             continue
                         # sum up all MFT contributions
                         psjgrid = np.dot((psigrid[jnm]/np.sqrt(np.sum(psigrid[jnm]**2, axis=0))),evecsnew[istate][jnm][s[istate][jnm]])
-                        #eae32 normj = np.dot(psjgrid,psjgrid)
-                        vmft += np.dot(vijgrid[inm][jnm].T,psjgrid**2)#eae32 /normj
+                        vmft += np.dot(vijgrid[inm][jnm].T,psjgrid**2)
                     dvmfti[inm] = vmft
     
                 demptwo = 0.0
@@ -1359,18 +1363,15 @@ class VSCFSolver(IMF):
                                 continue
                             matel3 *= np.dot(evecsnew[jstate][knm][s[jstate][knm]], evecsnew[istate][knm][s[istate][knm]])
                         matel3 *= np.sum( Psjgrid[inm] * dvmfti[inm] * Psigrid[inm] )
-                        matelmft += matelmft
+                        #matelmft += matelmft 
+                        matelmft += matel3 #eae32
                     matel = matelcpl - matelmft
                     jdemptwo = matel**2 / (evaltotcoupled[istate]-evaltotcoupled[jstate])
                     demptwo += jdemptwo
                 devaltotcoupledmp2.append(demptwo)
     
-            #print np.asarray(evaltotcoupled)
-            #print np.asarray(evaltotcoupled) + np.asarray(devaltotcoupledmp2)
-    
             ## PRINT OUT FINAL RESULTS
-            acoupledmp2 = -np.log(np.sum(np.exp(-1.0 * (np.asarray(evaltotcoupled) + np.asarray(devaltotcoupledmp2)) / dstrip(self.imm.temp)))) * dstrip(self.imm.temp)
-            #print 'TOTAL MP2 FREE ENERGY = ', (acoupledmp2 + v0)/self.nprim
+            acoupledmp2 = -logsumexp(-1.0 * (np.asarray(evaltotcoupled) + np.asarray(devaltotcoupledmp2)) / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
             print 'MP2 CORRECTION        = ', (acoupledmp2 - acoupled)/self.nprim
 
         print 'ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE)'
