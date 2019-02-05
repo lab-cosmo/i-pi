@@ -257,6 +257,7 @@ class SCPhononator(DummyPhononator):
         v = dstrip(self.dm.dforces.pot).copy()
         f = dstrip(self.dm.dforces.f).copy()
 
+        self.v[self.dm.isc, self.dm.imc - 1] = v
         self.f[self.dm.isc, self.dm.imc - 1] = f[-1]
 
         self.dm.imc += 1

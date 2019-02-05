@@ -1,16 +1,21 @@
+import numpy as np
+import io
+import sys
 from ipi.inputs.simulation import InputSimulation
 from ipi.utils.io.inputs import io_xml
-import numpy as np
 
 path2iipi="./input.xml"
 
 ifile = open(path2iipi, "r")
 xmlrestart = io_xml.xml_parse_file(ifile)
 ifile.close()
+
+#text_trap = io.StringIO()
+#sys.stdout = text_trap
 isimul = InputSimulation()
 isimul.parse(xmlrestart.fields[0][1])
 simul = isimul.fetch()
-
+#sys.stdout = sys.__stdout__
 
 prefix =  simul.syslist[0].motion.prefix
 max_iter = simul.syslist[0].motion.max_iter
@@ -25,6 +30,7 @@ findex = max_iter - 1
 findex = 18
 widening = 1.10
 
+print "# %23s %23s %23s %23s %23s" % ("ITERATION", "SCP FREE ENERGY CORR", "ERROR", "SCP INT ENERGY CORR ", "ERROR")
 for i in range(max_iter):
     # Imports the q, iD, x, f from the i^th  SCP iteration.
     iD0 = np.loadtxt(prefix + ".iD." + str(i))
@@ -36,6 +42,10 @@ for i in range(max_iter):
     betahw0 = beta * hw0
     vH0 = V0 + np.sum(hw0 * np.cosh(betahw0 / 2.0) / np.sinh(betahw0 / 2.0) * 0.250)
     AH0 = V0 + np.sum(hw0 * 0.5 + kbT * np.log(1 - np.exp(-betahw0)))
+    if i == 0:
+        Aharm = AH0
+        vharm = vH0
+        V0harm = V0
     adv = 0.0
     vdv = 0.0
     norm = 0
@@ -66,4 +76,4 @@ for i in range(max_iter):
     adv = adv / norm
     vdv = vdv / norm**2 / len(w)
 
-    print "F :", i, AH0, AH0 + adv, np.sqrt(vdv)
+    print "%23d %23.8e %23.8e %23.8e %23.8e" % (i, AH0 + adv - Aharm, np.sqrt(vdv), adv + 2.0 * vH0 - vharm * 2.0 + V0harm - V0, np.sqrt(vdv))
