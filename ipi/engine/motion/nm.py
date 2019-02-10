@@ -678,7 +678,7 @@ class VSCFMapper(IMF):
                 # determine sampling range for given normal mode
                 f0 = np.dot(dstrip(self.imm.forces.f).copy()[0], np.real(self.imm.V.T[inm]))
                 nmd = self.fnmrms * self.imm.nmrms[inm]
-                dev = np.real(self.imm.V.T[inm]) * nmd
+                dev = np.real(self.imm.V.T[inm]) * nmd * np.sqrt(self.nprim)
                 vi = []
                 vi.append(v0)
                 counter = -1
@@ -722,16 +722,15 @@ class VSCFMapper(IMF):
 
             # By replacing the previous paragraph with the below one can enforce sampling of a regular symmetric 
             # grid of points. This allows the output of the mapping to be fed in B. Monserrat implementation of IMF/VSCF.
-                # eae32
 #                f0 = np.dot(dstrip(self.imm.forces.f).copy()[0], np.real(self.imm.V.T[inm]))
 #                nmd = self.fnmrms * self.imm.nmrms[inm]
-#                dev = np.real(self.imm.V.T[inm]) * nmd
+#                dev = np.real(self.imm.V.T[inm]) * nmd * np.sqrt(self.nprim)
 #                vi = []
 #                qi = []
 #                vi.append(v0)
 #                qi.append(0.0)
 #                counter = -1
-#                for i in range(4):
+#                for i in range(8):
 #                    self.imm.dbeads.q = self.imm.beads.q + dev * counter
 #                    qi.append(nmd * counter)
 #                    dv = dstrip(self.imm.dforces.pots).copy()[0] - 0.50 * self.imm.w2[inm] * (nmd * counter)**2 - v0
@@ -746,7 +745,7 @@ class VSCFMapper(IMF):
 #                vi = vi[::-1]
 #                qi = qi[::-1]
 #                counter = 1
-#                for i in range(4):
+#                for i in range(8):
 #                    self.imm.dbeads.q = self.imm.beads.q + dev * counter
 #                    qi.append(nmd * counter)
 #                    dv = dstrip(self.imm.dforces.pots).copy()[0] - 0.50 * self.imm.w2[inm] * (nmd * counter)**2 - v0
@@ -764,7 +763,10 @@ class VSCFMapper(IMF):
 #                np.savetxt('vindeps.'+str(inm)+'.dat',vi)
 #            np.savetxt('nptsmin.dat',nptsmin, fmt='%i')
 #            np.savetxt('nptsmax.dat',nptsmax, fmt='%i')
-#
+        # By replacing the previous paragraph with the below one can enforce sampling of a regular symmetric 
+        # grid of points. This allows the output of the mapping to be fed in B. Monserrat implementation of IMF/VSCF.
+
+
         print "# NUMBER OF POINTS"
         print npts
 
@@ -845,6 +847,7 @@ class VSCFMapper(IMF):
                             if os.path.exists(potfile)==False:
                                 vigrid = np.asarray([np.asscalar(vtspl(0.0,jgrid[ijnm]) - 0.5 * self.imm.w2[jnm] * jgrid[ijnm]**2 - vtspl(0.0,0.0)) for ijnm in range(self.nint)])
                                 np.savetxt('vindep.'+str(jnm)+'.dat',np.column_stack((jgrid,vigrid)))
+
     
                             # Store coupling corr potentials in terms of integration grids
                             vijgrid = np.zeros((self.nint, self.nint))
@@ -967,7 +970,7 @@ class VSCFSolver(IMF):
         self.imm.nmrms = np.sqrt( 0.5 / np.sqrt(self.imm.w2)) # harm ZP RMS displacement along normal mode
         # not temperature dependent so that sampled potentials can easily be reused to evaluate free energy at different temp
         #self.imm.nmevib =  (0.5 + 1 / (x - 1)) * np.sqrt(dstrip(self.imm.w2)) # harm vibr energy at finite temp
-        self.imm.nmevib =  0.5 * np.sqrt(dstrip(self.imm.w2)) # harm vibr energy at finite temp
+        self.imm.nmevib = 0.5 * np.sqrt(dstrip(self.imm.w2)) # harm vibr energy at finite temp
 
         self.ethresh = self.imm.ethresh # convergence thresh for fractional error in vibr free energy
         self.nkbt = self.imm.nkbt # thresh for (e - e_gs)/(kB T) of vibr state to be incl in the VSCF and partition function
@@ -1138,6 +1141,7 @@ class VSCFSolver(IMF):
                     nbasiscurr += 1
             nmbasis.append(range(nbasiscurr))
         
+        print '# NUMBERS OF INDEPENDENT MODE EIGENSTATES CONSIDERED IN ENUMERATION OF FEASIBLE GLOBAL EIGENSTATES: ', len(nmbasis), nmbasis
         egs = np.sum(np.asarray([evals[inm][0] for inm in inms]))
         sred = nmbasis[0]
         for inm in range(len(inms)):
@@ -1168,6 +1172,10 @@ class VSCFSolver(IMF):
         #if nstates < self.nexc:
             # manually add some low-lying states
         # TOCHECK
+
+        if nstates > 20:
+          print "# REDUCING NUMBER OF STATES FROM",nstates,"TO 20!"
+          nstates = 20
 
         ## SOLVE VSCF PROBLEM ONE EIGENSTATE (OUT OF THE RELEVANT ONES) AT A TIME
         print "# SOLVING VSCF PROBLEM FOR", nstates, "STATE(S)!"
@@ -1295,15 +1303,16 @@ class VSCFSolver(IMF):
         aharm = np.sum(np.asarray([ -np.log(np.sum([np.exp(-1.0 * np.sqrt(self.imm.w2[inm]) * (0.5+i) / dstrip(self.imm.temp)) for i in range(self.nbasis)]))*dstrip(self.imm.temp) for inm in inms ]))
 
         aindep = -logsumexp(-1.0 * np.asarray(evaltotindep) / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
-        eindep = np.sum(np.asarray(evaltotindep) * np.exp(-1.0 * np.asarray(evaltotindep) / dstrip(self.imm.temp)))
-	eindep /= np.sum(np.exp(-1.0 * np.asarray(evaltotindep) / dstrip(self.imm.temp)))
+        eindep = np.sum(np.asarray(evaltotindep) * np.exp(-1.0 * (np.asarray(evaltotindep)-np.asarray(evaltotindep)[0]) / dstrip(self.imm.temp)))
+        eindep /= np.sum(np.exp(-1.0 * (np.asarray(evaltotindep)-np.asarray(evaltotindep)[0]) / dstrip(self.imm.temp)))
 
         acoupled = -logsumexp(-1.0 * np.asarray(evaltotcoupled) / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
-        ecoupled = np.sum(np.asarray(evaltotcoupled) * np.exp(-1.0 * np.asarray(evaltotcoupled) / dstrip(self.imm.temp)))
-	ecoupled /= np.sum(np.exp(-1.0 * np.asarray(evaltotcoupled) / dstrip(self.imm.temp)))
+        ecoupled = np.sum(np.asarray(evaltotcoupled) * np.exp(-1.0 * (np.asarray(evaltotcoupled)-np.asarray(evaltotcoupled)[0]) / dstrip(self.imm.temp)))
+        ecoupled /= np.sum(np.exp(-1.0 * (np.asarray(evaltotcoupled)-np.asarray(evaltotcoupled)[0]) / dstrip(self.imm.temp)))
 
         print 'POTENTIAL OFFSET          = ', self.v0 / self.nprim
         print 'HAR FREE ENERGY           = ', (np.sum((0.5 * np.sqrt(self.imm.w2[3:]) + self.imm.temp * np.log(1.0 - np.exp(-np.sqrt(self.imm.w2[3:]) / self.imm.temp)))) / self.nprim + self.v0) / self.nprim
+        print 'IMF FREE ENERGY           = ', (aindep + self.v0) / self.nprim
         print 'VSCF FREE ENERGY CORR     = ', (acoupled - aindep) / self.nprim
         print 'HAR INTERNAL ENERGY       = ', (np.sum(np.sqrt(self.imm.w2[3:]) * (0.5 + 1.0 / (np.exp(np.sqrt(self.imm.w2[3:]) / self.imm.temp) -1))) + self.v0) / self.nprim 
         print 'VSCF INTERNAL ENERGY CORR = ', (ecoupled - eindep) / self.nprim
@@ -1383,8 +1392,8 @@ class VSCFSolver(IMF):
                                 continue
                             matel3 *= np.dot(evecsnew[jstate][knm][s[jstate][knm]], evecsnew[istate][knm][s[istate][knm]])
                         matel3 *= np.sum( Psjgrid[inm] * dvmfti[inm] * Psigrid[inm] )
-                        #matelmft += matelmft 
-                        matelmft += matel3 #eae32
+                        matelmft += matelmft 
+                        #matelmft += matel3 #eae32
                     matel = matelcpl - matelmft
                     jdemptwo = matel**2 / (evaltotcoupled[istate]-evaltotcoupled[jstate])
                     demptwo += jdemptwo

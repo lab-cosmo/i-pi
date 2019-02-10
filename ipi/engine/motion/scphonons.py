@@ -336,32 +336,35 @@ class SCPhononator(DummyPhononator):
         elif(self.dm.displace_mode == "nmik"):
 
             # Checks if the force is statistically significant.
-            f, ferr, swl = self.weightedforce(self.dm.beads.q, self.dm.iD, self.dm.K)
+            while True:
+              f, ferr, swl = self.weightedforce(self.dm.beads.q, self.dm.iD, self.dm.K)
+              dK = self.weightedhessian(self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+              self.dm.dynmatrix = np.dot(self.dm.isqM, np.dot((dK + dK.T) / 2.0, self.dm.isqM))
+              self.apply_asr()
+              self.apply_hpf()
+              self.get_KnD()
 
-            dK = self.weightedhessian(self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
-            self.dm.dynmatrix = np.dot(self.dm.isqM, np.dot((dK + dK.T) / 2.0, self.dm.isqM))
-            self.apply_asr()
-            self.apply_hpf()
-            self.get_KnD()
+              fnm = np.dot(self.dm.V.T, f)
+              fnm[self.z] = 0.0
+              #ferrnm = np.sqrt(np.einsum("ij,j->i",self.dm.V.T**2, ferr**2))
+              ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
+              if self.precheck and np.all(np.abs(fnm) < ferrnm):
+                return
+              if self.checkweights and np.max(swl) < self.wthreshold:
+                return
 
-            fnm = np.dot(self.dm.V.T, f)
-            fnm[self.z] = 0.0
-            #ferrnm = np.sqrt(np.einsum("ij,j->i",self.dm.V.T**2, ferr**2))
-            ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
-            if self.precheck and np.all(np.abs(fnm) < ferrnm):
-              return
-            if self.checkweights and np.max(swl) < self.wthreshold:
-              return
+              iKfnm = self.dm.iw2 * fnm
+              iKfnm[np.abs(fnm) < ferrnm] = 0.0
 
-            iKfnm = self.dm.iw2 * fnm
-            iKfnm[np.abs(fnm) < ferrnm] = 0.0
+              dqnm = iKfnm
+              dqnm[self.z] = 0.0
 
-            dqnm = iKfnm
-            dqnm[self.z] = 0.0
-
-            self.dm.beads.q += np.dot(self.dm.V, dqnm)
-            print "moving in the direction of D kbT times the force", np.linalg.norm(f), np.linalg.norm(ferr), swl
-
+              self.dm.beads.q += np.dot(self.dm.V, dqnm)
+              f, ferr, swl = self.weightedforce(self.dm.beads.q, self.dm.iD, self.dm.K)
+              print "moving in the direction of D kbT times the force", np.linalg.norm(f), np.linalg.norm(ferr), swl, self.wthreshold
+              break
+              #if np.max(swl) < self.wthreshold:
+              #  print "BAILING OUT! due to batch weight weight", np.max(swl), "< ", self.wthreshold
 
 
 
