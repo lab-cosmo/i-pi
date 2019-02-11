@@ -187,7 +187,7 @@ class SCPhononator(DummyPhononator):
         self.fthreshold = 1e-5
         self.qthreshold = 1e-10
         self.dmthreshold = 1e-6
-        self.innermaxiter = 10000
+        self.innermaxiter = 1000
         self.widening = self.dm.widening
         self.wthreshold = self.dm.wthreshold
         self.precheck = self.dm.precheck
@@ -284,8 +284,8 @@ class SCPhononator(DummyPhononator):
         dm = np.dot(self.dm.isqM, np.dot((dK + dK.T) / 2.0, self.dm.isqM))
         dw , dU = np.linalg.eig(dm)
         dw[np.absolute(dw) < self.dm.atol] = self.dm.atol * 1e-3
-        if np.any(dw < 0.0):
-            print "at least one -ve frequency encountered. Bailing out of the optimization procedure."
+        #if np.any(dw < 0.0):
+            #print "at least one -ve frequency encountered. Bailing out of the optimization procedure."
             #return
         # Checks if the force is statistically significant.
         if self.precheck:
@@ -344,10 +344,10 @@ class SCPhononator(DummyPhononator):
             self.apply_hpf()
             self.get_KnD()
 
-            fnm = np.dot(self.dm.V.T, f)
+            fnm = np.dot(self.dm.V.T, f) 
             fnm[self.z] = 0.0
             #ferrnm = np.sqrt(np.einsum("ij,j->i",self.dm.V.T**2, ferr**2))
-            ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
+            ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2)) 
             if self.precheck and np.all(np.abs(fnm) < ferrnm):
               return
             if self.checkweights and np.max(swl) < self.wthreshold:
@@ -363,6 +363,66 @@ class SCPhononator(DummyPhononator):
             print "moving in the direction of D kbT times the force", np.linalg.norm(f), np.linalg.norm(ferr), swl
 
 
+        elif(self.dm.displace_mode == "rnmik"):
+
+          # Outer Optimization Loop
+          while True:
+
+            # Inner Optimization Loop
+            while True:
+              # Checks if the force is statistically significant.
+              f, ferr, swl = self.weightedforce(self.dm.beads.q, self.dm.iD, self.dm.K)
+              ferr = ferr
+              fnm = np.dot(self.dm.V.T, f)
+              fnm[self.z] = 0.0
+              ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
+
+              if self.precheck and np.all(np.abs(fnm) < ferrnm):
+                print "Forces are converegd down to statistical error."
+                break
+
+              if self.checkweights and np.max(swl) < self.wthreshold:
+                print "RNMIK : np.max(swl), self.wthreshold", np.max(swl), self.wthreshold
+                print "Finished the optimization of q0. Modifying K."
+                break
+
+              iKfnm = self.dm.iw2 * fnm * 1e-3
+              iKfnm[np.abs(fnm) < ferrnm] = 0.0
+
+              dqnm = iKfnm
+              dqnm[self.z] = 0.0
+
+              self.dm.beads.q += np.dot(self.dm.V, dqnm)
+              print "moving in the direction of D kbT times the force", np.linalg.norm(fnm), np.linalg.norm(ferrnm), swl
+
+            # Once q0 is optimized. Sets the K to the averaged one, thus imposing the steady state condition.
+            dK = self.weightedhessian(self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+            self.dm.dynmatrix = np.dot(self.dm.isqM, np.dot((dK + dK.T) / 2.0, self.dm.isqM))
+            self.apply_asr()
+            self.apply_hpf()
+            self.get_KnD()
+
+            # Checks if the another round of optimization is possible.
+            fnm_old, ferrnm_old = fnm, ferrnm
+            f, ferr, swl = self.weightedforce(self.dm.beads.q, self.dm.iD, self.dm.K)
+            ferr = ferr
+            fnm = np.dot(self.dm.V.T, f)
+            fnm[self.z] = 0.0
+            ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
+
+            #Breaks if the forces are statistically insignificant.
+            if np.all(np.abs(fnm) < ferrnm):
+              print "Forces are within statistical error. Need to draw more points."
+              break
+
+            #Breaks if the batch weights have gone to shit.
+            if np.max(swl) < self.wthreshold:
+              print "The batch weights are small. Need to draw more points."
+              break
+
+            if np.linalg.norm(np.abs(fnm_old - fnm)) < np.linalg.norm(ferrnm):
+              print "Convergece in forces reached."
+              break
 
 
         elif(self.dm.displace_mode == "rewt"):
@@ -454,6 +514,8 @@ class SCPhononator(DummyPhononator):
                 self.dw = self.w - self.w_old
                 mask = np.abs(self.dw) > 2.27e-5 * 10
                 self.dw[mask] = np.sign(self.dw)[mask]*2.27e-5 * 10
+                mask = np.logical_and(self.dw * self.dw_old > 0, np.abs(self.dw) > np.abs(self.dw_old)) #vk
+                self.dw[mask] = (self.dw_old)[mask] #vk
                 mask = np.logical_and(self.dw * self.dw_old < 0, np.abs(self.dw) > np.abs(self.dw_old * self.gamma))
                 self.dw[mask] = -1.0 * (self.dw_old * self.gamma)[mask]
                 self.dw[z] = 0.0
@@ -471,6 +533,7 @@ class SCPhononator(DummyPhononator):
                 fnm[self.z] = 0.0
                 print "|f|, |ferr| = ", np.linalg.norm(f),  np.linalg.norm(ferr), swl
                 if np.all(np.abs(f) < self.fthreshold) or np.all(np.abs(fnm) < ferrnm):
+                    print "LEAVING OUTER LOOP"
                     break
                 if self.checkweights and np.max(swl) < self.wthreshold:
                     break
@@ -586,11 +649,13 @@ class SCPhononator(DummyPhononator):
             # Calculates the mass scaled displacements for all non-zero modes.
             td[self.nz] = np.nan_to_num(0.50 * self.dm.iw[self.nz] / np.tanh(0.50 * self.dm.w[self.nz] / self.dm.temp))
             td[self.z] = 0.0
-            tdm[self.nz] = np.nan_to_num(0.50 * self.dm.iw[self.nz] / 1.05 / np.tanh(0.50 * self.dm.w[self.nz] *1.05/ self.dm.temp))
+            tdm[self.nz] = np.nan_to_num(0.50 * self.dm.iw[self.nz] / np.tanh(0.50 * self.dm.w[self.nz] / self.dm.temp))
             tdm[self.z] = 0.0
         elif self.dm.mode == "cl":
             td[self.nz] = (self.dm.iw[self.nz])**2 * self.dm.temp
             td[self.z] = 0.0
+            tdm[self.nz] = (self.dm.iw[self.nz])**2 * self.dm.temp
+            tdm[self.z] = 0.0
          
         # Calculates the inverse and the square of the mass scaled displacements.   
         itd[self.nz] = np.divide(1.0, td[self.nz])
