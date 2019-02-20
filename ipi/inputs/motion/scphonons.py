@@ -56,7 +56,7 @@ class InputSCPhonons(InputDictionary):
                                              "help": "Chooses the type of random numbers."
                                              }),
                 "displace_mode": (InputValue, {"dtype": str, "default": "rewt",
-                                               "options": ["rewt", "hessian", "nmik", "sD"],
+                                               "options": ["rewt", "hessian", "nmik", "sD", "rnmik"],
                                                "help": "Chooses the type of optimisation strategy for the centroid."
                                                }),
                 "dynmat": (InputArray, {"dtype": float,

@@ -19,6 +19,7 @@ simul = isimul.fetch()
 
 prefix =  simul.syslist[0].motion.prefix
 max_iter = simul.syslist[0].motion.max_iter
+asr = simul.syslist[0].motion.asr
 m3 = simul.syslist[0].beads.m3[-1]
 M = np.diag(m3)
 iM = np.diag(1.0 / m3)
@@ -30,7 +31,13 @@ findex = max_iter - 1
 findex = 18
 widening = 1.10
 
-print "# %23s %23s %23s %23s %23s" % ("ITERATION", "SCP FREE ENERGY CORR", "ERROR", "SCP INT ENERGY CORR ", "ERROR")
+
+if asr == "crystal":
+  nz = 3
+elif asr == "molecule":
+  nz = 6
+
+print "# %23s %23s %23s %23s %23s %23s %23s" % ("ITERATION", "SCP FREE ENERGY", "SCP FREE ENERGY CORR", "ERROR", "SCP ENERGY", "SCP INT ENERGY CORR ", "ERROR")
 for i in range(max_iter):
     # Imports the q, iD, x, f from the i^th  SCP iteration.
     iD0 = np.loadtxt(prefix + ".iD." + str(i))
@@ -38,7 +45,7 @@ for i in range(max_iter):
     K0 = np.loadtxt(prefix + ".K." + str(i))
     V0 = np.loadtxt(prefix + ".V0." + str(i))
     # Calculates the frequencies of the trial Hamiltonian.
-    hw0 = np.loadtxt(prefix + ".w." + str(i))[3:]
+    hw0 = np.loadtxt(prefix + ".w." + str(i))[nz:]
     betahw0 = beta * hw0
     vH0 = V0 + np.sum(hw0 * np.cosh(betahw0 / 2.0) / np.sinh(betahw0 / 2.0) * 0.250)
     AH0 = V0 + np.sum(hw0 * 0.5 + kbT * np.log(1 - np.exp(-betahw0)))
@@ -67,13 +74,13 @@ for i in range(max_iter):
       w = np.exp(-(0.50 * np.dot(iD0, (x - q0).T).T * (x - q0)).sum(axis=1) + (0.50 * np.dot(iD, (x - q).T).T * (x - q)).sum(axis=1))
       V1 = np.sum(w)
       V2 = np.sum(w**2)
-      advj = np.sum(w * (v - vh)) / V1
-      vdvj = np.sum(w * (v - vh - advj)**2) / (V1 - V2 / V1)
-      c = 1.0 / vdvj
+      advj = np.nan_to_num(np.sum(w * (v - vh)) / V1)
+      vdvj = np.nan_to_num(sum(w * (v - vh - advj)**2) / (V1 - V2 / V1))
+      c = np.nan_to_num(1.0 / vdvj)
       norm += c
       adv += c * advj
       vdv += c**2 * vdvj
-    adv = adv / norm
-    vdv = vdv / norm**2 / len(w)
+    adv = np.nan_to_num(adv / norm)
+    vdv = np.nan_to_num(vdv / norm**2 / len(w))
 
-    print "%23d %23.8e %23.8e %23.8e %23.8e" % (i, AH0 + adv - Aharm, np.sqrt(vdv), adv + 2.0 * vH0 - vharm * 2.0 + V0harm - V0, np.sqrt(vdv))
+    print "%23d %23.8e %23.8e %23.8e %23.8e %23.8e %23.8e" % (i, AH0 + adv, AH0 + adv - Aharm, np.sqrt(vdv), 2 * vH0 + vdv - V0, adv + 2.0 * vH0 - vharm * 2.0 + V0harm - V0, np.sqrt(vdv))

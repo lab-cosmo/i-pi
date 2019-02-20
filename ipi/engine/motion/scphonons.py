@@ -367,6 +367,67 @@ class SCPhononator(DummyPhononator):
               #  print "BAILING OUT! due to batch weight weight", np.max(swl), "< ", self.wthreshold
 
 
+        elif(self.dm.displace_mode == "rnmik"):
+
+          # Outer Optimization Loop
+          while True:
+
+            # Inner Optimization Loop
+            while True:
+              # Checks if the force is statistically significant.
+              f, ferr, swl = self.weightedforce(self.dm.beads.q, self.dm.iD, self.dm.K)
+              ferr = ferr
+              fnm = np.dot(self.dm.V.T, f)
+              fnm[self.z] = 0.0
+              ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
+
+              if self.precheck and np.all(np.abs(fnm) < ferrnm):
+                print "Forces are converegd down to statistical error."
+                break
+
+              if self.checkweights and np.max(swl) < self.wthreshold:
+                print "RNMIK : np.max(swl), self.wthreshold", np.max(swl), self.wthreshold
+                print "Finished the optimization of q0. Modifying K."
+                break
+
+              iKfnm = self.dm.iw2 * fnm * 1e-3
+              iKfnm[np.abs(fnm) < ferrnm] = 0.0
+
+              dqnm = iKfnm
+              dqnm[self.z] = 0.0
+
+              self.dm.beads.q += np.dot(self.dm.V, dqnm)
+              print "moving in the direction of D kbT times the force", np.linalg.norm(fnm), np.linalg.norm(ferrnm), swl
+
+            # Once q0 is optimized. Sets the K to the averaged one, thus imposing the steady state condition.
+            dK = self.weightedhessian(self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+            self.dm.dynmatrix = np.dot(self.dm.isqM, np.dot((dK + dK.T) / 2.0, self.dm.isqM))
+            self.apply_asr()
+            self.apply_hpf()
+            self.get_KnD()
+
+            # Checks if the another round of optimization is possible.
+            fnm_old, ferrnm_old = fnm, ferrnm
+            f, ferr, swl = self.weightedforce(self.dm.beads.q, self.dm.iD, self.dm.K)
+            ferr = ferr
+            fnm = np.dot(self.dm.V.T, f)
+            fnm[self.z] = 0.0
+            ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
+
+            #Breaks if the forces are statistically insignificant.
+            if np.all(np.abs(fnm) < ferrnm):
+              print "Forces are within statistical error. Need to draw more points."
+              break
+
+            #Breaks if the batch weights have gone to shit.
+            if np.max(swl) < self.wthreshold:
+              print "The batch weights are small. Need to draw more points."
+              break
+
+            if np.linalg.norm(np.abs(fnm_old - fnm)) < np.linalg.norm(ferrnm):
+              print "Convergece in forces reached."
+              break
+
 
         elif(self.dm.displace_mode == "rewt"):
 
@@ -589,7 +650,7 @@ class SCPhononator(DummyPhononator):
             # Calculates the mass scaled displacements for all non-zero modes.
             td[self.nz] = np.nan_to_num(0.50 * self.dm.iw[self.nz] / np.tanh(0.50 * self.dm.w[self.nz] / self.dm.temp))
             td[self.z] = 0.0
-            tdm[self.nz] = np.nan_to_num(0.50 * self.dm.iw[self.nz] / 1.05 / np.tanh(0.50 * self.dm.w[self.nz] *1.05/ self.dm.temp))
+            tdm[self.nz] = np.nan_to_num(0.50 * self.dm.iw[self.nz] / np.tanh(0.50 * self.dm.w[self.nz] / self.dm.temp))
             tdm[self.z] = 0.0
         elif self.dm.mode == "cl":
             td[self.nz] = (self.dm.iw[self.nz])**2 * self.dm.temp
