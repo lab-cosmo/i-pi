@@ -56,7 +56,7 @@ class InputSCPhonons(InputDictionary):
                                              "help": "Chooses the type of random numbers."
                                              }),
                 "displace_mode": (InputValue, {"dtype": str, "default": "rewt",
-                                               "options": ["rewt", "hessian", "nmik", "rnmik", "sD"],
+                                               "options": ["rewt", "hessian", "nmik", "sD", "rnmik"],
                                                "help": "Chooses the type of optimisation strategy for the centroid."
                                                }),
                 "dynmat": (InputArray, {"dtype": float,
@@ -83,7 +83,7 @@ class InputSCPhonons(InputDictionary):
                                         "help": "ratio of width of sampled distribution wrt the target distribution."}),
                 "wthreshold": (InputValue, {
                     "dtype": float,
-                                        "default": 0.,
+                                        "default": 0.5,
                                         "help": "threshold on minimum Boltzmann weights before more statistics must be accumulated."}),
                 "precheck": (InputValue, {
                     "dtype": bool,
