@@ -74,13 +74,13 @@ for i in range(max_iter):
       w = np.exp(-(0.50 * np.dot(iD0, (x - q0).T).T * (x - q0)).sum(axis=1) + (0.50 * np.dot(iD, (x - q).T).T * (x - q)).sum(axis=1))
       V1 = np.sum(w)
       V2 = np.sum(w**2)
-      advj = np.sum(w * (v - vh)) / V1
-      vdvj = np.sum(w * (v - vh - advj)**2) / (V1 - V2 / V1)
-      c = 1.0 / vdvj
+      advj = np.nan_to_num(np.sum(w * (v - vh)) / V1)
+      vdvj = np.nan_to_num(sum(w * (v - vh - advj)**2) / (V1 - V2 / V1))
+      c = np.nan_to_num(1.0 / vdvj)
       norm += c
       adv += c * advj
       vdv += c**2 * vdvj
-    adv = adv / norm
-    vdv = vdv / norm**2 / len(w)
+    adv = np.nan_to_num(adv / norm)
+    vdv = np.nan_to_num(vdv / norm**2 / len(w))
 
     print "%23d %23.8e %23.8e %23.8e %23.8e %23.8e %23.8e" % (i, AH0 + adv, AH0 + adv - Aharm, np.sqrt(vdv), 2 * vH0 + vdv - V0, adv + 2.0 * vH0 - vharm * 2.0 + V0harm - V0, np.sqrt(vdv))

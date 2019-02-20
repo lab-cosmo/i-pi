@@ -77,6 +77,7 @@ class NormalModeMover(Motion):
         self.prefix = prefix
         self.asr = asr
         self.nprim = nprim #1
+        self.nz = 0 #1
         self.fnmrms = fnmrms #1.0
         self.nevib = nevib #25.0
         self.nint = nint #101
@@ -271,6 +272,7 @@ class IMF(DummyCalculator):
         print "TREATING NM #", step, self.imm.w2[step]
 
         if np.abs(self.imm.w2[step]) < 1e-9 :
+           self.imm.nz += 1
            print "# IGNORING THE NM. FREQUENCY IS SMALLER THEN 2 cm^-1"
            return 
 
@@ -502,9 +504,9 @@ class IMF(DummyCalculator):
     def transform(self):
         """ Does nothing """
         print 'POTENTIAL OFFSET         = ', self.v0
-        print 'HAR FREE ENERGY          = ', np.sum((0.5 * np.sqrt(self.imm.w2[3:]) + self.imm.temp * np.log(1.0 - np.exp(-np.sqrt(self.imm.w2[3:]) / self.imm.temp)))) / self.nprim + self.v0
+        print 'HAR FREE ENERGY          = ', np.sum((0.5 * np.sqrt(self.imm.w2[self.imm.nz:]) + self.imm.temp * np.log(1.0 - np.exp(-np.sqrt(self.imm.w2[self.imm.nz:]) / self.imm.temp)))) / self.nprim + self.v0
         print 'IMF FREE ENERGY CORR     = ', (self.total_anhar_free_energy - self.total_har_free_energy) / self.nprim 
-        print 'HAR INTERNAL ENERGY      = ', np.sum(np.sqrt(self.imm.w2[3:]) * (0.5 + 1.0 / (np.exp(np.sqrt(self.imm.w2[3:]) / self.imm.temp) -1))) / self.nprim + self.v0
+        print 'HAR INTERNAL ENERGY      = ', np.sum(np.sqrt(self.imm.w2[self.imm.nz:]) * (0.5 + 1.0 / (np.exp(np.sqrt(self.imm.w2[self.imm.nz:]) / self.imm.temp) -1))) / self.nprim + self.v0
         print 'IMF INTERNAL ENERGY CORR = ', (self.total_anhar_internal_energy -self.total_har_internal_energy) / self.nprim 
         print 'ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE)'
 
