@@ -187,7 +187,7 @@ class SCPhononator(DummyPhononator):
         self.fthreshold = 1e-5
         self.qthreshold = 1e-10
         self.dmthreshold = 1e-6
-        self.innermaxiter = 10000
+        self.innermaxiter = 1000
         self.widening = self.dm.widening
         self.wthreshold = self.dm.wthreshold
         self.precheck = self.dm.precheck
@@ -284,8 +284,8 @@ class SCPhononator(DummyPhononator):
         dm = np.dot(self.dm.isqM, np.dot((dK + dK.T) / 2.0, self.dm.isqM))
         dw , dU = np.linalg.eig(dm)
         dw[np.absolute(dw) < self.dm.atol] = self.dm.atol * 1e-3
-        if np.any(dw < 0.0):
-            print "at least one -ve frequency encountered. Bailing out of the optimization procedure."
+        #if np.any(dw < 0.0):
+            #print "at least one -ve frequency encountered. Bailing out of the optimization procedure."
             #return
         # Checks if the force is statistically significant.
         if self.precheck:
@@ -518,6 +518,8 @@ class SCPhononator(DummyPhononator):
                 self.dw = self.w - self.w_old
                 mask = np.abs(self.dw) > 2.27e-5 * 10
                 self.dw[mask] = np.sign(self.dw)[mask]*2.27e-5 * 10
+                mask = np.logical_and(self.dw * self.dw_old > 0, np.abs(self.dw) > np.abs(self.dw_old)) #vk
+                self.dw[mask] = (self.dw_old)[mask] #vk
                 mask = np.logical_and(self.dw * self.dw_old < 0, np.abs(self.dw) > np.abs(self.dw_old * self.gamma))
                 self.dw[mask] = -1.0 * (self.dw_old * self.gamma)[mask]
                 self.dw[z] = 0.0
@@ -535,6 +537,7 @@ class SCPhononator(DummyPhononator):
                 fnm[self.z] = 0.0
                 print "|f|, |ferr| = ", np.linalg.norm(f),  np.linalg.norm(ferr), swl
                 if np.all(np.abs(f) < self.fthreshold) or np.all(np.abs(fnm) < ferrnm):
+                    print "LEAVING OUTER LOOP"
                     break
                 if self.checkweights and np.max(swl) < self.wthreshold:
                     break
@@ -655,6 +658,8 @@ class SCPhononator(DummyPhononator):
         elif self.dm.mode == "cl":
             td[self.nz] = (self.dm.iw[self.nz])**2 * self.dm.temp
             td[self.z] = 0.0
+            tdm[self.nz] = (self.dm.iw[self.nz])**2 * self.dm.temp
+            tdm[self.z] = 0.0
          
         # Calculates the inverse and the square of the mass scaled displacements.   
         itd[self.nz] = np.divide(1.0, td[self.nz])
