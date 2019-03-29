@@ -109,7 +109,7 @@ class InputCellop(InputDictionary):
     dynamic = {}
 
     default_help = "A Cell Optimization class implementing only BFGS"
-     = "CELLOP"
+    default_label = "CELLOP"
 
     def store(self, cellop):
         if cellop == {}:
@@ -122,7 +122,7 @@ class InputCellop(InputDictionary):
             self.old_direction.store(cellop.d)
             self.invhessian_bfgs.store(cellop.invhessian)
             self.biggest_step.store(cellop.big_step)
-        else
+        else:
             print("this mode doesn't exist")
 
     def fetch(self):
