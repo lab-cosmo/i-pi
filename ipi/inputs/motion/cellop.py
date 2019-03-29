@@ -30,10 +30,10 @@ from ipi.inputs.thermostats import *
 from ipi.inputs.initializer import *
 from ipi.utils.units import *
 
-__all__ = ['InputGeop']
+__all__ = ['InputCellop']
 
 
-class InputGeop(InputDictionary):
+class InputCellop(InputDictionary):
 
     """Geometry optimization options.
 
@@ -42,9 +42,9 @@ class InputGeop(InputDictionary):
 
     """
 
-    attribs = {"mode": (InputAttribute, {"dtype": str, "default": "lbfgs",
-                                         "help": "The geometry optimization algorithm to be used",
-                                         "options": ['sd', 'cg', 'bfgs', 'bfgstrm', 'lbfgs']})}
+    attribs = {"mode": (InputAttribute, {"dtype": str, "default": "bfgs",
+                                         "help": "The geometry cell optimization algorithm to be used",
+                                         "options": ['bfgs']})}
 
     # options of the method (mostly tolerances)
     fields = {"ls_options": (InputDictionary, {"dtype": [float, int, float, float],
@@ -71,9 +71,7 @@ class InputGeop(InputDictionary):
                                             0 identity.
                                             1 Use first member of position/gradient list.
                                             2 Use last  member of position/gradient list."""}),
-              "corrections_lbfgs": (InputValue, {"dtype": int,
-                                                 "default": 6,
-                                                 "help": "The number of past vectors to store for L-BFGS."}),
+
               # re-start parameters, estimate hessian, etc.
               "old_pos": (InputArray, {"dtype": float,
                                        "default": input_default(factory=np.zeros, args=(0,)),
@@ -110,39 +108,24 @@ class InputGeop(InputDictionary):
 
     dynamic = {}
 
-    default_help = "A Geometry Optimization class implementing most of the standard methods"
-    default_label = "GEOP"
+    default_help = "A Cell Optimization class implementing only BFGS"
+     = "CELLOP"
 
-    def store(self, geop):
-        if geop == {}:
+    def store(self, cellop):
+        if cellop == {}:
             return
 
-        self.mode.store(geop.mode)
-        self.tolerances.store(geop.tolerances)
+        self.mode.store(cell.mode)
+        self.tolerances.store(cellop.tolerances)
 
-        if geop.mode == "bfgs":
-            self.old_direction.store(geop.d)
-            self.invhessian_bfgs.store(geop.invhessian)
-            self.biggest_step.store(geop.big_step)
-        elif geop.mode == "bfgstrm":
-            self.hessian_trm.store(geop.hessian)
-            self.tr_trm.store(geop.tr)
-            self.biggest_step.store(geop.big_step)
-        elif geop.mode == "lbfgs":
-            self.old_direction.store(geop.d)
-            self.qlist_lbfgs.store(geop.qlist)
-            self.glist_lbfgs.store(geop.glist)
-            self.corrections_lbfgs.store(geop.corrections)
-            self.scale_lbfgs.store(geop.scale)
-            self.biggest_step.store(geop.big_step)
-        elif geop.mode == "sd":
-            self.ls_options.store(geop.ls_options)
-        elif geop.mode == "cg":
-            self.old_direction.store(geop.d)
-            self.ls_options.store(geop.ls_options)
-            self.old_force.store(geop.old_f)
+        if cellop.mode == "bfgs":
+            self.old_direction.store(cellop.d)
+            self.invhessian_bfgs.store(cellop.invhessian)
+            self.biggest_step.store(cellop.big_step)
+        else
+            print("this mode doesn't exist")
 
     def fetch(self):
-        rv = super(InputGeop, self).fetch()
+        rv = super(InputCellop, self).fetch()
         rv["mode"] = self.mode.fetch()
         return rv

@@ -226,7 +226,7 @@ class ForceField(dobject):
         for r in self.requests:
             r["status"] = "Exit"
 
-    def start(self):
+    def run(self):
         """Spawns a new thread.
 
         Splits the main program into two threads, one that runs the polling loop
@@ -300,11 +300,11 @@ class FFSocket(ForceField):
 
         self.socket.poll()
 
-    def start(self):
+    def run(self):
         """Spawns a new thread."""
 
         self.socket.open()
-        super(FFSocket, self).start()
+        super(FFSocket, self).run()
 
     def stop(self):
         """Closes the socket and the thread."""

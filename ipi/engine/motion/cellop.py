@@ -21,10 +21,10 @@ from ipi.utils.mintools import min_brent, BFGS, BFGSTRM, L_BFGS
 from ipi.utils.messages import verbosity, info
 
 
-__all__ = ['GeopMotion']
+__all__ = ['CellopMotion']
 
 
-class GeopMotion(Motion):
+class CellopMotion(Motion):
     """Geometry optimization class.
 
     Attributes:
@@ -66,7 +66,7 @@ class GeopMotion(Motion):
                  scale_lbfgs=1,
                  qlist_lbfgs=np.zeros(0, float),
                  glist_lbfgs=np.zeros(0, float)):
-        """Initialises GeopMotion.
+        """Initialises CellopMotion.
 
         Args:
            fixcom: An optional boolean which decides whether the centre of mass
@@ -76,7 +76,7 @@ class GeopMotion(Motion):
             raise ValueError("The optimization algorithm with fixatoms is not implemented. "
                              "We stop here. Comment this line and continue only if you know what you are doing")
 
-        super(GeopMotion, self).__init__(fixcom=fixcom, fixatoms=fixatoms)
+        super(CellopMotion, self).__init__(fixcom=fixcom, fixatoms=fixatoms)
 
         # Optimization Options
 
@@ -113,7 +113,7 @@ class GeopMotion(Motion):
             self.optimizer = DummyOptimizer()
 
     def bind(self, ens, beads, nm, cell, bforce, prng):
-        """Binds beads, cell, bforce and prng to GeopMotion
+        """Binds beads, cell, bforce and prng to CellopMotion
 
             Args:
             beads: The beads object from whcih the bead positions are taken.
@@ -123,7 +123,7 @@ class GeopMotion(Motion):
             prng: The random number generator object which controls random number generation.
         """
 
-        super(GeopMotion, self).bind(ens, beads, nm, cell, bforce, prng)
+        super(CellopMotion, self).bind(ens, beads, nm, cell, bforce, prng)
         # Binds optimizer
         self.optimizer.bind(self)
 
@@ -302,7 +302,7 @@ class DummyOptimizer(dobject):
 
 class BFGSOptimizer(DummyOptimizer):
     """ BFGS Minimization """
-    print("BFGS geop")
+
     def bind(self, geop):
         # call bind function from DummyOptimizer
         super(BFGSOptimizer, self).bind(geop)

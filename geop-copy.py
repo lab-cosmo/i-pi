@@ -42,7 +42,7 @@ class GeopMotion(Motion):
                 gradient}
         tolerances:
         {energy: change in energy tolerance for ending minimization
-        force: force/change in force tolerance foe ending minimization
+        force: force/change in force tolerance for ending minimization
         position: change in position tolerance for ending minimization}
         corrections_lbfgs: number of corrections to be stored for L-BFGS
         scale_lbfgs: Scale choice for the initial hessian.
@@ -302,14 +302,14 @@ class DummyOptimizer(dobject):
 
 class BFGSOptimizer(DummyOptimizer):
     """ BFGS Minimization """
-    print("BFGS geop")
+
     def bind(self, geop):
         # call bind function from DummyOptimizer
         super(BFGSOptimizer, self).bind(geop)
 
         if geop.invhessian.size != (self.beads.q.size * self.beads.q.size):
             if geop.invhessian.size == 0:
-                geop.invhessian = np.eye(self.beads.q.size, self.beads.q.size, 0, float)
+                geop.invhessian = np.eye(self.beads.q.size, self.beads.q.size, 0, float)     # just it want to check if the size of hessian of geop match or not we need hessian for optimization
             else:
                 raise ValueError("Inverse Hessian size does not match system size")
 
@@ -329,12 +329,12 @@ class BFGSOptimizer(DummyOptimizer):
 
         if step == 0:
             info(" @GEOP: Initializing BFGS", verbosity.debug)
-            self.d += dstrip(self.forces.f) / np.sqrt(np.dot(self.forces.f.flatten(), self.forces.f.flatten()))
+            self.d += dstrip(self.forces.f) / np.sqrt(np.dot(self.forces.f.flatten(), self.forces.f.flatten())) # check here more!!
             if len(self.fixatoms) > 0:
                 for dqb in self.d:
                     dqb[self.fixatoms * 3] = 0.0
                     dqb[self.fixatoms * 3 + 1] = 0.0
-                    dqb[self.fixatoms * 3 + 2] = 0.0
+                    dqb[self.fixatoms * 3 + 2] = 0.0   # but all in all this fuction just update the position of atoms depends on the time steps
 
         self.old_x[:] = self.beads.q
         self.old_u[:] = self.forces.pot
@@ -351,26 +351,27 @@ class BFGSOptimizer(DummyOptimizer):
         # Do one iteration of BFGS
         # The invhessian and the directions are updated inside.
         BFGS(self.old_x, self.d, self.gm, fdf0, self.invhessian, self.big_step,
-             self.ls_options["tolerance"] * self.tolerances["energy"], self.ls_options["iter"])
+             self.ls_options["tolerance"] * self.tolerances["energy"], self.ls_options["iter"]) # here just in every step in any iteration it calculate the hessian for finding the optimization
+                                                                                                # if  we want to implement sth  we should care here because the updated hesian is here.
 
         info("   Number of force calls: %d" % (self.gm.fcount)); self.gm.fcount = 0
         # Update positions and forces
         self.beads.q = self.gm.dbeads.q
         self.forces.transfer_forces(self.gm.dforces)  # This forces the update of the forces
-        print("this is cellop")
+
         # Exit simulation step
         d_x_max = np.amax(np.absolute(np.subtract(self.beads.q, self.old_x)))
         self.exitstep(self.forces.pot, self.old_u, d_x_max)
 
 
 class BFGSTRMOptimizer(DummyOptimizer):
-    """ BFGSTRM Minimization with Trust Radius Method.	"""
+    """ BFGSTRM Minimization with Trust Ragion Method.	"""
 
     def bind(self, geop):
 
         super(BFGSTRMOptimizer, self).bind(geop)
 
-        if geop.hessian.size != (self.beads.q.size * self.beads.q.size):
+        if geop.hessian.size != (self.beads.q.size * self.beads.q.size):   # what is "q" do here? check hessian with what? please check these things!
             if geop.hessian.size == 0:
                 geop.hessian = np.eye(self.beads.q.size, self.beads.q.size, 0, float)
             else:
@@ -422,7 +423,7 @@ class BFGSTRMOptimizer(DummyOptimizer):
 # ---------------------------------------------------------------------------------------
 
 
-class LBFGSOptimizer(DummyOptimizer):
+class LBFGSOptimizer(DummyOptimizer):     # this optimization method did like l-bfgs check more later
     """ L-BFGS Minimization: Note that the accuracy you can achieve with this method depends
         on how many ''corrections'' you store (default is 5). """
 

@@ -24,13 +24,14 @@ Classes:
 import numpy as np
 from copy import copy
 import ipi.engine.initializer
-from ipi.engine.motion import Motion, Dynamics, Replay, GeopMotion, NEBMover,\
+from ipi.engine.motion import Motion, CellopMotion,Dynamics, Replay, GeopMotion, NEBMover,\
                             DynMatrixMover, MultiMotion, AlchemyMC, InstantonMotion,\
                             TemperatureRamp, PressureRamp
 from ipi.utils.inputvalue import *
 from ipi.inputs.thermostats import *
 from ipi.inputs.initializer import *
 from .geop import InputGeop
+from .cellop import InputCellop
 from .instanton import InputInst
 from .neb import InputNEB
 from .dynamics import InputDynamics
@@ -59,8 +60,8 @@ class InputMotionBase(Input):
     """
 
     attribs = {"mode": (InputAttribute, {"dtype": str,
-                                         "help": "How atoms should be moved at each step in the simulatio. 'replay' means that a simulation is replayed from trajectories provided to i-PI.",
-                                         "options": ['vibrations', 'minimize', 'replay', 'neb', 'dynamics', 't_ramp', 'p_ramp', 'alchemy', 'instanton', 'dummy']})}
+                                         "help": "How atoms should be moved at each step in the simulatio. 'replay' means that a simulation is restarted from a previous simulation.",
+                                         "options": ['vibrations', 'minimize','cellminimize', 'replay', 'neb', 'dynamics', 't_ramp', 'p_ramp', 'alchemy', 'instanton', 'dummy']})}
 
     fields = {"fixcom": (InputValue, {"dtype": bool,
                                       "default": True,
@@ -70,6 +71,8 @@ class InputMotionBase(Input):
                                         "help": "Indices of the atmoms that should be held fixed."}),
               "optimizer": (InputGeop, {"default": {},
                                         "help": "Option for geometry optimization"}),
+              "cell_optimizer": (InputCellop, {"default": {},
+                                        "help": "Option for cell optimization"}),
               "neb_optimizer": (InputNEB, {"default": {},
                                            "help": "Option for geometry optimization"}),
               "dynamics": (InputDynamics, {"default": {},
@@ -108,6 +111,10 @@ class InputMotionBase(Input):
             tsc = 0
         elif type(sc) is GeopMotion:
             self.mode.store("minimize")
+            self.optimizer.store(sc)
+            tsc = 1
+        elif type(sc) is CellopMotion:
+            self.mode.store("cellminimize")
             self.optimizer.store(sc)
             tsc = 1
         elif type(sc) is NEBMover:
@@ -161,6 +168,8 @@ class InputMotionBase(Input):
             sc = Replay(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), intraj=self.file.fetch())
         elif self.mode.fetch() == "minimize":
             sc = GeopMotion(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.optimizer.fetch())
+        elif self.mode.fetch() == "cellminimize":
+                sc = CellopMotion(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.cell_optimizer.fetch())
         elif self.mode.fetch() == "neb":
             sc = NEBMover(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.neb_optimizer.fetch())
         elif self.mode.fetch() == "dynamics":
