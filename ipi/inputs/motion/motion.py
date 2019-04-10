@@ -169,7 +169,7 @@ class InputMotionBase(Input):
         elif self.mode.fetch() == "minimize":
             sc = GeopMotion(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.optimizer.fetch())
         elif self.mode.fetch() == "cellminimize":
-                sc = CellopMotion(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.cell_optimizer.fetch())
+            sc = CellopMotion(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.cell_optimizer.fetch())
         elif self.mode.fetch() == "neb":
             sc = NEBMover(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.neb_optimizer.fetch())
         elif self.mode.fetch() == "dynamics":
