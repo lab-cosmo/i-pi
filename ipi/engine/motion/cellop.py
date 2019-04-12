@@ -14,11 +14,15 @@ Algorithms implemented by Michele Ceriotti and Benjamin Helfrecht, 2015
 import numpy as np
 import time
 
+#from ipi.utils.mathtools import *
+#from ipi.utils.depend import *
 from ipi.engine.motion import Motion
 from ipi.utils.depend import dstrip, dobject
 from ipi.utils.softexit import softexit
 from ipi.utils.mintools import min_brent, BFGS, BFGSTRM, L_BFGS
 from ipi.utils.messages import verbosity, info
+#from ipi.engine.cell import scaled_pos
+#from ipi.engine.cell import Cell
 
 
 __all__ = ['CellopMotion']
@@ -95,20 +99,6 @@ class CellopMotion(Motion):
         if self.mode == "bfgs":
             self.invhessian = invhessian_bfgs
             self.optimizer = BFGSOptimizer()
-        elif self.mode == "bfgstrm":
-            self.tr = tr_trm
-            self.hessian = hessian_trm
-            self.optimizer = BFGSTRMOptimizer()
-        elif self.mode == "lbfgs":
-            self.corrections = corrections_lbfgs
-            self.scale = scale_lbfgs
-            self.qlist = qlist_lbfgs
-            self.glist = glist_lbfgs
-            self.optimizer = LBFGSOptimizer()
-        elif self.mode == "sd":
-            self.optimizer = SDOptimizer()
-        elif self.mode == "cg":
-            self.optimizer = CGOptimizer()
         else:
             self.optimizer = DummyOptimizer()
 
@@ -129,8 +119,13 @@ class CellopMotion(Motion):
 
     def step(self, step=None):
         self.optimizer.step(step)
-
+"""def dd(dobj):
+    if not issubclass(dobj.__class__, dobject):
+        raise ValueError("Cannot access a ddirect view of an object which is not a subclass of dobject")
+    return dobj._direct
+"""
 class GradientMapper(object):
+
 
     """Creation of the multi-dimensional function that will be minimized.
     Used in the BFGS and L-BFGS minimizers.
@@ -141,7 +136,7 @@ class GradientMapper(object):
         dforces: copy of the forces object
     """
 
-    def __init__(self,h=None):
+    def __init__(self):
         self.fcount = 0
         """Initialises base cell class.
 
@@ -151,42 +146,24 @@ class GradientMapper(object):
               triangular 3*3 matrix. Defaults to a 3*3 zeroes matrix.
         """
 
-        if h is None:
-            h = np.zeros((3, 3), float)
-
-        dself = dd(self)  # gets a direct-access view to self
-
-        dself.h = depend_array(name='h', value=h)
-        dself.ih = depend_array(name="ih", value=np.zeros((3, 3), float),
-                                func=self.get_ih, dependencies=[dself.h])
-        dself.V = depend_value(name='V', func=self.get_volume,
-                               dependencies=[dself.h])
         pass
 
-    def bind(self, dumop, atoms, cell, ff):
+    def bind(self, dumop):
         self.dbeads = dumop.beads.copy()
+        #print("dbead.q", self.dbeads.q)
         self.dcell = dumop.cell.copy()
         self.dforces = dumop.forces.copy(self.dbeads, self.dcell)
         self.h0 = dstrip(self.dcell.h).copy()
         self.ih0 = dstrip(self.dcell.ih).copy()
-        global fbuid  # assign a unique identifier to each forcebead object
-        with self._threadlock:
+        sp = self.dcell.positions_abs_to_scaled(self.dbeads.q)
+        #print("sp", sp)
+        ap = self.dcell.positions_scaled_to_abs(sp)
+        #print("ap", ap)
 
-            self.uid = fbuid
-            fbuid += 1
+
 
             # stores a reference to the atoms and cell we are computing forces for
-        self.atoms = atoms
-        self.cell = cell
-        self.ff = ff
-        dself = dd(self)
 
-            # ufv depends on the atomic positions and on the cell
-        dself.ufvx.add_dependency(dd(self.atoms).q)
-        dself.ufvx.add_dependency(dd(self.cell).h)
-        dcopy(dself.f, dself.fx)
-        dcopy(dself.f, dself.fy)
-        dcopy(dself.f, dself.fz)
 
 
     def __call__(self, x):
@@ -194,16 +171,16 @@ class GradientMapper(object):
 
         self.fcount += 1
         self.dbeads.q = x
-        self.h0
+        self.h0 ###should be passed from input.xml
 
         self.pext = 0.0 #  for zero external pressure
-        self.strain = (np.dot(dstrip(self.dcell.h),self.ih0) - np.eye(3)).flatten()
-        self.metric = np.dot(self.dcell.h.T, self.dcell.h)
+        self.strain = (np.dot(dstrip(self.dcell.h),self.ih0) - np.eye(3)).flatten() #epsilon
+        self.metric = np.dot(self.dcell.h.T, self.dcell.h) #g = hTh
+        f  = self.dforces.f[0] #check if it refers to the 0 bead or centriod
 
-        f  = self.dforces.f[0]
         nat = len(f) / 3
         f = f.reshape((nat,3))
-        sf = np.dot()
+        #sf = np.dot()
 
 
         # Defines the effective energy
@@ -219,7 +196,7 @@ class GradientMapper(object):
 
         #entp = self.dforces.pot + (np.trace((self.dforces.vir) / 3.0))  # enthalpy
 
-        ggT =
+        #ggT =
         print("LIST OF PRINTED PROPS")
         print(self.dforces.pot / self.dbeads.nbeads, np.trace((self.dforces.vir) / (3.0 * self.dcell.V)),self.tensor2vec((self.dforces.vir) / self.dcell.V))
         return e, g
@@ -237,7 +214,7 @@ class GradientMapper(object):
     #def scaled_forces(self):
         #scaledForce = np.linalg.solve(self.dcell.h.T, self.dforces.f.T).T
         #return scaledForce
-
+     #print(self.dbeads.q)
 
 class DummyOptimizer(dobject):
     """ Dummy class for all optimization classes """
@@ -252,13 +229,6 @@ class DummyOptimizer(dobject):
         """Dummy simulation time step which does nothing."""
         pass
 
-   def scaled_to_abs(self):
-       absposition = np.dot(self.dcell.h.T,abs_to_scaled(self).T).T
-       return absposition
-
-   def abs_to_scaled(self):
-       fractional = np.linalg.solve(self.dcell.h.T, self.dbeads.q.T).T
-       return fractional
 
     def bind(self, geop):
         """
@@ -270,7 +240,7 @@ class DummyOptimizer(dobject):
         self.forces = geop.forces
         self.fixcom = geop.fixcom
         self.fixatoms = geop.fixatoms
-        self.p_ext = geop.p_ext # should come from the i-pi input
+        #self.p_ext = geop.p_ext # should come from the i-pi input
 
         self.mode = geop.mode
         self.tolerances = geop.tolerances
@@ -381,6 +351,11 @@ class BFGSOptimizer(DummyOptimizer):
         if step == 0:
             info(" @GEOP: Initializing BFGS", verbosity.debug)
             self.d += dstrip(self.forces.f) / np.sqrt(np.dot(self.forces.f.flatten(), self.forces.f.flatten()))
+            print(self.gm.dforces.f[0])
+            af = dstrip(self.gm.dforces.f[0]).copy()
+            print("gm.dforce",self.gm.dforces.forces_abs_to_scaled(af))
+            sf = dstrip(self.gm.dforces.forces_abs_to_scaled(af)).copy()
+            print("af", self.gm.dforces.forces_scaled_to_abs(sf))
 
             if len(self.fixatoms) > 0:
                 for dqb in self.d:
@@ -391,6 +366,8 @@ class BFGSOptimizer(DummyOptimizer):
         self.old_x[:] = self.beads.q
         self.old_u[:] = self.forces.pot
         self.old_f[:] = self.forces.f
+        if step > 0:
+            self.exitstep(self.forces.pot, self.old_u, d_x_max)
 
         if len(self.fixatoms) > 0:
             for dqb in self.old_f:

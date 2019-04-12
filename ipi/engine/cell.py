@@ -106,6 +106,44 @@ class Cell(dobject):
 
         pos[:] = s.reshape((len(s) * 3))
 
+    def positions_abs_to_scaled(self, pos):
+        """Uses the minimum image convention to return a list of particles to the
+           unit cell.
+
+        Args:
+           atom: An Atom object.
+
+        Returns:
+           An array giving the position of the image that is inside the
+           system box.
+        """
+
+        s = dstrip(pos).copy()
+        s.shape = (pos.shape[1] / 3, 3)
+        s = np.dot(dstrip(self.ih), s.T).T
+        pos[:] = s.reshape((len(s) * 3))
+    
+        return pos
+    def positions_scaled_to_abs(self, pos):
+        """Uses the minimum image convention to return a list of particles to the
+           unit cell.
+
+        Args:
+           atom: An Atom object.
+
+        Returns:
+           An array giving the position of the image that is inside the
+           system box.
+        """
+
+        s = dstrip(pos).copy()
+        s.shape = (pos.shape[1] / 3, 3)
+        s = np.dot(dstrip(self.h), s.T).T
+        pos[:] = s.reshape((len(s) * 3))
+
+        return pos
+
+
     def minimum_distance(self, atom1, atom2):
         """Takes two atoms and tries to find the smallest vector between two
         images.

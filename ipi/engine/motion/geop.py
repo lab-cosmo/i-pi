@@ -187,6 +187,7 @@ class GradientMapper(object):
         self.dcell = dumop.cell.copy()
         self.dforces = dumop.forces.copy(self.dbeads, self.dcell)
 
+
     def __call__(self, x):
         """computes energy and gradient for optimization step"""
 
@@ -194,6 +195,7 @@ class GradientMapper(object):
         self.dbeads.q = x
         e = self.dforces.pot   # Energy
         g = -self.dforces.f   # Gradient
+
         return e, g
 
 
