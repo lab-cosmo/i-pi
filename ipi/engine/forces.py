@@ -1023,7 +1023,7 @@ class Forces(dobject):
                 for i in range(3):
                     for j in range(3):
                         dv[:, i, j] += self.mrpc[index].b2tob1(self.mforces[index].virs[:, i, j])
-                rp += self.mforces[index].weight * dv * np.einsum("i,ij -> ij", self.mforces[index].beads_weight,
+                rp += (self.mforces[index].weight * np.einsum("i,ijk->ijk", self.mforces[index].beads_weight,dv)*
                                                 self.mforces[index].mts_weights[level])
         return rp
 
