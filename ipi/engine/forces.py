@@ -1058,10 +1058,10 @@ class Forces(dobject):
         for k in range(self.nforces):
             if self.mforces[k].weight != 0 and self.mforces[k].mts_weights.sum() != 0:
                 fv = dstrip(self.forcesvirs_4th_order(k))
-                rf += self.mforces[k].weight * fv[0] * np.einsum("i,ij -> ij", self.mforces[k].beads_weight,
-                                                          self.mforces[k].mts_weights.sum())
-                rv += self.mforces[k].weight * fv[1] * np.einsum("i,ij -> ij", self.mforces[k].beads_weight,
-                                                          self.mforces[k].mts_weights.sum())
+                rf += (self.mforces[k].weight * self.mforces[k].mts_weights.sum() *
+                       np.einsum("i,ij -> ij", self.mforces[k].beads_weight,fv[0]) )
+                rv += ( self.mforces[k].weight * self.mforces[k].mts_weights.sum() *
+                       np.einsum("i,ijk -> ijk", self.mforces[k].beads_weight, fv[1]) )
         return [rf, rv]
 
     def pot_combine(self):
