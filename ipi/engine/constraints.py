@@ -12,7 +12,8 @@ import numpy as np
 
 from ipi.utils.depend import dobject, dd, depend_array, depend_value, dstrip
 
-__all__ = ['Replicas','HolonomicConstraint','BondLength','BondAngle']
+__all__ = ['Replicas','HolonomicConstraint','BondLength','BondAngle',
+           'EckartTransX', 'EckartTransY', 'EckartTransZ']
 
 class Replicas(dobject):
 
@@ -124,11 +125,11 @@ class HolonomicConstraint(dobject):
         if (dofs.ndim != 1):
             raise ValueError("Shape of constrained DoF group incompatible "+
                              "with "+dself.__class__.__name__)
-        if (dofs.shape != (ndof,) and ndof != -1):
+        if (dofs.size != ndof and ndof != -1):
             raise ValueError("Size of constrained DoF group incompatible "+
                              "with "+dself.__class__.__name__)
         dself.dofs = depend_array(name="dofs",value=dofs)
-        self.ndof = ndof
+        self.ndof = len(dself.dofs)
         if val is not None:
             if not np.isscalar(val):
                 raise TypeError("Expecting a scalar for target constraint value")
@@ -370,9 +371,10 @@ class EckartTrans(HolonomicConstraint):
                                  dependencies=dself._q)
         dself._mrel = depend_array(name="_mrel", func=self.get_mrel,
                                  value=np.zeros(self.ndof, float),
-                                 dependencies=dself._m)
+                                 dependencies=[dself._m])
         dself.sigma = depend_value(name="sigma", func=self.get_sigma,
-                                   dependencies=[dself._qc, dself._mrel,
+                                   dependencies=[dself._qc,
+                                                 dself._mrel,
                                                  dself.targetval])
         if self.targetval is None:
             # Set to the current position of the CoM
@@ -392,9 +394,8 @@ class EckartTrans(HolonomicConstraint):
         """Return the masses of the centroids, divided by the total mass.
         """
 
-        ans = np.asarray([m[0] for m in self._m])
-        ans /= ans.sum()
-        return ans
+        mtot = np.sum(self._m)
+        return dstrip(self._m)/mtot
 
     def get_sigma(self):
         return np.dot(self._mrel, self._qc) - self.targetval
@@ -489,7 +490,7 @@ class EckartRot(HolonomicConstraint):
         dself = dd(self)
         dself._mrel = depend_array(name="_mrel", func=self.get_mrel,
                                  value=np.zeros((2,self.ndof//2), float),
-                                 dependencies=dself._m)
+                                 dependencies=[dself._m])
         if "ref" in kwargs:
             lref = np.asarray(kwargs["ref"]).flatten()
             ref = np.asarray(

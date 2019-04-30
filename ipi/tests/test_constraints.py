@@ -9,7 +9,8 @@ from common import local
 from ipi.utils.depend import dstrip
 from ipi.engine.initializer import init_file
 from ipi.engine.beads import Beads
-from ipi.engine.constraints import Replicas, BondLength, BondAngle
+from ipi.engine.constraints import Replicas, BondLength, BondAngle, \
+                                   EckartTransX, EckartTransY, EckartTransZ
 import numpy as np
 import pytest
 
@@ -69,6 +70,51 @@ def bondangle(beads, indices, target):
 
     return sigma, grad.T
 
+def com(beads, indices, target):
+    """Calculate the position of the centre of mass of a system of beads
+       and return the corresponding value of the constraint function and
+       its gradient.
+    """
+    natom = len(indices)//3
+    grad = np.empty((beads.nbeads,natom),float)
+    for i in range(len(indices[::3])):
+        grad[:,i] = beads.m[i]
+    mtot = np.sum(grad)
+    grad /= mtot
+    sigma = np.sum(grad[:,:,None]*np.reshape(
+                dstrip(beads.q)[:,indices],
+                (-1,natom,3)), axis=(0,1))
+    sigma -= target
+    return sigma, grad.T
+
+def eckart_rot(beads, indices, reference):
+    """Calculate the angular-momentum-like quantity that appears in the
+       rotational Eckart conditions and return the corresponding value
+       of the constraint function and its gradient.
+    """
+    # Calculate the total mass of the RP
+    natom = len(indices)//3
+    m = np.empty((beads.nbeads,natom,3))
+    for i in range(len(indices[::3])):
+        m[:,i,:] = beads.m[i]
+    mtot = np.sum(m[:,:,0])
+
+    # Calculate the reference CoM
+    lref = np.asarray([reference[i] for i in indices]).reshape((natom,3))
+    ref_com = np.sum(mtot[0,:,:]*lref, axis=0)/np.sum(m[0,:,0])
+
+    # Calculate the reference configuration in its CoM, weighted
+    # by mass/mtot
+    lref -= ref_com
+    lref *= m[0,...]
+    lref /= mtot
+
+    #TODO: calculate the gradients for the Cartesian components
+    #(y,z), (z,x) and (x,y)
+
+    #TODO: calculate the sum of cross-products
+
+
 def test_replicas():
     beads, replica_list = create_beads(local("test.ice_Ih.xyz"))
     assert beads.q[:,0] == pytest.approx(replica_list[0].q)
@@ -122,3 +168,39 @@ def test_angle():
     sigma, grad = bondangle(beads, dofs, new_target)
     assert bond_constraint.sigma == pytest.approx(sigma)
     assert bond_constraint.jac == pytest.approx(grad)
+
+def test_eckart_trans():
+    beads, replicas = create_beads(local("test.ice_Ih.xyz"))
+    dofs = list(range(9))
+    com_constraints = [cls(dofs) for cls in (
+                                             EckartTransX,
+                                             EckartTransY,
+                                             EckartTransZ)]
+    for c in com_constraints:
+        c.bind(replicas)
+    sigma, grad = com(
+            beads, dofs, np.asarray(
+                    [c.targetval for c in com_constraints]))
+    assert np.asarray([c.sigma for c in com_constraints]) == pytest.approx(sigma)
+    for c in com_constraints:
+        assert c.jac == pytest.approx(grad)
+    # vary targetval
+    new_target = [2.5, -1.0, 5.0]
+    for c,t in zip(com_constraints,new_target):
+        c.targetval = t
+    sigma, grad = com(beads, dofs, np.asarray(new_target))
+    assert np.asarray([c.sigma for c in com_constraints]) == pytest.approx(sigma)
+    for c in com_constraints:
+        assert c.jac == pytest.approx(grad)
+    # vary configuration
+    beads.q[0,dofs[2]] = 1.0
+    beads.q[1,dofs[4]] =-1.5
+    beads.q[3,dofs[8]] = 2.7
+    sigma, grad = com(beads, dofs, np.asarray(new_target))
+    replicas[dofs[2]].q[0] = beads.q[0,dofs[2]]
+    replicas[dofs[4]].q[1] = beads.q[1,dofs[4]]
+    replicas[dofs[8]].q[3] = beads.q[3,dofs[8]]
+    assert np.asarray([c.sigma for c in com_constraints]) == pytest.approx(sigma)
+    for c in com_constraints:
+        assert c.jac == pytest.approx(grad)
+
