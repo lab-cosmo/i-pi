@@ -40,10 +40,10 @@ class SCPhononsMover(Motion):
         """
         Initialises SCPhononsMover.
         Args:
-        fixcom	: An optional boolean which decides whether the centre of mass
-                  motion will be constrained or not. Defaults to False. 
-        matrix	: A 3Nx3N array that stores the dynamic matrix.
-        oldk	: An integr that stores the number of rows calculated.
+        fixcom  : An optional boolean which decides whether the centre of mass
+                  motion will be constrained or not. Defaults to False.
+        matrix  : A 3Nx3N array that stores the dynamic matrix.
+        oldk    : An integr that stores the number of rows calculated.
         delta: A 3Nx3N array that stores the dynamic matrix.
         """
 
@@ -61,7 +61,7 @@ class SCPhononsMover(Motion):
         self.max_iter = max_iter
         self.prefix = prefix
         self.chop = chop
-        self.random_type = random_type
+        self.random_type = "file" ### HARDCODED!!! random_type
         self.displace_mode = displace_mode
         self.widening = widening
         self.wthreshold = wthreshold
@@ -119,6 +119,10 @@ class SCPhononsMover(Motion):
         self.imc = 0
         self.phononator = SCPhononator()
         self.phononator.bind(self)
+
+        # reads sobol points from file!
+        if self.random_type == "file":
+            self.random_sequence = np.loadtxt("SOBOL-RNG")
 
     def step(self, step=None):
         if(self.isc == self.max_iter):
@@ -194,7 +198,7 @@ class SCPhononator(DummyPhononator):
         self.checkweights = self.dm.checkweights
 
     def reset(self):
-        """ 
+        """
         Resets the variables for a new round of phonon evaluation.
         """
         self.dm.w = np.zeros(self.dm.dof)
@@ -219,9 +223,9 @@ class SCPhononator(DummyPhononator):
         np.savetxt(self.dm.prefix + ".q." + str(self.dm.isc), self.dm.beads.q)
         np.savetxt(self.dm.prefix + ".w." + str(self.dm.isc), self.dm.w)
         np.savetxt(self.dm.prefix + ".V0." + str(self.dm.isc), self.dm.forces.pots)
-       
-       
-        
+
+
+
         # Creates a list of configurations that are to be sampled.
         while self.dm.imc <= self.dm.max_steps:
 
@@ -232,6 +236,9 @@ class SCPhononator(DummyPhononator):
               x = np.random.multivariate_normal(np.zeros(self.dm.dof), np.eye(self.dm.dof)).reshape((self.dm.dof, 1))
           elif(self.dm.random_type == "sobol"):
               x = self.sobol_vector(self.dm.dof, (self.dm.isc) * self.dm.max_steps / 2  + (self.dm.imc + 1) / 2).reshape((self.dm.dof, 1))
+          elif(self.dm.random_type == "file"):
+              irng = (self.dm.isc) * self.dm.max_steps / 2  + (self.dm.imc + 1) / 2
+              x = self.fginv(self.dm.random_sequence[irng])
 
           # Transforms the "normal" random number and stores it.
           x = np.dot(self.dm.isqM, np.dot(self.dm.sqtD, x)) * self.widening
@@ -239,7 +246,7 @@ class SCPhononator(DummyPhononator):
           self.dm.imc += 1
 
           # Performs an inversion to the displacement and samples another configuration.
-          x = -x 
+          x = -x
           self.x[self.dm.isc, self.dm.imc - 1] = (self.dm.beads.q + x.T)[-1]
           self.dm.imc += 1
 
@@ -296,7 +303,7 @@ class SCPhononator(DummyPhononator):
           if np.all(np.abs(fnm) < ferrnm):
             print "FORCES ARE NOT STATISTICALLY SIGNIFICANT! BAILING OUT OF THE DISPLACE MODE"
             return
-          elif np.max(swl) < self.wthreshold: #or np.all(np.abs(dqnm) < self.qthreshold): 
+          elif np.max(swl) < self.wthreshold: #or np.all(np.abs(dqnm) < self.qthreshold):
             print "WEIGHTS ARE TOO LARGE! BAILING OUT OF THE DISPLACE MODE"
             return
 
@@ -431,7 +438,7 @@ class SCPhononator(DummyPhononator):
 
         elif(self.dm.displace_mode == "rewt"):
 
-            # Finds the new q0 using reweighted sampling. 
+            # Finds the new q0 using reweighted sampling.
             while True:
                 self.q_old = dstrip(self.dm.beads.q).copy()
                 w = 1.0
@@ -488,7 +495,7 @@ class SCPhononator(DummyPhononator):
                         print "INNER LOOP [j, np.max(swl)]", jj, np.max(swl)
                         break
 
-                # Dampens the displacement between SCPhonons steps if the change in displacement is negative. 
+                # Dampens the displacement between SCPhonons steps if the change in displacement is negative.
                 self.dq_old = dstrip(self.dq).copy()
                 dqnm_old = np.dot(self.dm.V.T, self.dq_old[0] * self.dm.m3)
                 self.dq = self.dm.beads.q - self.q_old
@@ -507,7 +514,7 @@ class SCPhononator(DummyPhononator):
                 self.apply_asr()
                 self.apply_hpf()
 
-                # Dampens the Hessian between SCPhonons steps if the change its value is negative. 
+                # Dampens the Hessian between SCPhonons steps if the change its value is negative.
                 self.w2, U = np.linalg.eigh(self.dm.dynmatrix)
                 self.w2 = np.absolute(self.w2)
                 self.dm.dynmatrix = np.tensordot(self.w2 * U,U.T, axes=1)
@@ -563,7 +570,7 @@ class SCPhononator(DummyPhononator):
             swl[i] = sw
             # Simply multiplies the forces by the weights and averages
             V1 = np.sum(rw)
-            V2 = np.sum(rw**2)    
+            V2 = np.sum(rw**2)
             afi = np.sum(rw * (f-fh), axis=0) / V1
             vfi = np.sum(rw * (f-fh - afi)**2, axis=0) / (V1 - V2 / V1)
             #sw = 1.0 / vfi
@@ -589,7 +596,7 @@ class SCPhononator(DummyPhononator):
 #           w, sw, rw = self.calculate_weights(qp, iDp, i)
 #           # Simply multiplies the forces by the weights and averages
 #           V1 = np.sum(rw)
-#           V2 = np.sum(rw**2)    
+#           V2 = np.sum(rw**2)
 #           # Simply multiplies the forces by the weights and averages
 #           adki = -np.einsum("jk,ilk,ip->jl", iDp, np.einsum("ij,ik->ijk", f-fh, x - qp[-1]), rw) / V1
 #           akdi =  0.50 * (adki + adki.T)
@@ -660,8 +667,8 @@ class SCPhononator(DummyPhononator):
             td[self.z] = 0.0
             tdm[self.nz] = (self.dm.iw[self.nz])**2 * self.dm.temp
             tdm[self.z] = 0.0
-         
-        # Calculates the inverse and the square of the mass scaled displacements.   
+
+        # Calculates the inverse and the square of the mass scaled displacements.
         itd[self.nz] = np.divide(1.0, td[self.nz])
         itd[self.z] = 0.0
         itdm[self.nz] = np.divide(1.0, tdm[self.nz])
@@ -797,6 +804,13 @@ class SCPhononator(DummyPhononator):
         """
         Computes a sobol vector of given dimensionality.
         """
-        return self.fginv(sb(dim, k)) 
+
+        sobv = self.fginv(sb(dim, k))
+        print dim, k, len(sobv)
+        sobv.shape = (1,dim)
+        f = open("sobol", "a+")
+        np.savetxt(f, sobv)
+        f.close()
+        return sobv
 
 

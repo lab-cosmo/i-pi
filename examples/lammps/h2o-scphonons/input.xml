@@ -22,8 +22,8 @@
     <scp mode='qn'>
       <dynmat mode='file'> dynmat.data  </dynmat>
       <asr> molecule </asr>
-      <max_steps> 100 </max_steps>
-      <max_iter> 50 </max_iter>
+      <max_steps> 400 </max_steps>
+      <max_iter> 20 </max_iter>
       <prefix> simulation </prefix>
       <tau> 10 </tau>
       <chop> [1e-9,1000] </chop>
