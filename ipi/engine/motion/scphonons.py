@@ -250,7 +250,7 @@ class SCPhononator(DummyPhononator):
 
             # picks the elements of the vector in a random order.
             # this introduces a degree of randomness in the sobol-like PRNGs
-            x = x[self.random_shuffle]
+            x = x[self.dm.random_shuffle]
 
             # Transforms the "normal" random number and stores it.
             x = np.dot(self.dm.isqM, np.dot(self.dm.sqtD, x)) * self.widening
