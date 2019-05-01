@@ -808,11 +808,11 @@ class SCPhononator(DummyPhononator):
         """
 
         sobv = self.fginv(sb(dim, k))
-        print dim, k, len(sobv)
-        sobv.shape = (1,dim)
-        f = open("sobol", "a+")
-        np.savetxt(f, sobv)
-        f.close()
+#        print dim, k, len(sobv)
+#        sobv.shape = (1,dim)
+#        f = open("sobol", "a+")
+#        np.savetxt(f, sobv)
+#        f.close()
         return sobv
 
 
