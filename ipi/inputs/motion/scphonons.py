@@ -45,59 +45,51 @@ class InputSCPhonons(InputDictionary):
                                          "options": ["qn", "cl"]})}
     #!TODO give more informative help strings. When there are multiple options, the meaning of the options should be explained
     fields = {
-        "prefix": (InputValue, {"dtype": str, "default": "phonons",
+        "prefix": (InputValue, {"dtype": str, "default": "scphonons",
                                 "help": "Prefix of the output files."
                                 }),
-                "asr": (InputValue, {"dtype": str, "default": "none",
-                                     "options": ["none", "crystal", "molecule", "internal"],
-                                     "help": "Shift by this much the dynamical matrix in the output."
+        "asr": (InputValue, {"dtype": str, "default": "none",
+                             "options": ["none", "crystal", "molecule" ],
+                             "help": "The method used to project out zero modes coming from continuous symmetries : crystal removes the three translational modes. molecule removes the three rotational modes in addition to the translational ones. none keeps all the modes."
+                             }),
+        "random_type": (InputValue, {"dtype": str, "default": "pseudo",
+                                     "options": ["sobol", "pseudo", "file"],
+                                     "help": "Chooses the type of random numbers."
                                      }),
-                "random_type": (InputValue, {"dtype": str, "default": "pseudo",
-                                             "options": ["sobol", "pseudo", "file"],
-                                             "help": "Chooses the type of random numbers."
-                                             }),
-                #!TODO give more informative option name and explain the meaning in the help string
-                "displace_mode": (InputValue, {"dtype": str, "default": "rewt",
-                                               "options": ["rewt", "hessian", "nmik", "sD", "rnmik"],
-                                               "help": "Chooses the type of optimisation strategy for the centroid."
-                                               }),
-                "dynmat": (InputArray, {"dtype": float,
-                                        "default": np.zeros(0, float),
-                                        "help": "Portion of the dynamical matrix known up to now."}),
-                "dynmat_r": (InputArray, {"dtype": float,
-                                          "default": np.zeros(0, float),
-                                          "help": "Portion of the dynamical matrix known up to now (refining)."}),
-                "max_steps": (InputValue, {
-                    "dtype": int,
-                                        "default": None,
-                                        "help": "maximum number of Monte carlo steps."}),
-                "max_iter": (InputValue, {
-                    "dtype": int,
-                                        "default": 1,
-                                        "help": "maximum number of self consistent iterations."}),
-                "tau": (InputValue, {
-                    "dtype": float,
-                                        "default": 1.,
-                                        "help": "displacement scaling along the gradient."}),
-                "widening": (InputValue, {
-                    "dtype": float,
-                                        "default": 1.,
-                                        "help": "ratio of width of sampled distribution wrt the target distribution."}),
-                "wthreshold": (InputValue, {
-                    "dtype": float,
-                                        "default": 0.5,
-                                        "help": "threshold on minimum Boltzmann weights before more statistics must be accumulated."}),
-                "precheck": (InputValue, {
-                    "dtype": bool,
-                                        "default": True,
-                                        "help": "flag for checking statistical significance of forces before optimisation of centroid."}),
-                "checkweights": (InputValue, {
-                    "dtype": bool,
-                                        "default": False,
-                                        "help": "flag for checking Boltzmann weights for whether more statistics are required."}),
-                "chop": (InputArray, {"dtype": float,
-                                      "default": np.asarray([1e-09, 100]),
-                                      "help": ""}),
+        "displace_mode": (InputValue, {"dtype": str, "default": "nmik",
+                                       "options": ["ik", "sd", "nmik", "rnmik"],
+                                       "help": "The type of optimisation strategy for obtaining the mean position. sd stands for a steepest decent algorithm. ik stands for a Newton-Raphson scheme that requires the iverse of the force constant matrix iK. mnik stands for a Newton-Raphson scheme that only displaces along normal modes directions with statistically significant forces. rnmik same as nmik but performs several optimization steps using a reweighted sampling."
+                                       }),
+        "dynmat": (InputArray, {"dtype": float,
+                                "default": np.zeros(0, float),
+                                "help": "The dynamical matrix of the trial Hamiltonian."}),
+        "max_steps": (InputValue, {
+            "dtype": int,
+            "default": None,
+            "help": "Maximum number of Monte carlo steps per SCP iteration."}),
+        "max_iter": (InputValue, {
+            "dtype": int,
+            "default": 1,
+            "help": "Maximum number of SCP iterations."}),
+        "tau": (InputValue, {
+            "dtype": float,
+            "default": 1.,
+            "help": "Step size along the gradient for the sd displace_mode"}),
+        "wthreshold": (InputValue, {
+            "dtype": float,
+            "default": 0.5,
+            "help": "Threshold on minimum Boltzmann weights before more statistics must be accumulated."}),
+        "precheck": (InputValue, {
+            "dtype": bool,
+            "default": True,
+            "help": "Flag for checking statistical significance of forces before optimisation of mean position."}),
+        "checkweights": (InputValue, {
+            "dtype": bool,
+            "default": False,
+            "help": "Flag for checking Boltzmann weights for whether more statistics are required."}),
+        "chop": (InputValue, {"dtype": float,
+            "default": 1e-09,
+            "help": "Threshold below which frequencies are set to zero."}),
     }
 
     dynamic = {}
@@ -106,16 +98,16 @@ class InputSCPhonons(InputDictionary):
     default_label = "PHONONS"
 
     def store(self, phonons):
-        if phonons == {}: return
+        if phonons == {}:
+            return
         self.mode.store(phonons.mode)
         self.prefix.store(phonons.prefix)
         self.asr.store(phonons.asr)
         self.dynmat.store(phonons.dynmatrix)
-        self.dynmat_r.store(phonons.dynmatrix_r)
-        self.chop.store(phonons.chop)
         self.max_steps.store(phonons.max_steps)
         self.max_iter.store(phonons.max_iter)
         self.tau.store(phonons.tau)
+        self.chop.store(phonons.chop)
         self.random_type.store(phonons.random_type)
         self.displace_mode.store(phonons.displace_mode)
 

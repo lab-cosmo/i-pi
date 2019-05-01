@@ -26,7 +26,6 @@
       <max_iter> 20 </max_iter>
       <prefix> simulation </prefix>
       <tau> 10 </tau>
-      <chop> [1e-9,1000] </chop>
       <random_type> sobol </random_type>
       <displace_mode> nmik </displace_mode>
     </scp>
