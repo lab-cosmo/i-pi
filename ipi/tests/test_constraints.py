@@ -10,7 +10,8 @@ from ipi.utils.depend import dstrip
 from ipi.engine.initializer import init_file
 from ipi.engine.beads import Beads
 from ipi.engine.constraints import Replicas, BondLength, BondAngle, \
-                                   EckartTransX, EckartTransY, EckartTransZ
+                                   EckartTransX, EckartTransY, EckartTransZ, \
+                                   EckartRotX, EckartRotY, EckartRotZ
 import numpy as np
 import pytest
 
@@ -77,8 +78,8 @@ def com(beads, indices, target):
     """
     natom = len(indices)//3
     grad = np.empty((beads.nbeads,natom),float)
-    for i in range(len(indices[::3])):
-        grad[:,i] = beads.m[i]
+    for i,idx in enumerate(indices[::3]):
+        grad[:,i] = beads.m[idx//3]
     mtot = np.sum(grad)
     grad /= mtot
     sigma = np.sum(grad[:,:,None]*np.reshape(
@@ -95,25 +96,43 @@ def eckart_rot(beads, indices, reference):
     # Calculate the total mass of the RP
     natom = len(indices)//3
     m = np.empty((beads.nbeads,natom,3))
-    for i in range(len(indices[::3])):
-        m[:,i,:] = beads.m[i]
+    for i,idx in enumerate(indices[::3]):
+        m[:,i,:] = dstrip(beads.m)[idx//3]
     mtot = np.sum(m[:,:,0])
 
-    # Calculate the reference CoM
+    # Calculate the CoM of the reference configuration
     lref = np.asarray([reference[i] for i in indices]).reshape((natom,3))
-    ref_com = np.sum(mtot[0,:,:]*lref, axis=0)/np.sum(m[0,:,0])
+    ref_com = np.sum(m[0,:,:]*lref, axis=0)/np.sum(m[0,:,0])
 
     # Calculate the reference configuration in its CoM, weighted
     # by mass/mtot
-    lref -= ref_com
-    lref *= m[0,...]
-    lref /= mtot
+    mref = lref - ref_com
+    mref *= m[0,...]
+    mref /= mtot
 
-    #TODO: calculate the gradients for the Cartesian components
-    #(y,z), (z,x) and (x,y)
+    #Calculate the gradients of the three Cartesian components of the
+    #sum of cross-products
+    grad = np.empty((3,beads.nbeads,natom,2))
+    temp = np.empty((beads.nbeads,natom,3))
+    for i,jk in enumerate([(1,2), (2,0), (0,1)]):
+        for ndim,idx in enumerate(jk):
+            temp *= 0
+            temp[...,idx] = 1
+            grad[i,:,:,ndim] = np.cross(mref, temp, axis=-1)[:,:,i]
 
-    #TODO: calculate the sum of cross-products
+    #Calculate the sum of cross-products
+    temp.shape = (beads.nbeads,-1)
+    for i in indices:
+        temp[:,i] = dstrip(beads.q)[:,i]
+    temp.shape = (beads.nbeads,natom,3)
+    temp -= lref
+    sigma = np.cross(mref, temp, axis=-1).sum(axis=(0,1))
 
+    # Gradients needs to be transposed to agree with the ordering
+    # from EckartRot
+    return sigma, np.asarray([
+            np.transpose(g,(0,2,1)).reshape(beads.nbeads,-1).T
+            for g in grad])
 
 def test_replicas():
     beads, replica_list = create_beads(local("test.ice_Ih.xyz"))
@@ -204,3 +223,43 @@ def test_eckart_trans():
     for c in com_constraints:
         assert c.jac == pytest.approx(grad)
 
+def test_eckart_rot():
+    beads, replicas = create_beads(local("test.ice_Ih.xyz"))
+    dofs = list(range(9))
+    constraints = [cls(dofs) for cls in (EckartRotX,
+                                         EckartRotY,
+                                         EckartRotZ)]
+    for c in constraints:
+        c.bind(replicas)
+    # Calculate the centroids
+    reference = []
+    for rep in replicas:
+        reference.append(dstrip(rep.q).mean())
+    reference = np.array(reference)
+    sigma, grad = eckart_rot(
+            beads, dofs, reference)
+    for i,c in enumerate(constraints):
+        assert c.sigma == pytest.approx(sigma[i])
+        assert c.jac == pytest.approx(grad[i])
+    # vary reference
+    reference[0] += 1
+    reference[4] -= 1.56
+    reference[8] -= 3.87
+    for c in constraints:
+        c._ref[...] = reference[c.dofs].reshape((2,-1))
+    sigma, grad = eckart_rot(
+            beads, dofs, reference)
+    for i,c in enumerate(constraints):
+        assert c.sigma == pytest.approx(sigma[i])
+        assert c.jac == pytest.approx(grad[i])
+    # vary configuration
+    beads.q[0,dofs[2]] = 1.0
+    beads.q[1,dofs[4]] =-1.5
+    beads.q[3,dofs[8]] = 2.7
+    sigma, grad = eckart_rot(beads, dofs, reference)
+    replicas[dofs[2]].q[0] = beads.q[0,dofs[2]]
+    replicas[dofs[4]].q[1] = beads.q[1,dofs[4]]
+    replicas[dofs[8]].q[3] = beads.q[3,dofs[8]]
+    for i,c in enumerate(constraints):
+        assert c.sigma == pytest.approx(sigma[i])
+        assert c.jac == pytest.approx(grad[i])

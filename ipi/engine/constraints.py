@@ -13,7 +13,8 @@ import numpy as np
 from ipi.utils.depend import dobject, dd, depend_array, depend_value, dstrip
 
 __all__ = ['Replicas','HolonomicConstraint','BondLength','BondAngle',
-           'EckartTransX', 'EckartTransY', 'EckartTransZ']
+           'EckartTransX', 'EckartTransY', 'EckartTransZ',
+           'EckartRotX', 'EckartRotY', 'EckartRotZ',]
 
 class Replicas(dobject):
 
@@ -517,7 +518,8 @@ class EckartRot(HolonomicConstraint):
         """Return the masses of the centroids, divided by the total mass.
         """
 
-        ans = np.asarray([m[0] for m in self._m]).reshape((2,self.ndof//2))
+        ans = np.empty((2,self.ndof//2))
+        ans[...] = self._m.reshape((2,self.ndof//2))
         ans /= ans.sum(axis=-1)[:,None]
         return ans
 
@@ -545,8 +547,8 @@ class EckartRot(HolonomicConstraint):
 
     def get_jac(self):
         jac = np.empty_like(dstrip(self._q))
-        jac[:self.ndof//2,:] = -self._mref[:,1,None]
-        jac[self.ndof//2:,:] = self._mref[:,0,None]
+        jac[:self.ndof//2,:] = -self._mref[1,:,None]
+        jac[self.ndof//2:,:] = self._mref[0,:,None]
         jac /= self.nbeads
         return jac
 
