@@ -61,7 +61,7 @@ class SCPhononsMover(Motion):
         self.max_iter = max_iter
         self.prefix = prefix
         self.chop = chop
-        self.random_type = "file" ### HARDCODED!!! random_type
+        self.random_type = random_type
         self.displace_mode = displace_mode
         self.widening = widening
         self.wthreshold = wthreshold

@@ -36,13 +36,14 @@ __all__ = ['InputSCPhonons']
 class InputSCPhonons(InputDictionary):
     """Dynamic matrix calculation options.
 
-       Contains options related to self consistent phonons method. 
+       Contains options related to self consistent phonons method.
 
     """
 
     attribs = {"mode": (InputAttribute, {"dtype": str, "default": "qn",
                                          "help": "The algorithm to be used",
                                          "options": ["qn", "cl"]})}
+    #!TODO give more informative help strings. When there are multiple options, the meaning of the options should be explained
     fields = {
         "prefix": (InputValue, {"dtype": str, "default": "phonons",
                                 "help": "Prefix of the output files."
@@ -52,9 +53,10 @@ class InputSCPhonons(InputDictionary):
                                      "help": "Shift by this much the dynamical matrix in the output."
                                      }),
                 "random_type": (InputValue, {"dtype": str, "default": "pseudo",
-                                             "options": ["sobol", "pseudo"],
+                                             "options": ["sobol", "pseudo", "file"],
                                              "help": "Chooses the type of random numbers."
                                              }),
+                #!TODO give more informative option name and explain the meaning in the help string
                 "displace_mode": (InputValue, {"dtype": str, "default": "rewt",
                                                "options": ["rewt", "hessian", "nmik", "sD", "rnmik"],
                                                "help": "Chooses the type of optimisation strategy for the centroid."
