@@ -36,7 +36,7 @@ class SCPhononsMover(Motion):
     Self consistent phonons method.
     """
 
-    def __init__(self, fixcom=False, fixatoms=None, mode="sc", dynmat=np.zeros(0, float), dynmat_r=np.zeros(0, float), prefix="", asr="none", chop=np.asarray([1e-7, 1e-10]), max_steps=500, max_iter=1, tau=-1, random_type="pseudo", displace_mode="rewt", widening=1.0, wthreshold=0.0, precheck=True, checkweights=False):
+    def __init__(self, fixcom=False, fixatoms=None, mode="sc", dynmat=np.zeros(0, float), prefix="", asr="none", max_steps=500, max_iter=1, tau=-1, chop=1e-9, random_type="pseudo", displace_mode="rewt", widening=1.0, wthreshold=0.0, precheck=True, checkweights=False):
         """
         Initialises SCPhononsMover.
         Args:
@@ -51,7 +51,6 @@ class SCPhononsMover(Motion):
 
         # Finite difference option.
         self.dynmatrix = dynmat
-        self.dynmatrix_r = dynmat_r
         self.frefine = False
         self.U = None
         self.mode = mode
@@ -76,21 +75,20 @@ class SCPhononsMover(Motion):
 
         # Raises error for nbeads not equal to 1.
         if(self.beads.nbeads > 1):
-            raise ValueError("Calculation not possible for number of beads greater than one")
+            raise ValueError(
+                "Calculation not possible for number of beads greater than one")
 
         # Initialises a 3*number of atoms X 3*number of atoms dynamic matrix.
         if(self.dynmatrix.size != (beads.q.size * beads.q.size)):
             if(self.dynmatrix.size == 0):
                 self.dynmatrix = np.zeros((beads.q.size, beads.q.size), float)
-                self.dynmatrix_r = np.zeros((beads.q.size, beads.q.size), float)
+                self.dynmatrix_r = np.zeros(
+                    (beads.q.size, beads.q.size), float)
             else:
-                raise ValueError("Force constant matrix size does not match system size")
+                raise ValueError(
+                    "Force constant matrix size does not match system size")
         self.dynmatrix = self.dynmatrix.reshape((beads.q.size, beads.q.size))
-        if(self.chop.size == 2):
-            self.atol = self.chop[0]
-            self.rtol = self.chop[1]
-        else:
-            raise ValueError("Size of tolerance array for chopping dynmatrix not correct")
+        self.atol = self.chop
 
         # Creates dublicate classes to easer computation of forces.
         self.dof = 3 * self.beads.natoms
@@ -224,33 +222,35 @@ class SCPhononator(DummyPhononator):
         np.savetxt(self.dm.prefix + ".iD." + str(self.dm.isc), self.dm.iD)
         np.savetxt(self.dm.prefix + ".q." + str(self.dm.isc), self.dm.beads.q)
         np.savetxt(self.dm.prefix + ".w." + str(self.dm.isc), self.dm.w)
-        np.savetxt(self.dm.prefix + ".V0." + str(self.dm.isc), self.dm.forces.pots)
-
-
+        np.savetxt(self.dm.prefix + ".V0." +
+                   str(self.dm.isc), self.dm.forces.pots)
 
         # Creates a list of configurations that are to be sampled.
         while self.dm.imc <= self.dm.max_steps:
 
-          # Selects a suitable random number generator and samples random numbers from a multivariate
-          # normal distribution.
+            # Selects a suitable random number generator and samples random numbers from a multivariate
+            # normal distribution.
 
-          if(self.dm.random_type == "pseudo"):
-              x = np.random.multivariate_normal(np.zeros(self.dm.dof), np.eye(self.dm.dof)).reshape((self.dm.dof, 1))
-          elif(self.dm.random_type == "sobol"):
-              x = self.sobol_vector(self.dm.dof, (self.dm.isc) * self.dm.max_steps / 2  + (self.dm.imc + 1) / 2).reshape((self.dm.dof, 1))
-          elif(self.dm.random_type == "file"):
-              irng = (self.dm.isc) * self.dm.max_steps / 2  + (self.dm.imc + 1) / 2
-              x = self.fginv(self.dm.random_sequence[irng])
+            if(self.dm.random_type == "pseudo"):
+                x = np.random.multivariate_normal(
+                    np.zeros(self.dm.dof), np.eye(self.dm.dof)).reshape((self.dm.dof, 1))
+            elif(self.dm.random_type == "sobol"):
+                x = self.sobol_vector(self.dm.dof, (self.dm.isc) * self.dm.max_steps / 2 + (
+                    self.dm.imc + 1) / 2).reshape((self.dm.dof, 1))
+            elif(self.dm.random_type == "file"):
+                irng = (self.dm.isc) * self.dm.max_steps / \
+                    2 + (self.dm.imc + 1) / 2
+                x = self.fginv(self.dm.random_sequence[irng])
 
-          # Transforms the "normal" random number and stores it.
-          x = np.dot(self.dm.isqM, np.dot(self.dm.sqtD, x)) * self.widening
-          self.x[self.dm.isc, self.dm.imc - 1] = (self.dm.beads.q + x.T)[-1]
-          self.dm.imc += 1
+            # Transforms the "normal" random number and stores it.
+            x = np.dot(self.dm.isqM, np.dot(self.dm.sqtD, x)) * self.widening
+            self.x[self.dm.isc, self.dm.imc - 1] = (self.dm.beads.q + x.T)[-1]
+            self.dm.imc += 1
 
-          # Performs an inversion to the displacement and samples another configuration.
-          x = -x
-          self.x[self.dm.isc, self.dm.imc - 1] = (self.dm.beads.q + x.T)[-1]
-          self.dm.imc += 1
+            # Performs an inversion to the displacement and samples another configuration.
+            x = -x
+            self.x[self.dm.isc, self.dm.imc - 1] = (self.dm.beads.q + x.T)[-1]
+            self.dm.imc += 1
 
         # Resets the number of MC steps to 1.
         self.dm.imc = 1
@@ -277,9 +277,12 @@ class SCPhononator(DummyPhononator):
         """
 
         # Also saves the sampled configurations and their energetics.
-        np.savetxt(self.dm.prefix + ".v." + str(self.dm.isc), self.v[self.dm.isc])
-        np.savetxt(self.dm.prefix + ".x." + str(self.dm.isc), self.x[self.dm.isc])
-        np.savetxt(self.dm.prefix + ".f." + str(self.dm.isc), self.f[self.dm.isc])
+        np.savetxt(self.dm.prefix + ".v." +
+                   str(self.dm.isc), self.v[self.dm.isc])
+        np.savetxt(self.dm.prefix + ".x." +
+                   str(self.dm.isc), self.x[self.dm.isc])
+        np.savetxt(self.dm.prefix + ".f." +
+                   str(self.dm.isc), self.f[self.dm.isc])
 
         self.dm.isc += 1
         self.dm.imc = 0
@@ -289,284 +292,175 @@ class SCPhononator(DummyPhononator):
         Displaces the configuration towards the optimized limit.
         """
 
-        dK = self.weightedhessian(self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+        dK = self.weightedhessian(
+            self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
         dm = np.dot(self.dm.isqM, np.dot((dK + dK.T) / 2.0, self.dm.isqM))
-        dw , dU = np.linalg.eig(dm)
+        dw, dU = np.linalg.eig(dm)
         dw[np.absolute(dw) < self.dm.atol] = self.dm.atol * 1e-3
-        #if np.any(dw < 0.0):
-            #print "at least one -ve frequency encountered. Bailing out of the optimization procedure."
-            #return
+        # if np.any(dw < 0.0):
+        #print "at least one -ve frequency encountered. Bailing out of the optimization procedure."
+        # return
         # Checks if the force is statistically significant.
         if self.precheck:
-          f, ferr, swl  = self.weightedforce(self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
-          fnm = np.dot(self.dm.V.T, f)
-          ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
-          fnm[self.z] = 0.0
-          if np.all(np.abs(fnm) < ferrnm):
-            print "FORCES ARE NOT STATISTICALLY SIGNIFICANT! BAILING OUT OF THE DISPLACE MODE"
-            return
-          elif np.max(swl) < self.wthreshold: #or np.all(np.abs(dqnm) < self.qthreshold):
-            print "WEIGHTS ARE TOO LARGE! BAILING OUT OF THE DISPLACE MODE"
-            return
+            f, ferr, swl = self.weightedforce(
+                self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+            fnm = np.dot(self.dm.V.T, f)
+            ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
+            fnm[self.z] = 0.0
+            if np.all(np.abs(fnm) < ferrnm):
+                print "FORCES ARE NOT STATISTICALLY SIGNIFICANT! BAILING OUT OF THE DISPLACE MODE"
+                return
+            # or np.all(np.abs(dqnm) < self.qthreshold):
+            elif np.max(swl) < self.wthreshold:
+                print "WEIGHTS ARE TOO LARGE! BAILING OUT OF THE DISPLACE MODE"
+                return
 
-        if(self.dm.displace_mode == "hessian"):
-            f, ferr, swl = self.weightedforce(self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+        if(self.dm.displace_mode == "iK"):
+            f, ferr, swl = self.weightedforce(
+                self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
             self.dm.beads.q += np.dot(self.dm.iK, f)
 
-            der = self.weightedhessian(self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
-            self.dm.dynmatrix = np.dot(self.dm.isqM, np.dot((der + der.T) / 2.0, self.dm.isqM))
+            der = self.weightedhessian(
+                self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+            self.dm.dynmatrix = np.dot(self.dm.isqM, np.dot(
+                (der + der.T) / 2.0, self.dm.isqM))
             self.apply_asr()
             self.apply_hpf()
             self.get_KnD()
             print "moving in the direction of inv hessian times the force"
 
+        elif(self.dm.displace_mode == "sd"):
 
+            f, ferr, swl = self.weightedforce(
+                self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
 
-        elif(self.dm.displace_mode == "sD"):
+            der = self.weightedhessian(
+                self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
 
-              # Checks if the force is statistically significant.
-                f, ferr, swl = self.weightedforce(self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
-              #if (np.any(np.logical_and(np.abs(f) > 1e-3, np.abs(f) < ferr))):
-              #  print "Forces are not converged. Bailing out.", np.linalg.norm(f)
-              #else:
+            self.dm.beads.q += np.dot(self.dm.D, f) * self.dm.tau
 
-                der = self.weightedhessian(self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
-
-                self.dm.beads.q += np.dot(self.dm.D, f) * self.dm.tau
-
-                self.dm.dynmatrix = np.dot(self.dm.isqM, np.dot((der + der.T) / 2.0, self.dm.isqM))
-                self.apply_asr()
-                self.apply_hpf()
-                self.get_KnD()
-                print "moving in the direction of D kbT times the force", np.linalg.norm(f), np.linalg.norm(ferr)
-
-
+            self.dm.dynmatrix = np.dot(self.dm.isqM, np.dot(
+                (der + der.T) / 2.0, self.dm.isqM))
+            self.apply_asr()
+            self.apply_hpf()
+            self.get_KnD()
+            print "moving in the direction of D kbT times the force", np.linalg.norm(
+                f), np.linalg.norm(ferr)
 
         elif(self.dm.displace_mode == "nmik"):
 
-            # Checks if the force is statistically significant.
-            while True:
-              f, ferr, swl = self.weightedforce(self.dm.beads.q, self.dm.iD, self.dm.K)
-              dK = self.weightedhessian(self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
-              self.dm.dynmatrix = np.dot(self.dm.isqM, np.dot((dK + dK.T) / 2.0, self.dm.isqM))
-              self.apply_asr()
-              self.apply_hpf()
-              self.get_KnD()
-
-              fnm = np.dot(self.dm.V.T, f)
-              fnm[self.z] = 0.0
-              #ferrnm = np.sqrt(np.einsum("ij,j->i",self.dm.V.T**2, ferr**2))
-              ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
-              if self.precheck and np.all(np.abs(fnm) < ferrnm):
-                return
-              if self.checkweights and np.max(swl) < self.wthreshold:
-                return
-
-              iKfnm = self.dm.iw2 * fnm
-              iKfnm[np.abs(fnm) < ferrnm] = 0.0
-
-              dqnm = iKfnm
-              dqnm[self.z] = 0.0
-
-              self.dm.beads.q += np.dot(self.dm.V, dqnm)
-              f, ferr, swl = self.weightedforce(self.dm.beads.q, self.dm.iD, self.dm.K)
-              print "moving in the direction of D kbT times the force", np.linalg.norm(f), np.linalg.norm(ferr), swl, self.wthreshold
-              break
-              #if np.max(swl) < self.wthreshold:
-              #  print "BAILING OUT! due to batch weight weight", np.max(swl), "< ", self.wthreshold
-
-
-        elif(self.dm.displace_mode == "rnmik"):
-
-          # Outer Optimization Loop
-          while True:
-
-            # Inner Optimization Loop
-            while True:
-              # Checks if the force is statistically significant.
-              f, ferr, swl = self.weightedforce(self.dm.beads.q, self.dm.iD, self.dm.K)
-              ferr = ferr
-              fnm = np.dot(self.dm.V.T, f)
-              fnm[self.z] = 0.0
-              ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
-
-              if self.precheck and np.all(np.abs(fnm) < ferrnm):
-                print "Forces are converegd down to statistical error."
-                break
-
-              if self.checkweights and np.max(swl) < self.wthreshold:
-                print "RNMIK : np.max(swl), self.wthreshold", np.max(swl), self.wthreshold
-                print "Finished the optimization of q0. Modifying K."
-                break
-
-              iKfnm = self.dm.iw2 * fnm * 1e-3
-              iKfnm[np.abs(fnm) < ferrnm] = 0.0
-
-              dqnm = iKfnm
-              dqnm[self.z] = 0.0
-
-              self.dm.beads.q += np.dot(self.dm.V, dqnm)
-              print "moving in the direction of D kbT times the force", np.linalg.norm(fnm), np.linalg.norm(ferrnm), swl
-
-            # Once q0 is optimized. Sets the K to the averaged one, thus imposing the steady state condition.
-            dK = self.weightedhessian(self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
-            self.dm.dynmatrix = np.dot(self.dm.isqM, np.dot((dK + dK.T) / 2.0, self.dm.isqM))
+            f, ferr, swl = self.weightedforce(
+                self.dm.beads.q, self.dm.iD, self.dm.K)
+            dK = self.weightedhessian(
+                self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+            self.dm.dynmatrix = np.dot(
+                self.dm.isqM, np.dot((dK + dK.T) / 2.0, self.dm.isqM))
             self.apply_asr()
             self.apply_hpf()
             self.get_KnD()
 
-            # Checks if the another round of optimization is possible.
-            fnm_old, ferrnm_old = fnm, ferrnm
-            f, ferr, swl = self.weightedforce(self.dm.beads.q, self.dm.iD, self.dm.K)
-            ferr = ferr
             fnm = np.dot(self.dm.V.T, f)
             fnm[self.z] = 0.0
+            #ferrnm = np.sqrt(np.einsum("ij,j->i",self.dm.V.T**2, ferr**2))
             ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
+            if self.precheck and np.all(np.abs(fnm) < ferrnm):
+                return
+            if self.checkweights and np.max(swl) < self.wthreshold:
+                return
 
-            #Breaks if the forces are statistically insignificant.
-            if np.all(np.abs(fnm) < ferrnm):
-              print "Forces are within statistical error. Need to draw more points."
-              break
+            iKfnm = self.dm.iw2 * fnm
+            iKfnm[np.abs(fnm) < ferrnm] = 0.0
 
-            #Breaks if the batch weights have gone to shit.
-            if np.max(swl) < self.wthreshold:
-              print "The batch weights are small. Need to draw more points."
-              break
+            dqnm = iKfnm
+            dqnm[self.z] = 0.0
 
-            if np.linalg.norm(np.abs(fnm_old - fnm)) < np.linalg.norm(ferrnm):
-              print "Convergece in forces reached."
-              break
+            self.dm.beads.q += np.dot(self.dm.V, dqnm)
+            f, ferr, swl = self.weightedforce(
+                self.dm.beads.q, self.dm.iD, self.dm.K)
+            print "moving in the direction of D kbT times the force", np.linalg.norm(
+                f), np.linalg.norm(ferr), swl, self.wthreshold
 
+        elif(self.dm.displace_mode == "rnmik"):
 
-        elif(self.dm.displace_mode == "rewt"):
-
-            # Finds the new q0 using reweighted sampling.
+            # Outer Optimization Loop
             while True:
-                self.q_old = dstrip(self.dm.beads.q).copy()
-                w = 1.0
-                eps = np.ones(self.dm.dof) * 0.010
-                dq = np.zeros(dstrip(self.dm.beads.q)[0].shape)
-                dqnm = np.zeros(dstrip(self.dm.beads.q)[0].shape) + np.sqrt(self.dm.dof)
-                q_old = np.zeros(dstrip(self.dm.beads.q)[0].shape)
-                q_old = q_old + dstrip(self.dm.beads.q).copy()[0]
-                jj = 0
 
-                f, ferr, swl = self.weightedforce(self.dm.beads.q, self.dm.iD, self.dm.K)
-                #der = self.weightedhessian(self.dm.beads.q, self.dm.iD, self.dm.K)
-                #self.dm.dynmatrix = np.dot(self.dm.isqM, np.dot((der + der.T) / 2.0, self.dm.isqM))
-                #self.apply_asr()
-                #self.apply_hpf()
-
-                if self.precheck:
-                    fnm = np.dot(self.dm.V.T, f)
-                    #ferrnm = np.sqrt(np.einsum("ij,j->i",self.dm.V.T**2, ferr**2))
-                    ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
-                    fnm[self.z] = 0.0
-                    if np.all(np.abs(fnm) < ferrnm):
-                        break
-                    if self.checkweights and np.max(swl) < self.wthreshold:
-                        break
-
-                print "ENTERING INNER LOOP"
+                # Inner Optimization Loop
                 while True:
-                    jj += 1
-                    f, ferr, swl = self.weightedforce(self.dm.beads.q, self.dm.iD, self.dm.K)
+                    # Checks if the force is statistically significant.
+                    f, ferr, swl = self.weightedforce(
+                        self.dm.beads.q, self.dm.iD, self.dm.K)
+                    ferr = ferr
                     fnm = np.dot(self.dm.V.T, f)
-                    #ferrnm = np.sqrt(np.einsum("ij,j->i",self.dm.V.T**2, ferr**2))
-                    ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
                     fnm[self.z] = 0.0
-                    iKfnm = self.dm.iw2 * fnm
-                    iKfnm[np.abs(fnm) < ferrnm] = 0.0
-                    dqnm_old = eps * dqnm.copy()
-                    dqnm = eps * iKfnm
-                    dqnm[self.z] = 0.0
-                    mask = np.logical_and(dqnm * dqnm_old > 0, np.abs(dqnm) > np.abs(dqnm_old))
-                    dqnm[mask] = dqnm_old[mask]
-                    dqnm[np.abs(fnm) < ferrnm] = 0.0
-                    mask = np.logical_and(dqnm * dqnm_old < 0, np.abs(dqnm) > np.abs(dqnm_old * self.gamma))
-                    dqnm[mask] = -1.0 * (dqnm_old * self.gamma)[mask]
-                    eps[mask] = (eps * self.gamma)[mask]
+                    ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
 
-                    self.dm.beads.q = q_old + np.dot(self.dm.V, dqnm)
-                    q_old = q_old * 0.0
-                    q_old = q_old + dstrip(self.dm.beads.q)[0]
-                    if jj == self.innermaxiter or np.all(np.abs(fnm) < ferrnm):
-                        print "INNER LOOP [j, fnm, dqnm, ferr]", jj, np.linalg.norm(fnm), np.linalg.norm(dqnm), np.linalg.norm(ferr), swl
+                    if self.precheck and np.all(np.abs(fnm) < ferrnm):
+                        print "Forces are converegd down to statistical error."
                         break
+
                     if self.checkweights and np.max(swl) < self.wthreshold:
-                        print "INNER LOOP [j, np.max(swl)]", jj, np.max(swl)
+                        print "RNMIK : np.max(swl), self.wthreshold", np.max(
+                            swl), self.wthreshold
+                        print "Finished the optimization of q0. Modifying K."
                         break
 
-                # Dampens the displacement between SCPhonons steps if the change in displacement is negative.
-                self.dq_old = dstrip(self.dq).copy()
-                dqnm_old = np.dot(self.dm.V.T, self.dq_old[0] * self.dm.m3)
-                self.dq = self.dm.beads.q - self.q_old
-                dqnm = np.dot(self.dm.V.T, self.dq[0] * self.dm.m3)
-                mask = np.logical_and(dqnm * dqnm_old > 0, np.abs(dqnm) > np.abs(dqnm_old))
-                dqnm[mask] = (dqnm_old * self.gamma)[mask]
-                mask = np.logical_and(dqnm * dqnm_old < 0, np.abs(dqnm) > np.abs(dqnm_old * self.gamma))
-                dqnm[mask] = -(dqnm_old * self.gamma)[mask]
-                self.dm.beads.q = self.q_old  + np.dot(self.dm.V, dqnm)
+                    iKfnm = self.dm.iw2 * fnm * 1e-3
+                    iKfnm[np.abs(fnm) < ferrnm] = 0.0
 
-                # Calculates the Hessian at the new position.
-                self.dw_old = dstrip(self.dw).copy()
-                self.w_old = dstrip(self.dm.w).copy()
-                der = self.weightedhessian(self.dm.beads.q, self.dm.iD, self.dm.K)
-                self.dm.dynmatrix = np.dot(self.dm.isqM, np.dot((der + der.T) / 2.0, self.dm.isqM))
-                self.apply_asr()
-                self.apply_hpf()
+                    dqnm = iKfnm
+                    dqnm[self.z] = 0.0
 
-                # Dampens the Hessian between SCPhonons steps if the change its value is negative.
-                self.w2, U = np.linalg.eigh(self.dm.dynmatrix)
-                self.w2 = np.absolute(self.w2)
-                self.dm.dynmatrix = np.tensordot(self.w2 * U,U.T, axes=1)
-                self.w2, U = np.linalg.eigh(self.dm.dynmatrix)
-                z = self.w2 < self.dm.atol
-                self.w = np.sqrt(self.w2)
-                self.w[z] = 0.0
-                self.dw = self.w - self.w_old
-                mask = np.abs(self.dw) > 2.27e-5 * 10
-                self.dw[mask] = np.sign(self.dw)[mask]*2.27e-5 * 10
-                mask = np.logical_and(self.dw * self.dw_old > 0, np.abs(self.dw) > np.abs(self.dw_old)) #vk
-                self.dw[mask] = (self.dw_old)[mask] #vk
-                mask = np.logical_and(self.dw * self.dw_old < 0, np.abs(self.dw) > np.abs(self.dw_old * self.gamma))
-                self.dw[mask] = -1.0 * (self.dw_old * self.gamma)[mask]
-                self.dw[z] = 0.0
-                self.w = self.w_old + self.dw
-                self.w2 = dstrip(self.w).copy()**2
-                self.dm.dynmatrix = np.tensordot(self.w2 * U,U.T, axes=1)
+                    self.dm.beads.q += np.dot(self.dm.V, dqnm)
+                    print "moving in the direction of D kbT times the force", np.linalg.norm(
+                        fnm), np.linalg.norm(ferrnm), swl
+
+                # Once q0 is optimized. Sets the K to the averaged one, thus imposing the steady state condition.
+                dK = self.weightedhessian(
+                    self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+                self.dm.dynmatrix = np.dot(
+                    self.dm.isqM, np.dot((dK + dK.T) / 2.0, self.dm.isqM))
                 self.apply_asr()
                 self.apply_hpf()
                 self.get_KnD()
 
-                f, ferr, swl = self.weightedforce(self.dm.beads.q, self.dm.iD, self.dm.K)
+                # Checks if the another round of optimization is possible.
+                fnm_old, ferrnm_old = fnm, ferrnm
+                f, ferr, swl = self.weightedforce(
+                    self.dm.beads.q, self.dm.iD, self.dm.K)
+                ferr = ferr
                 fnm = np.dot(self.dm.V.T, f)
-                #ferrnm = np.sqrt(np.einsum("ij,j->i",self.dm.V.T**2, ferr**2))
-                ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
                 fnm[self.z] = 0.0
-                print "|f|, |ferr| = ", np.linalg.norm(f),  np.linalg.norm(ferr), swl
-                if np.all(np.abs(f) < self.fthreshold) or np.all(np.abs(fnm) < ferrnm):
-                    print "LEAVING OUTER LOOP"
-                    break
-                if self.checkweights and np.max(swl) < self.wthreshold:
+                ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
+
+                # Breaks if the forces are statistically insignificant.
+                if np.all(np.abs(fnm) < ferrnm):
+                    print "Forces are within statistical error. Need to draw more points."
                     break
 
-                print "Going for another round. Forces are not zero. "
+                # Breaks if the batch weights have gone to shit.
+                if np.max(swl) < self.wthreshold:
+                    print "The batch weights are small. Need to draw more points."
+                    break
+
+                if np.linalg.norm(np.abs(fnm_old - fnm)) < np.linalg.norm(ferrnm):
+                    print "Convergece in forces reached."
+                    break
 
     def weightedforce(self, qp, iDp, Kp):
         """
     Computes the weighted force at a given diplacement.
     """
         # Takes the set of forces calculated at the previous step for (self.q, self.iD)
-        i = self.dm.isc -1
+        i = self.dm.isc - 1
         af = dstrip(self.f[i]).copy()[-1] * 0.0
         vf = dstrip(self.f[i]).copy()[-1] * 0.0
-        norm  = 0.0
-        swl  = np.zeros(self.dm.isc)
+        norm = 0.0
+        swl = np.zeros(self.dm.isc)
         for i in range(self.dm.isc):
             f = self.f[i]
             x = self.x[i]
-            fh = -1.0 * np.dot(x-qp,Kp)
+            fh = -1.0 * np.dot(x-qp, Kp)
             # Calculates the weights to calculate average for the distribution for (qp, iDp)
             w, sw, rw = self.calculate_weights(qp, iDp, i)
             swl[i] = sw
@@ -577,7 +471,7 @@ class SCPhononator(DummyPhononator):
             vfi = np.sum(rw * (f-fh - afi)**2, axis=0) / (V1 - V2 / V1)
             #sw = 1.0 / vfi
             af += sw * afi
-            vf += sw **2 * vfi
+            vf += sw ** 2 * vfi
             norm += sw
         return af / norm,  np.sqrt(vf / norm**2 / self.dm.max_steps), swl
 
@@ -586,7 +480,7 @@ class SCPhononator(DummyPhononator):
         Computes the weighted Hessian at a given displacement.
         """
         # Takes the set of forces calculated at the previous step for (self.q, self.iD)
-        i = self.dm.isc -1
+        i = self.dm.isc - 1
         aK = dstrip(self.dm.iD).copy() * 0.0
         norm = 0.0
 
@@ -611,13 +505,13 @@ class SCPhononator(DummyPhononator):
         for i in range(self.dm.isc):
             f = self.f[i]
             x = self.x[i]
-            fh = -1.0 * np.dot(x-qp,K)
+            fh = -1.0 * np.dot(x-qp, K)
             # Calculates the weights to calculate average for the distribution for (qp, iDp)
             w, sw, rw = self.calculate_weights(qp, iDp, i)
             # Simply multiplies the forces by the weights and averages
             V1 = np.sum(rw)
             # Simply multiplies the forces by the weights and averages
-            adki = -np.dot(iDp, np.dot( ((f-fh) * rw).T, (x - qp[-1])).T) / V1
+            adki = -np.dot(iDp, np.dot(((f-fh) * rw).T, (x - qp[-1])).T) / V1
             aki = K + 0.50 * (adki + adki.T)
             aK += sw * aki
             norm += sw
@@ -636,15 +530,15 @@ class SCPhononator(DummyPhononator):
         q0 = self.q[i]
         iD0 = self.iD[i]
         # Estimates the weights as the ratio of density matrix for (qp, iDp) to the density matrix for (self.q, self.iD)
-        rw = np.exp(-(0.50 * np.dot(iDp, (qp - x).T).T * (qp - x)).sum(axis=1) + (0.50 * np.dot(iD0, (x - q0).T).T * (x - q0)).sum(axis=1))
+        rw = np.exp(-(0.50 * np.dot(iDp, (qp - x).T).T * (qp - x)).sum(axis=1) +
+                    (0.50 * np.dot(iD0, (x - q0).T).T * (x - q0)).sum(axis=1))
         if rw.sum() < 1e-24:
-          w = rw * 0.0
+            w = rw * 0.0
         else:
-          w = rw / rw.sum()
+            w = rw / rw.sum()
         w = w.reshape((self.dm.max_steps, 1))
         rw = rw.reshape((self.dm.max_steps, 1))
         return w, np.nan_to_num(np.exp(-np.var(np.log(w))))**2, rw
-
 
     def get_KnD(self):
         """
@@ -660,9 +554,11 @@ class SCPhononator(DummyPhononator):
 
         if self.dm.mode == "qn":
             # Calculates the mass scaled displacements for all non-zero modes.
-            td[self.nz] = np.nan_to_num(0.50 * self.dm.iw[self.nz] / np.tanh(0.50 * self.dm.w[self.nz] / self.dm.temp))
+            td[self.nz] = np.nan_to_num(
+                0.50 * self.dm.iw[self.nz] / np.tanh(0.50 * self.dm.w[self.nz] / self.dm.temp))
             td[self.z] = 0.0
-            tdm[self.nz] = np.nan_to_num(0.50 * self.dm.iw[self.nz] / np.tanh(0.50 * self.dm.w[self.nz] / self.dm.temp))
+            tdm[self.nz] = np.nan_to_num(
+                0.50 * self.dm.iw[self.nz] / np.tanh(0.50 * self.dm.w[self.nz] / self.dm.temp))
             tdm[self.z] = 0.0
         elif self.dm.mode == "cl":
             td[self.nz] = (self.dm.iw[self.nz])**2 * self.dm.temp
@@ -718,17 +614,21 @@ class SCPhononator(DummyPhononator):
             self.dm.w2, self.dm.U = np.linalg.eigh(self.dm.dynmatrix)
             self.dm.V = self.dm.U.T[-(self.dm.dof - 5):]
             self.dm.v2 = self.dm.w2[-(self.dm.dof - 5):]
-            self.dm.dynmatrix = np.dot(self.dm.V, np.dot(self.dm.dynmatrix, self.dm.V.T))
+            self.dm.dynmatrix = np.dot(
+                self.dm.V, np.dot(self.dm.dynmatrix, self.dm.V.T))
 
         if(self.dm.asr == "molecule"):
 
             # Computes the centre of mass.
-            com = np.dot(np.transpose(self.dm.beads.q.reshape((self.dm.beads.natoms, 3))), self.dm.m) / self.dm.m.sum()
-            qminuscom = self.dm.beads.q.reshape((self.dm.beads.natoms, 3)) - com
+            com = np.dot(np.transpose(self.dm.beads.q.reshape(
+                (self.dm.beads.natoms, 3))), self.dm.m) / self.dm.m.sum()
+            qminuscom = self.dm.beads.q.reshape(
+                (self.dm.beads.natoms, 3)) - com
             # Computes the moment of inertia tensor.
             moi = np.zeros((3, 3), float)
             for k in range(self.dm.beads.natoms):
-                moi -= np.dot(np.cross(qminuscom[k], np.identity(3)), np.cross(qminuscom[k], np.identity(3))) * self.dm.m[k]
+                moi -= np.dot(np.cross(qminuscom[k], np.identity(3)),
+                              np.cross(qminuscom[k], np.identity(3))) * self.dm.m[k]
 
             U = (np.linalg.eig(moi))[1]
             R = np.dot(qminuscom, U)
@@ -741,9 +641,12 @@ class SCPhononator(DummyPhononator):
             for i in range(3 * self.dm.beads.natoms):
                 iatom = i / 3
                 idof = np.mod(i, 3)
-                D[3, i] = (R[iatom, 1] * U[idof, 2] - R[iatom, 2] * U[idof, 1]) / self.dm.isqm3[i]
-                D[4, i] = (R[iatom, 2] * U[idof, 0] - R[iatom, 0] * U[idof, 2]) / self.dm.isqm3[i]
-                D[5, i] = (R[iatom, 0] * U[idof, 1] - R[iatom, 1] * U[idof, 0]) / self.dm.isqm3[i]
+                D[3, i] = (R[iatom, 1] * U[idof, 2] - R[iatom, 2]
+                           * U[idof, 1]) / self.dm.isqm3[i]
+                D[4, i] = (R[iatom, 2] * U[idof, 0] - R[iatom, 0]
+                           * U[idof, 2]) / self.dm.isqm3[i]
+                D[5, i] = (R[iatom, 0] * U[idof, 1] - R[iatom, 1]
+                           * U[idof, 0]) / self.dm.isqm3[i]
 
             # Computes unit vecs.
             for k in range(6):
@@ -751,17 +654,21 @@ class SCPhononator(DummyPhononator):
 
             # Computes the transformation matrix.
             transfmatrix = np.eye(3 * self.dm.beads.natoms) - np.dot(D.T, D)
-            self.dm.dynmatrix = np.dot(transfmatrix.T, np.dot(self.dm.dynmatrix, transfmatrix))
+            self.dm.dynmatrix = np.dot(
+                transfmatrix.T, np.dot(self.dm.dynmatrix, transfmatrix))
 
         if(self.dm.asr == "crystal"):
 
             # Computes the centre of mass.
-            com = np.dot(np.transpose(self.dm.beads.q.reshape((self.dm.beads.natoms, 3))), self.dm.m) / self.dm.m.sum()
-            qminuscom = self.dm.beads.q.reshape((self.dm.beads.natoms, 3)) - com
+            com = np.dot(np.transpose(self.dm.beads.q.reshape(
+                (self.dm.beads.natoms, 3))), self.dm.m) / self.dm.m.sum()
+            qminuscom = self.dm.beads.q.reshape(
+                (self.dm.beads.natoms, 3)) - com
             # Computes the moment of inertia tensor.
             moi = np.zeros((3, 3), float)
             for k in range(self.dm.beads.natoms):
-                moi -= np.dot(np.cross(qminuscom[k], np.identity(3)), np.cross(qminuscom[k], np.identity(3))) * self.dm.m[k]
+                moi -= np.dot(np.cross(qminuscom[k], np.identity(3)),
+                              np.cross(qminuscom[k], np.identity(3))) * self.dm.m[k]
 
             U = (np.linalg.eig(moi))[1]
             R = np.dot(qminuscom, U)
@@ -778,7 +685,8 @@ class SCPhononator(DummyPhononator):
 
             # Computes the transformation matrix.
             transfmatrix = np.eye(3 * self.dm.beads.natoms) - np.dot(D.T, D)
-            self.dm.dynmatrix = np.dot(transfmatrix.T, np.dot(self.dm.dynmatrix, transfmatrix))
+            self.dm.dynmatrix = np.dot(
+                transfmatrix.T, np.dot(self.dm.dynmatrix, transfmatrix))
 
     def apply_hpf(self):
         """
@@ -788,7 +696,8 @@ class SCPhononator(DummyPhononator):
         self.dm.w2, self.dm.U = np.linalg.eigh(self.dm.dynmatrix)
         self.dm.w2 = np.absolute(self.dm.w2)
         self.dm.V = np.dot(self.dm.isqM, self.dm.U.copy())
-        self.dm.dynmatrix = np.tensordot(self.dm.w2 * self.dm.U,self.dm.U.T, axes=1)
+        self.dm.dynmatrix = np.tensordot(
+            self.dm.w2 * self.dm.U, self.dm.U.T, axes=1)
         self.dm.w2, self.dm.U = np.linalg.eigh(self.dm.dynmatrix)
         self.dm.V = np.dot(self.dm.isqM, self.dm.U.copy())
 
@@ -809,10 +718,8 @@ class SCPhononator(DummyPhononator):
 
         sobv = self.fginv(sb(dim, k))
         print dim, k, len(sobv)
-        sobv.shape = (1,dim)
+        sobv.shape = (1, dim)
         f = open("sobol", "a+")
         np.savetxt(f, sobv)
         f.close()
         return sobv
-
-
