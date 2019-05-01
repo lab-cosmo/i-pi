@@ -238,6 +238,7 @@ class SCPhononator(DummyPhononator):
             # normal distribution.
 
             if(self.dm.random_type == "pseudo"):
+                #!TODO get this insult away from my eyes (and use self.dm.prng.rng while you are at it ^_^)
                 x = np.random.multivariate_normal(
                     np.zeros(self.dm.dof), np.eye(self.dm.dof)).reshape((self.dm.dof, 1))
             elif(self.dm.random_type == "sobol"):
@@ -299,7 +300,7 @@ class SCPhononator(DummyPhononator):
 
     def displace(self):
         """
-        Displaces the configuration towards the optimized limit.
+        Displaces the center of the distribution towards the optimized limit.
         """
 
         dK = self.weightedhessian(
@@ -315,6 +316,7 @@ class SCPhononator(DummyPhononator):
             f, ferr, swl = self.weightedforce(
                 self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
             fnm = np.dot(self.dm.V.T, f)
+            #!TODO - this heuristics seems to be based on the
             ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
             fnm[self.z] = 0.0
             if np.all(np.abs(fnm) < ferrnm):
