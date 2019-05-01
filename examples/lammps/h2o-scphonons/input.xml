@@ -22,9 +22,9 @@
     <scp mode='qn'>
       <dynmat mode='file'> dynmat.data  </dynmat>
       <asr> molecule </asr>
-      <max_steps> 100 </max_steps>
-      <max_iter> 20 </max_iter>
-      <prefix> simulation </prefix>
+      <max_steps> 50 </max_steps>
+      <max_iter> 200 </max_iter>
+      <prefix> sobol </prefix>
       <tau> 10 </tau>
       <random_type> sobol </random_type>
       <displace_mode> nmik </displace_mode>
