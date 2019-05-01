@@ -120,6 +120,7 @@ class SCPhononsMover(Motion):
         self.phononator = SCPhononator()
         self.phononator.bind(self)
 
+        #! TODO implement an option to give the file name to fetch the random samples. Also implement check of dimensionality, and raise an error if it runs out of random numbers
         # reads sobol points from file!
         if self.random_type == "file":
             self.random_sequence = np.loadtxt("SOBOL-RNG")
@@ -215,6 +216,7 @@ class SCPhononator(DummyPhononator):
         self.dm.oldK = self.dm.K
         self.dm.imc = 1
 
+        #!TODO use the new lean I/O infrastructure
         # Saves the Hessian, the displacement correlation, reference positions
         # frequencies and the absolute energy of the reference.
         np.savetxt(self.dm.prefix + ".K." + str(self.dm.isc), self.dm.K)

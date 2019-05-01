@@ -5,6 +5,7 @@ import sys
 from ipi.inputs.simulation import InputSimulation
 from ipi.utils.io.inputs import io_xml
 
+#! TODO make this better - more professional, and better commented. use remd-sort as an example
 path2iipi="./input.xml"
 
 ifile = open(path2iipi, "r")
@@ -60,7 +61,7 @@ for i in range(max_iter):
 
     # Inner loop over previous SCP steps
     for j in range(i + 1):
-    
+
       # Imports the q, iD, x, f from the i^th  SCP iteration.
       iD = np.loadtxt(prefix + ".iD." + str(j)) / widening**2
       q = np.loadtxt(prefix + ".q." + str(j))
@@ -69,7 +70,7 @@ for i in range(max_iter):
 
       x = np.loadtxt(prefix + ".x." + str(j))
       v = np.loadtxt(prefix + ".v." + str(j))
-      vh = V0 + 0.5 * np.sum(np.dot(x - q0, K0.T) * (x - q0), axis=1)      
+      vh = V0 + 0.5 * np.sum(np.dot(x - q0, K0.T) * (x - q0), axis=1)
 
       # Calculates the weights to be used for reweighting.
       w = np.exp(-(0.50 * np.dot(iD0, (x - q0).T).T * (x - q0)).sum(axis=1) + (0.50 * np.dot(iD, (x - q).T).T * (x - q)).sum(axis=1))
@@ -81,6 +82,7 @@ for i in range(max_iter):
       norm += c
       adv += c * advj
       vdv += c**2 * vdvj
+      #! TODO - think what to do with the error estimation, here it assumes uncorrelated random samples
     adv = np.nan_to_num(adv / norm)
     vdv = np.nan_to_num(vdv / norm**2 / len(w))
 
