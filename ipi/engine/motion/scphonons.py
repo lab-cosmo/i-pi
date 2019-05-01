@@ -28,7 +28,7 @@ from ipi.utils import units
 from ipi.utils.softexit import softexit
 from ipi.utils.messages import verbosity, warning, info
 from ipi.utils.mathtools import gaussian_inv
-from ipi.utils.sobol.sobol import i4_sobol as sb
+from ipi.utils.sobol.sobol import i4_sobol as sobol
 
 
 class SCPhononsMover(Motion):
@@ -69,9 +69,9 @@ class SCPhononsMover(Motion):
         if self.prefix == "":
             self.prefix = "phonons"
 
-    def bind(self, ens, beads, nm, cell, bforce, prng):
+    def bind(self, ens, beads, nm, cell, bforce, prng, omaker):
 
-        super(SCPhononsMover, self).bind(ens, beads, nm, cell, bforce, prng)
+        super(SCPhononsMover, self).bind(ens, beads, nm, cell, bforce, prng, omaker)
 
         # Raises error for nbeads not equal to 1.
         if(self.beads.nbeads > 1):
@@ -118,16 +118,24 @@ class SCPhononsMover(Motion):
         self.phononator = SCPhononator()
         self.phononator.bind(self)
 
+        # a random shuffle to allow some randomness in the sobol-like PRNGs
+        self.prng = prng
+        self.random_shuffle = np.asarray(range(self.dof))
+
+        # defines function to perform a Gaussian transformation.
+        self.fginv = np.vectorize(gaussian_inv)
+
         #! TODO implement an option to give the file name to fetch the random samples. Also implement check of dimensionality, and raise an error if it runs out of random numbers
         # reads sobol points from file!
         if self.random_type == "file":
             self.random_sequence = np.loadtxt("SOBOL-RNG")
-
-        # a random shuffle to allow some randomness in the sobol-like PRNGs
-        self.prng = prng
-        self.random_shuffle = np.asarray(range(self.dof))
+        elif self.random_type == "pseudo":
+            self.random_sequence = self.prng.rng.rand(self.max_steps * self.max_iter, self.dof)
+        elif self.random_type == "sobol":
+            self.random_sequence = np.asarray([sobol(self.dof, i) for i in range(0,self.max_steps * self.max_iter + 1)])
+        
+        # Shuffles the 
         self.prng.rng.shuffle(self.random_shuffle)
-
 
     def step(self, step=None):
         if(self.isc == self.max_iter):
@@ -177,8 +185,6 @@ class SCPhononator(DummyPhononator):
         Reference all the variables for simpler access.
         """
         super(SCPhononator, self).bind(dm)
-        sb(self.dm.dof, 0)
-        self.fginv = np.vectorize(gaussian_inv)
         self.v = np.zeros((self.dm.max_iter, self.dm.max_steps))
         self.x = np.zeros((self.dm.max_iter, self.dm.max_steps, self.dm.dof))
         self.q = np.zeros((self.dm.max_iter, 1, self.dm.dof))
@@ -220,34 +226,42 @@ class SCPhononator(DummyPhononator):
         self.dm.oldK = self.dm.K
         self.dm.imc = 1
 
-        #!TODO use the new lean I/O infrastructure
-        # Saves the Hessian, the displacement correlation, reference positions
-        # frequencies and the absolute energy of the reference.
-        np.savetxt(self.dm.prefix + ".K." + str(self.dm.isc), self.dm.K)
-        np.savetxt(self.dm.prefix + ".D." + str(self.dm.isc), self.dm.D)
-        np.savetxt(self.dm.prefix + ".iD." + str(self.dm.isc), self.dm.iD)
-        np.savetxt(self.dm.prefix + ".q." + str(self.dm.isc), self.dm.beads.q)
-        np.savetxt(self.dm.prefix + ".w." + str(self.dm.isc), self.dm.w)
-        np.savetxt(self.dm.prefix + ".V0." +
-                   str(self.dm.isc), self.dm.forces.pots)
+        # prints the force constant matrix.
+        outfile = self.dm.output_maker.get_output(self.dm.prefix + ".K." + str(self.dm.isc))
+        np.savetxt(outfile,  self.dm.K)
+        outfile.close()
+
+        # prints the displacement correlation matrix.
+        outfile = self.dm.output_maker.get_output(self.dm.prefix + ".D." + str(self.dm.isc))
+        np.savetxt(outfile,  self.dm.D)
+        outfile.close()
+
+        # prints the inverse displacement correlation matrix.
+        outfile = self.dm.output_maker.get_output(self.dm.prefix + ".iD." + str(self.dm.isc))
+        np.savetxt(outfile,  self.dm.iD)
+        outfile.close()
+
+        # prints the mean position.
+        outfile = self.dm.output_maker.get_output(self.dm.prefix + ".q." + str(self.dm.isc))
+        np.savetxt(outfile,  self.dm.beads.q)
+        outfile.close()
+
+        # prints the frequencies. 
+        outfile = self.dm.output_maker.get_output(self.dm.prefix + ".w." + str(self.dm.isc))
+        np.savetxt(outfile,  self.dm.w)
+        outfile.close()
+
+        # prints the potential energy at the mean position. 
+        outfile = self.dm.output_maker.get_output(self.dm.prefix + ".V0." + str(self.dm.isc))
+        np.savetxt(outfile,  self.dm.forces.pots)
+        outfile.close()
 
         # Creates a list of configurations that are to be sampled.
         while self.dm.imc <= self.dm.max_steps:
 
-            # Selects a suitable random number generator and samples random numbers from a multivariate
-            # normal distribution.
-
-            if(self.dm.random_type == "pseudo"):
-                #!TODO get this insult away from my eyes (and use self.dm.prng.rng while you are at it ^_^)
-                x = np.random.multivariate_normal(
-                    np.zeros(self.dm.dof), np.eye(self.dm.dof)).reshape((self.dm.dof, 1))
-            elif(self.dm.random_type == "sobol"):
-                x = self.sobol_vector(self.dm.dof, (self.dm.isc) * self.dm.max_steps / 2 + (
-                    self.dm.imc + 1) / 2).reshape((self.dm.dof, 1))
-            elif(self.dm.random_type == "file"):
-                irng = (self.dm.isc) * self.dm.max_steps / \
-                    2 + (self.dm.imc + 1) / 2
-                x = self.fginv(self.dm.random_sequence[irng])
+            irng = (self.dm.isc) * self.dm.max_steps / \
+                2 + (self.dm.imc + 1) / 2
+            x = self.dm.fginv(self.dm.random_sequence[irng])
 
             # picks the elements of the vector in a random order.
             # this introduces a degree of randomness in the sobol-like PRNGs
@@ -287,13 +301,23 @@ class SCPhononator(DummyPhononator):
         Prints the energetics of the sampled configurations.
         """
 
-        # Also saves the sampled configurations and their energetics.
-        np.savetxt(self.dm.prefix + ".v." +
-                   str(self.dm.isc), self.v[self.dm.isc])
-        np.savetxt(self.dm.prefix + ".x." +
-                   str(self.dm.isc), self.x[self.dm.isc])
-        np.savetxt(self.dm.prefix + ".f." +
-                   str(self.dm.isc), self.f[self.dm.isc])
+        # prints the potential energy of the sampled configurations.
+        outfile = self.dm.output_maker.get_output(self.dm.prefix + ".v." +
+                   str(self.dm.isc))
+        np.savetxt(outfile,  self.v[self.dm.isc])
+        outfile.close()
+
+        # prints the sampled configurations.
+        outfile = self.dm.output_maker.get_output(self.dm.prefix + ".x." +
+                   str(self.dm.isc))
+        np.savetxt(outfile,  self.x[self.dm.isc])
+        outfile.close()
+
+        # prints the sampled configurations.
+        outfile = self.dm.output_maker.get_output(self.dm.prefix + ".f." +
+                   str(self.dm.isc))
+        np.savetxt(outfile,  self.f[self.dm.isc])
+        outfile.close()
 
         self.dm.isc += 1
         self.dm.imc = 0
@@ -309,7 +333,7 @@ class SCPhononator(DummyPhononator):
         dw, dU = np.linalg.eig(dm)
         dw[np.absolute(dw) < self.dm.atol] = self.dm.atol * 1e-3
         # if np.any(dw < 0.0):
-        #print "at least one -ve frequency encountered. Bailing out of the optimization procedure."
+        # print "at least one -ve frequency encountered. Bailing out of the optimization procedure."
         # return
         # Checks if the force is statistically significant.
         if self.precheck:
@@ -373,7 +397,6 @@ class SCPhononator(DummyPhononator):
 
             fnm = np.dot(self.dm.V.T, f)
             fnm[self.z] = 0.0
-            #ferrnm = np.sqrt(np.einsum("ij,j->i",self.dm.V.T**2, ferr**2))
             ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
             if self.precheck and np.all(np.abs(fnm) < ferrnm):
                 return
@@ -495,24 +518,6 @@ class SCPhononator(DummyPhononator):
         i = self.dm.isc - 1
         aK = dstrip(self.dm.iD).copy() * 0.0
         norm = 0.0
-
-#       for i in range(self.dm.isc):
-#           f = self.f[i]
-#           x = self.x[i]
-#           fh = -1.0 * np.dot(x-qp,K)
-#           # Calculates the weights to calculate average for the distribution for (qp, iDp)
-#           w, sw, rw = self.calculate_weights(qp, iDp, i)
-#           # Simply multiplies the forces by the weights and averages
-#           V1 = np.sum(rw)
-#           V2 = np.sum(rw**2)
-#           # Simply multiplies the forces by the weights and averages
-#           adki = -np.einsum("jk,ilk,ip->jl", iDp, np.einsum("ij,ik->ijk", f-fh, x - qp[-1]), rw) / V1
-#           akdi =  0.50 * (adki + adki.T)
-#           aki = K + akdi
-#           vdki = np.einsum("ijl,ik->jl",(np.einsum("jk,ilk->ijl", iDp, np.einsum("ij,ik->ijk", f-fh, x - qp[-1])) - adki)**2, rw) / (V1 - V2 / V1)
-#           sw = 1.0 / vdki
-#           aK += sw * aki
-#           norm += sw
 
         for i in range(self.dm.isc):
             f = self.f[i]
@@ -723,15 +728,3 @@ class SCPhononator(DummyPhononator):
         self.dm.iw2[self.nz] = np.divide(1.0, self.dm.w2[self.nz])
         self.dm.iw[self.nz] = np.sqrt(self.dm.iw2[self.nz])
 
-    def sobol_vector(self, dim, k):
-        """
-        Computes a sobol vector of given dimensionality.
-        """
-
-        sobv = self.fginv(sb(dim, k))
-#        print dim, k, len(sobv)
-#        sobv.shape = (1,dim)
-#        f = open("sobol", "a+")
-#        np.savetxt(f, sobv)
-#        f.close()
-        return sobv

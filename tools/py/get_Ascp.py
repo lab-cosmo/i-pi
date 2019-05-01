@@ -33,11 +33,12 @@ def get_A(path2iipi):
     isimul = InputSimulation()
     isimul.parse(xmlrestart.fields[0][1])
     simul = isimul.fetch()
+#    simul.bind()
 
     enablePrint()
 
     # Obtains various parameters and relevant filenames.
-    prefix = simul.syslist[0].motion.prefix
+    prefix = simul.outtemplate.prefix + "." + simul.syslist[0].motion.prefix
     max_iter = simul.syslist[0].motion.max_iter
     kbT = float(simul.syslist[0].ensemble.temp)
     beta = 1.0 / kbT

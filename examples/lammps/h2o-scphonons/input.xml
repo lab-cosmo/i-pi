@@ -1,14 +1,14 @@
-<simulation mode='static' verbosity='medium'>
+<simulation mode='static' verbosity='medium' threading='false'>
   <output prefix='simulation'>
     <properties stride='10000' filename='out'>[ step, time{picosecond}, conserved{electronvolt}, temperature{kelvin}, kinetic_cv{electronvolt}, potential{electronvolt}, pressure_cv{megapascal}]</properties>
     <trajectory filename='pos' stride='10000'>positions{angstrom}</trajectory>
   </output>
   <total_steps>50000000</total_steps>
   <prng>
-    <seed>32342</seed>
+    <seed> 19388 </seed>
   </prng>
   <ffsocket name='lmp' mode='unix' pbc='false'>
-    <address> driver_01 </address>
+    <address> driver </address>
   </ffsocket>
   <system>
   <initialize nbeads='1'>
@@ -23,7 +23,7 @@
       <dynmat mode='file'> dynmat.data  </dynmat>
       <asr> molecule </asr>
       <max_steps> 50 </max_steps>
-      <max_iter> 200 </max_iter>
+      <max_iter> 10 </max_iter>
       <prefix> sobol </prefix>
       <tau> 10 </tau>
       <random_type> sobol </random_type>
