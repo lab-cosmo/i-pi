@@ -54,8 +54,8 @@ class Replicas(dobject):
                 raise ValueError("The index of the degree of freedom must be "+
                                  "specified when initialising Replicas from "+
                                  "beads.")
-            qtemp = dstrip(beads.q[:,idof]).copy()
-            ptemp = dstrip(beads.p[:,idof]).copy()
+            qtemp = dstrip(beads.q)[:,idof].copy()
+            ptemp = dstrip(beads.p)[:,idof].copy()
             mtemp = beads.m3[0,idof]
 
         dself.q = depend_array(name="q", value=qtemp)
@@ -122,7 +122,7 @@ class HolonomicConstraint(dobject):
         """
         dself = dd(self)
         ndof = dself.get_ndof()
-        dofs = np.asarray(dofs, dtype=int)
+        dofs = np.asarray(dofs, dtype=int).copy()
         if (dofs.ndim != 1):
             raise ValueError("Shape of constrained DoF group incompatible "+
                              "with "+dself.__class__.__name__)
@@ -221,7 +221,7 @@ class BondLength(HolonomicConstraint):
 class BondAngle(HolonomicConstraint):
     """Constraint on the A--X--B bond-angle, averaged over the replicas.
        The indices of the coordinates of the central atom X are supplied
-       first, followes by A, then B.
+       first, followed by A and B.
     """
 
     # Nine degrees of freedom -- three per atom

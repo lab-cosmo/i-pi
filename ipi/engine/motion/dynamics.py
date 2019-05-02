@@ -17,6 +17,9 @@ import numpy as np
 
 from ipi.engine.motion import Motion
 from ipi.utils.depend import *
+from ipi.engine.constraints import Replicas, BondLength, BondAngle, \
+        EckartTransX, EckartTransY, EckartTransZ, \
+        EckartRotX, EckartRotY, EckartRotZ
 from ipi.engine.thermostats import Thermostat
 from ipi.engine.barostats import Barostat
 
@@ -678,54 +681,179 @@ class QCMDWaterIntegrator(NVTIntegrator):
            TBC
     """
 
+    _nfree = 5 # Number of free ring-polymer time-steps (hard-coded for now)
+    _maxcycle = 100 # Maximum number of cycles over constraints in SHAKE/RATTLE
+    _tol = 1.0e-6 # Tolerance threshold for converging the constraints
+
+    def bind(self, motion):
+        """ Reference all the variables for simpler access and initialise
+            local storage of coordinates and associated constraints.
+
+            Note: this assumes that atoms belonging to the same bent triatomic
+                  are stored consecutively, and that the central atom is at the
+                  beginning of each group of three.
+        """
+
+        super(QCMDWaterIntegrator, self).bind(motion)
+        if (self.beads.natoms%3 != 0):
+            raise ValueError("QCMDWaterIntegrator got a total "+
+                             "of {:d} atoms. ".format(self.beads.natoms)+
+                             "This is inconsistent with a set of triatomics.")
+        # Create a local copy of bead coordinates and momenta that stores
+        # beads grouped by degrees of freedom in one-dimensional arrays
+        self.replica_list = []
+        for i in range(3*self.beads.natoms):
+            self.replica_list.append(Replicas(self.beads.nbeads, self.beads, i))
+        # Generate a list of Constraints to fix the quasi-centroids
+        self.clist = []
+        O_idx = [0,1,2]
+        H1_idx = [3,4,5]
+        H2_idx = [6,7,8]
+        for i in range(0,self.beads.natoms,3):
+            self.clist.append(BondLength(O_idx+H1_idx))
+            self.clist.append(BondLength(O_idx+H2_idx))
+            for cls in [BondAngle, EckartTransX, EckartTransY, EckartTransZ,
+                        EckartRotX, EckartRotY, EckartRotZ]:
+                self.clist.append(cls(O_idx+H1_idx+H2_idx))
+            for lst in [O_idx, H1_idx, H2_idx]:
+                for j in range(len(lst)):
+                    lst[j] += 9
+        # Bind the coordinates to the constraints
+        for c in self.clist:
+            c.bind(self.replica_list)
+        # Calculate the constraint gradients and the gradients multiplied by the inverse mass tensor
+        self.glist = []
+        self.mglist = []
+        for c in self.clist:
+            self.glist.append(dstrip(c.jac.get()))
+            # Convert gradient to normal-mode coords
+            gnm = self.nm.transform.b2nm(self.glist[-1].T)
+            # Multiply by the corresponding dynamical mass
+            for idof in c.dofs:
+                gnm[:,idof] /= dstrip(self.nm.dynm3)[:,idof]
+            # Convert back to bead representation
+            self.mglist.append(self.nm.transform.nm2b(gnm).T)
+
     def pconstraints(self):
         """This applies RATTLE to the momenta.
 
         The propagator raises an error if the centre-of-mass of the
         cell or any atoms are fixed.
         """
+
+        #!!TODO: write RATTLE
         pass
 
-    def qconstraints(self):
-        """This applies SHAKE to the positions and momenta."""
-        pass
+    def qconstraints(self, dt):
+        """This applies SHAKE to the positions and momenta.
+
+        Args:
+           dt: integration time-step for SHAKE/RATTLE
+        """
+
+        # Copy the current ring-polymer configuration into replica list
+        for idof in range(3*self.beads.natoms):
+            self.replica_list[idof].q[:] = dstrip(self.beads.q)[:,idof]
+        # Cycle over constraints until convergence
+        ncycle = 1
+        # Initialise the Lagrange multipliers
+        lambdas = np.zeros(len(self.clist))
+        while True:
+            if (ncycle > self._maxcycle):
+                raise ValueError("Maximum number of iterations exceeded in SHAKE.")
+            all_converged = True
+            for i,(c,g) in enumerate(zip(self.clist, self.mglist)):
+                converged = abs(c.sigma) < self._tol
+                all_converged = all_converged and converged
+                if not converged:
+                    # Estimate the correction to the Lagrange multiplier
+                    dlambda = -c.sigma / np.sum(c.jac*g)
+                    # Update the current value
+                    lambdas[i] += dlambda
+                    # Update the affected DOFs
+                    for idof,gvec in zip(c.dofs,g):
+                        self.replica_list[idof].q[:] += dlambda*gvec
+            if all_converged:
+                break
+            ncycle += 1
+        # Update the momenta
+        for l,c,g in zip(lambdas, self.clist, self.glist):
+            for idof,gvec in zip(c.dofs,g):
+                self.replica_list[idof].p[:] += l*g/dt
+        # Re-calculate the gradients
+        for c,g,mg in zip(self.clist,self.glist,self.mglist):
+            g[...] = dstrip(c.jac)
+            gnm = self.nm.transform.b2nm(g.T)
+            for idof in c.dofs:
+                gnm[:,idof] /= dstrip(self.nm.dynm3)[:,idof]
+            mg[...] = self.nm.transform.nm2b(gnm).T
+        # Copy the coordinates back into beads
+        temp = np.empty_like(dstrip(self.beads.q))
+        for idof in range(3*self.beads.natoms):
+            temp[:,idof] = dstrip(self.replica_list[idof].q)
+        self.beads.q = temp
+        for idof in range(3*self.beads.natoms):
+            temp[:,idof] = dstrip(self.replica_list[idof].p)
+        self.beads.p = temp
+
+    def free_p(self):
+        """Velocity Verlet momentum propagator with ring-polymer spring forces,
+           followed by RATTLE.
+        """
+        self.nm.pnm[1:,:] -= (
+                dstrip(self.nm.qnm)[1:,:] *
+                dstrip(self.nm.dynm3)[1:,:] *
+                dstrip(self.nm.omegak2)[1:,None])*(self.qdt/(2*self._nfree))
+        self.pconstraints() # RATTLE
+
+    def free_q(self):
+        """Velocity Verlet position propagator with ring-polymer spring forces,
+           followed by SHAKE.
+        """
+        self.nm.qnm += (dstrip(self.nm.pnm) /
+                        dstrip(self.nm.dynm3))*(self.qdt//(2*self._nfree))
+        self.qconstraints(self.qdt//(2*self._nfree)) # SHAKE
+        self.pconstraints() #RATTLE
 
     def free_qstep_ba(self):
         """Override the exact normal mode propagator for the free ring-polymer
            with a sequence of RATTLE/SHAKE steps.
         """
-        pass
-        # for i in range(self.nfree//2):
-            # propagate momenta for self.qdt/(2*self.nfree)
-            # self.pconstraints()
-            # propagate positions for self.qdt/(self.nfree)
-            # self.qconstraints()
-            # propagate momenta for self.qdt/(2*self.nfree)
-            # self.pconstraints()
-        # if (self.nfree%2 == 1):
-            # propagate momenta for self.qdt/(2*self.nfree)
-            # self.pconstraints()
-            # propagate positions for self.qdt/(2*self.nfree)
-            # self.qconstraints()
+        for i in range(self.nfree//2):
+            self.free_p()
+            self.free_q()
+            self.free_q()
+            self.free_p()
+
+        if (self.nfree%2 == 1):     self.tstep()
+            self.pconstraints()
+
+        elif self.splitting == "baoab":
+
+            self.barostat.pscstep()
+            self.beads.p += dstrip(self.forces.fsc_part_2) * self.dt * 0.5
+            self.mtsprop_ba(0)
+            # thermostat is applied for dt
+            self.tstep()
+            self.pconstraints()
+            s
+            self.free_p()
+            self.free_q()
 
     def free_qstep_ab(self):
         """Override the exact normal mode propagator for the free ring-polymer
            with a sequence of RATTLE/SHAKE steps.
         """
 
-        pass
-        # if (self.nfree%2 == 1):
-            # propagate positions for self.qdt/(2*self.nfree)
-            # self.qconstraints()
-            # propagate momenta for self.qdt/(2*self.nfree)
-            # self.pconstraints()
-        # for i in range(self.nfree//2):
-            # propagate momenta for self.qdt/(2*self.nfree)
-            # self.pconstraints()
-            # propagate positions for self.qdt/(self.nfree)
-            # self.qconstraints()
-            # propagate momenta for self.qdt/(2*self.nfree)
-            # self.pconstraints()
+        if (self.nfree%2 == 1):
+            self.free_q()
+            self.free_p()
+
+        for i in range(self.nfree//2):
+            self.free_p()
+            self.free_q()
+            self.free_q()
+            self.free_p()
 
     def tstep(self):
         """Velocity Verlet thermostat step, followed by RATTLE"""
