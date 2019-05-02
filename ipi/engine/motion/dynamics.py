@@ -352,6 +352,17 @@ class NVEIntegrator(DummyIntegrator):
         # dt/inmts
         self.nm.qnm[0, :] += dstrip(self.nm.pnm)[0, :] / dstrip(self.beads.m3)[0] * self.qdt
 
+    def free_qstep_ba(self):
+        """Exact normal mode propagator for the free ring polymer, which combines
+           propagation of the centroid using Velocity Verlet with a call to
+           the exact propagator for non-centroid modes.
+        """
+        self.qcstep()
+        self.nm.free_qstep()
+
+    def free_qstep_ab(self):
+        self.free_qstep_ba()
+
     # now the idea is that for BAOAB the MTS should work as follows:
     # take the BAB MTS, and insert the O in the very middle. This might imply breaking a A step in two, e.g. one could have
     # Bbabb(a/2) O (a/2)bbabB
@@ -366,10 +377,8 @@ class NVEIntegrator(DummyIntegrator):
             self.pconstraints()
             if index == self.nmtslevels - 1:
                 # call Q propagation for dt/alpha at the inner step
-                self.qcstep()
-                self.nm.free_qstep()
-                self.nm.free_qstep()
-                self.qcstep()
+                self.free_qstep_ba()
+                self.free_qstep_ab()
             else:
                 self.mtsprop(index + 1)
 
@@ -382,8 +391,7 @@ class NVEIntegrator(DummyIntegrator):
             self.pconstraints()
             if index == self.nmtslevels - 1:
                 # call Q propagation for dt/alpha at the inner step
-                self.qcstep()
-                self.nm.free_qstep()
+                self.free_qstep_ba()
             else:
                 self.mtsprop_ba(index + 1)
 
@@ -393,8 +401,7 @@ class NVEIntegrator(DummyIntegrator):
         if self.nmts[index] % 2 == 1:
             if index == self.nmtslevels - 1:
                 # call Q propagation for dt/alpha at the inner step
-                self.qcstep()
-                self.nm.free_qstep()
+                self.free_qstep_ab()
             else:
                 self.mtsprop_ab(index + 1)
 
@@ -407,10 +414,8 @@ class NVEIntegrator(DummyIntegrator):
             self.pconstraints()
             if index == self.nmtslevels - 1:
                 # call Q propagation for dt/alpha at the inner step
-                self.qcstep()
-                self.nm.free_qstep()
-                self.nm.free_qstep()
-                self.qcstep()
+                self.free_qstep_ba()
+                self.free_qstep_ab()
             else:
                 self.mtsprop(index + 1)
 
@@ -659,3 +664,70 @@ class SCNPTIntegrator(SCIntegrator):
             self.mtsprop_ab(0)
             self.barostat.pscstep()
             self.beads.p += dstrip(self.forces.fsc_part_2) * self.dt * 0.5
+
+class QCMDWaterIntegrator(NVTIntegrator):
+    """Integrator for a constant temperature simulation of water subject
+       to quasi-centroid constraints.
+
+       This is an early implementation that hard-codes a range of parameters.
+       Eventually this is to be combined with a proper, general constrained
+       propagator for ring-polymers and extended to systems beyond bent
+       triatomics.
+
+       Attributes:
+           TBC
+    """
+
+    def pconstraints(self):
+        """This applies RATTLE to the momenta.
+
+        The propagator raises an error if the centre-of-mass of the
+        cell or any atoms are fixed.
+        """
+        pass
+
+    def qconstraints(self):
+        """This applies SHAKE to the positions and momenta."""
+        pass
+
+    def free_qstep_ba(self):
+        """Override the exact normal mode propagator for the free ring-polymer
+           with a sequence of RATTLE/SHAKE steps.
+        """
+        pass
+        # for i in range(self.nfree//2):
+            # propagate momenta for self.qdt/(2*self.nfree)
+            # self.pconstraints()
+            # propagate positions for self.qdt/(self.nfree)
+            # self.qconstraints()
+            # propagate momenta for self.qdt/(2*self.nfree)
+            # self.pconstraints()
+        # if (self.nfree%2 == 1):
+            # propagate momenta for self.qdt/(2*self.nfree)
+            # self.pconstraints()
+            # propagate positions for self.qdt/(2*self.nfree)
+            # self.qconstraints()
+
+    def free_qstep_ab(self):
+        """Override the exact normal mode propagator for the free ring-polymer
+           with a sequence of RATTLE/SHAKE steps.
+        """
+
+        pass
+        # if (self.nfree%2 == 1):
+            # propagate positions for self.qdt/(2*self.nfree)
+            # self.qconstraints()
+            # propagate momenta for self.qdt/(2*self.nfree)
+            # self.pconstraints()
+        # for i in range(self.nfree//2):
+            # propagate momenta for self.qdt/(2*self.nfree)
+            # self.pconstraints()
+            # propagate positions for self.qdt/(self.nfree)
+            # self.qconstraints()
+            # propagate momenta for self.qdt/(2*self.nfree)
+            # self.pconstraints()
+
+    def tstep(self):
+        """Velocity Verlet thermostat step, followed by RATTLE"""
+        super(QCMDWaterIntegrator,self).tstep()
+        self.pconstraints()
