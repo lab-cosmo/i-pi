@@ -1,4 +1,4 @@
-"""
+""" hgjhgjhg
 Contains classes for different geometry optimization algorithms.
 
 TODO
@@ -145,60 +145,51 @@ class GradientMapper(object):
               reference cell matrix is set equal to this. Must be an upper
               triangular 3*3 matrix. Defaults to a 3*3 zeroes matrix.
         """
-
+        print("INIT")
         pass
 
     def bind(self, dumop):
+        print("BIND")
         self.dbeads = dumop.beads.copy()
-        #print("dbead.q", self.dbeads.q)
         self.dcell = dumop.cell.copy()
         self.dforces = dumop.forces.copy(self.dbeads, self.dcell)
         self.h0 = dstrip(self.dcell.h).copy()
         self.ih0 = dstrip(self.dcell.ih).copy()
+        self.strain = (np.dot(dstrip(self.dcell.h),self.ih0) - np.eye(3)).flatten()
         sp = self.dcell.positions_abs_to_scaled(self.dbeads.q)
-        #print("sp", sp)
         ap = self.dcell.positions_scaled_to_abs(sp)
-        #print("ap", ap)
-
-
-
-            # stores a reference to the atoms and cell we are computing forces for
-
+        # stores a reference to the atoms and cell we are computing forces for
 
 
     def __call__(self, x):
         """computes energy and gradient for optimization step"""
-
+        print("CALL")
         self.fcount += 1
         self.dbeads.q = x
         self.h0 ###should be passed from input.xml
 
         self.pext = 0.0 #  for zero external pressure
         self.strain = (np.dot(dstrip(self.dcell.h),self.ih0) - np.eye(3)).flatten() #epsilon
-        self.metric = np.dot(self.dcell.h.T, self.dcell.h) #g = hTh
+        self.metric = np.dot(self.dcell.h.T, self.dcell.h) #g = hTh(3,3)
         f  = self.dforces.f[0] #check if it refers to the 0 bead or centriod
 
         nat = len(f) / 3
-        f = f.reshape((nat,3))
-        #sf = np.dot()
-
-
+        sf=self.dforces.forces_abs_to_scaled(self.dforces.f[0])
+        sf= sf.reshape((nat,3))
         # Defines the effective energy
         e = self.dforces.pot   # Energy
         pV = self.pext * self.dcell.V
-        e = e + pV
+        p=0
+        e = e + pV #assume p = 0
+        self.strain= self.strain.reshape((3,3))
 
         # Defines the effective gradient
-        g = np.zeros(len(self.dforces.f) + 9)   # Gradient contains 3N + 9 components
+        g = np.zeros(nat*3 + 9)
+          # Gradient contains 3N + 9 components
         g[0:9] = - np.dot((self.dforces.vir + np.eye(3) * pV), np.eye(3) + (self.strain).T).flatten()
-        g[9:] = self.metric * sf
+        g[9:] = np.dot(self.metric, sf.T).T.flatten()
 
-
-        #entp = self.dforces.pot + (np.trace((self.dforces.vir) / 3.0))  # enthalpy
-
-        #ggT =
-        print("LIST OF PRINTED PROPS")
-        print(self.dforces.pot / self.dbeads.nbeads, np.trace((self.dforces.vir) / (3.0 * self.dcell.V)),self.tensor2vec((self.dforces.vir) / self.dcell.V))
+        #print(self.dforces.pot / self.dbeads.nbeads, np.trace((self.dforces.vir) / (3.0 * self.dcell.V)),self.tensor2vec((self.dforces.vir) / self.dcell.V))
         return e, g
 
     def tensor2vec(self, tensor):
@@ -207,14 +198,6 @@ class GradientMapper(object):
         """
         return np.array([tensor[0, 0], tensor[1, 1], tensor[2, 2], tensor[0, 1], tensor[0, 2], tensor[1, 2]])
 
-    #def abs_to_scaled(self):
-        #fractional = np.linalg.solve(self.dcell.h.T, self.dbeads.q.T).T
-        #return fractional
-
-    #def scaled_forces(self):
-        #scaledForce = np.linalg.solve(self.dcell.h.T, self.dforces.f.T).T
-        #return scaledForce
-     #print(self.dbeads.q)
 
 class DummyOptimizer(dobject):
     """ Dummy class for all optimization classes """
@@ -231,6 +214,7 @@ class DummyOptimizer(dobject):
 
 
     def bind(self, geop):
+        print("BIND_DUMMY_OPT")
         """
         bind optimization options and call bind function of LineMapper and GradientMapper (get beads, cell,forces)
         check whether force size, direction size and inverse Hessian size from previous step match system size
@@ -282,6 +266,7 @@ class DummyOptimizer(dobject):
         self.old_x = geop.old_x
         self.old_u = geop.old_u
         self.old_f = geop.old_f
+        #self.strain = geop.strain
         self.d = geop.d
 
     def exitstep(self, fx, u0, x):
@@ -322,7 +307,9 @@ class DummyOptimizer(dobject):
 
 
 class BFGSOptimizer(DummyOptimizer):
+
     """ BFGS Minimization """
+
 
     def bind(self, geop):
         # call bind function from DummyOptimizer
@@ -330,11 +317,12 @@ class BFGSOptimizer(DummyOptimizer):
 
         if geop.invhessian.size != (self.beads.q.size * self.beads.q.size):
             if geop.invhessian.size == 0:
-                geop.invhessian = np.eye(self.beads.q.size, self.beads.q.size, 0, float)
+                geop.invhessian = np.eye(self.beads.q.size, self.beads.q.size, 0, float) ###change the hessioan
             else:
                 raise ValueError("Inverse Hessian size does not match system size")
 
         self.invhessian = geop.invhessian
+        print("BIND_BFGS_OPT")
         self.gm.bind(self)
         self.big_step = geop.big_step
         self.ls_options = geop.ls_options
@@ -351,11 +339,6 @@ class BFGSOptimizer(DummyOptimizer):
         if step == 0:
             info(" @GEOP: Initializing BFGS", verbosity.debug)
             self.d += dstrip(self.forces.f) / np.sqrt(np.dot(self.forces.f.flatten(), self.forces.f.flatten()))
-            print(self.gm.dforces.f[0])
-            af = dstrip(self.gm.dforces.f[0]).copy()
-            print("gm.dforce",self.gm.dforces.forces_abs_to_scaled(af))
-            sf = dstrip(self.gm.dforces.forces_abs_to_scaled(af)).copy()
-            print("af", self.gm.dforces.forces_scaled_to_abs(sf))
 
             if len(self.fixatoms) > 0:
                 for dqb in self.d:
@@ -363,11 +346,11 @@ class BFGSOptimizer(DummyOptimizer):
                     dqb[self.fixatoms * 3 + 1] = 0.0
                     dqb[self.fixatoms * 3 + 2] = 0.0
 
-        self.old_x[:] = self.beads.q
-        self.old_u[:] = self.forces.pot
-        self.old_f[:] = self.forces.f
-        if step > 0:
-            self.exitstep(self.forces.pot, self.old_u, d_x_max)
+        #self.old_x[0:9] = self.gm.strain.flatten()
+        print("hello, i'm the old_x shape",self.old_x.shape)
+        self.old_x[9:] = self.beads.q #old_x[0:9] = strain.flatten()
+        self.old_u[:] = self.forces.pot #+pV = 0
+        self.old_f[:] = self.forces.f #as in _call_ of GradientMapper
 
         if len(self.fixatoms) > 0:
             for dqb in self.old_f:
@@ -379,6 +362,8 @@ class BFGSOptimizer(DummyOptimizer):
 
         # Do one iteration of BFGS
         # The invhessian and the directions are updated inside.
+        #####################e+pV, g (F on article)
+        print("BBfgs")
         BFGS(self.old_x, self.d, self.gm, fdf0, self.invhessian, self.big_step,
              self.ls_options["tolerance"] * self.tolerances["energy"], self.ls_options["iter"])
 
@@ -389,4 +374,5 @@ class BFGSOptimizer(DummyOptimizer):
         print("this is cellop")
         # Exit simulation step
         d_x_max = np.amax(np.absolute(np.subtract(self.beads.q, self.old_x)))
+        print("dxmax",d_x_max)
         self.exitstep(self.forces.pot, self.old_u, d_x_max)
