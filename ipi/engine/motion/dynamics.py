@@ -668,6 +668,8 @@ class SCNPTIntegrator(SCIntegrator):
             self.barostat.pscstep()
             self.beads.p += dstrip(self.forces.fsc_part_2) * self.dt * 0.5
 
+#!! TODO: re-write the below given that mass-weighted gradients have been moved
+#to the HolonomicConstraints class
 class QCMDWaterIntegrator(NVTIntegrator):
     """Integrator for a constant temperature simulation of water subject
        to quasi-centroid constraints.
@@ -693,10 +695,12 @@ class QCMDWaterIntegrator(NVTIntegrator):
                   are stored consecutively, and that the central atom is at the
                   beginning of each group of three.
         """
+        #!! TODO: this is currently agnostic of open paths, need to be
+        #   amended in the future
 
         super(QCMDWaterIntegrator, self).bind(motion)
         if (self.beads.natoms%3 != 0):
-            raise ValueError("QCMDWaterIntegrator got a total "+
+            raise ValueError("QCMDWaterIntegrator received a total "+
                              "of {:d} atoms. ".format(self.beads.natoms)+
                              "This is inconsistent with a set of triatomics.")
         # Create a local copy of bead coordinates and momenta that stores
@@ -721,18 +725,6 @@ class QCMDWaterIntegrator(NVTIntegrator):
         # Bind the coordinates to the constraints
         for c in self.clist:
             c.bind(self.replica_list)
-        # Calculate the constraint gradients and the gradients multiplied by the inverse mass tensor
-        self.glist = []
-        self.mglist = []
-        for c in self.clist:
-            self.glist.append(dstrip(c.jac.get()))
-            # Convert gradient to normal-mode coords
-            gnm = self.nm.transform.b2nm(self.glist[-1].T)
-            # Multiply by the corresponding dynamical mass
-            for idof in c.dofs:
-                gnm[:,idof] /= dstrip(self.nm.dynm3)[:,idof]
-            # Convert back to bead representation
-            self.mglist.append(self.nm.transform.nm2b(gnm).T)
 
     def pconstraints(self):
         """This applies RATTLE to the momenta.
@@ -741,7 +733,6 @@ class QCMDWaterIntegrator(NVTIntegrator):
         cell or any atoms are fixed.
         """
 
-        #!!TODO: write RATTLE
         pass
 
     def qconstraints(self, dt):
@@ -766,11 +757,8 @@ class QCMDWaterIntegrator(NVTIntegrator):
                 converged = abs(c.sigma) < self._tol
                 all_converged = all_converged and converged
                 if not converged:
-                    # Estimate the correction to the Lagrange multiplier
                     dlambda = -c.sigma / np.sum(c.jac*g)
-                    # Update the current value
                     lambdas[i] += dlambda
-                    # Update the affected DOFs
                     for idof,gvec in zip(c.dofs,g):
                         self.replica_list[idof].q[:] += dlambda*gvec
             if all_converged:
@@ -825,18 +813,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
             self.free_q()
             self.free_p()
 
-        if (self.nfree%2 == 1):     self.tstep()
-            self.pconstraints()
-
-        elif self.splitting == "baoab":
-
-            self.barostat.pscstep()
-            self.beads.p += dstrip(self.forces.fsc_part_2) * self.dt * 0.5
-            self.mtsprop_ba(0)
-            # thermostat is applied for dt
-            self.tstep()
-            self.pconstraints()
-            s
+        if (self.nfree%2 == 1):
             self.free_p()
             self.free_q()
 

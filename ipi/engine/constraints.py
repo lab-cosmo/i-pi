@@ -98,8 +98,7 @@ class HolonomicConstraint(dobject):
         ndof: The number of degrees of freedom involved in the constraint
 
     Depend objects:
-        dofs: 1D array of integers indexing the degrees of freedom bound to
-              the constraint
+
         targetval: The target value of the constraint function
         _q: List of Replicas' coordinates bound to the constraint
         _m: List of Replicas' masses bound to the constraint
@@ -129,27 +128,45 @@ class HolonomicConstraint(dobject):
         if (dofs.size != ndof and ndof != -1):
             raise ValueError("Size of constrained DoF group incompatible "+
                              "with "+dself.__class__.__name__)
-        dself.dofs = depend_array(name="dofs",value=dofs)
+        dself.dofs = dofs
         self.ndof = len(dself.dofs)
         if val is not None:
             if not np.isscalar(val):
                 raise TypeError("Expecting a scalar for target constraint value")
         dself.targetval = depend_value(name="targetval")
         self.targetval = val
+        # A list of parameters in addition to targetval, upon which the value
+        # of the constraint function and its gradient depend
+        self.params = []
 
-    def bind(self, replicas, **kwargs):
+    def bind(self, replicas, nm, **kwargs):
         """Bind the appropriate degrees of freedom to the holonomic constraint.
            Input:
                replicas(list): List of Replicas objects containing the ring-polymer
                                data grouped by degree of freedom.
+               nm: A normal modes object used to do the normal modes transformation.
         """
 
         self.nbeads = replicas[0].q.size
+        self._nm = nm
         dself = dd(self)
         dself._q = [replicas[i].q for i in self.dofs]
+        dself._p = [replicas[i].p for i in self.dofs]
         dself._m = depend_array(name="_m",
                                 value=np.array([replicas[i].m for i in self.dofs])
                                 )
+        dself.sigma = depend_value(name="sigma", func=self.get_sigma,
+                dependencies=dself._q+dself._m+[dself.targetval]+dself.params,
+                value=0.0)
+        dself.jac = depend_array(name="jac", func=self.get_jac,
+                dependencies=dself._q+dself._m+dself.params,
+                value=np.zeros_like(np.asarray(dself._q)))
+        dself.mjac = depend_array(name="mjac", func=self.get_mjac,
+                dependencies=[dself.jac,dself._nm.dynm3],
+                value=np.zeros_like(dstrip(dself.jac)))
+        dself.sigmadot = depend_value(name="sigmadot", func=self.get_sigmadot,
+                dependencies=[dself.mjac]+dself._p,
+                value=0.0)
 
     def get_sigma(self):
         """Dummy constraint function calculator that does nothing."""
@@ -158,6 +175,26 @@ class HolonomicConstraint(dobject):
     def get_jac(self):
         """Dummy constraint Jacobian calculator that does nothing."""
         pass
+
+    def get_mjac(self):
+        """Calculate the constraint gradient, weighted by the inverse mass tensor"""
+        mjac = dstrip(self.jac.get()).copy()
+        gnm = self._nm.transform.b2nm_closed(mjac.T)
+        for i,idof in enumerate(self.dofs):
+            # Override if DoF in open path
+            if idof//3 in self._nm.transform._open:
+                gnm[:,i] = np.dot(self._nm.transform._b2o_nm, mjac[i,:])
+            # Divide by the dynamical mass
+            gnm[:,i] /= dstrip(self._nm.dynm3)[:,idof]
+        mjac[:,:] = self._nm.transform.nm2b_closed(gnm).T
+        for i,idof in enumerate(self.dofs):
+            if idof//3 in self._nm.transform._open:
+                mjac[i,:] = np.dot(self._nm.transform._o_nm2b, gnm[:,i])
+        return mjac
+
+    def get_sigmadot(self):
+        """Calculate the total derivative of the constraint function w.r.t. time."""
+        return np.sum(np.asarray(self._p)*self.mjac)
 
 #------------- Specialisations of the Holonomic Constraint class -----------#
 class BondLength(HolonomicConstraint):
@@ -168,11 +205,11 @@ class BondLength(HolonomicConstraint):
     # Six degrees of freedom --- three per atom
     _ndof = 6
 
-    def bind(self, replicas, **kwargs):
+    def bind(self, replicas, nm, **kwargs):
         """Bind the appropriate degrees of freedom to the holonomic constraint.
         """
 
-        super(BondLength, self).bind(replicas, **kwargs)
+        super(BondLength, self).bind(replicas, nm, **kwargs)
         dself = dd(self)
         dself._qAB = depend_array(name="_qAB", func=self.get_qAB,
                 value=np.zeros((3,self.nbeads), float),
@@ -180,15 +217,12 @@ class BondLength(HolonomicConstraint):
         dself._rAB = depend_array(name="_rAB", func=self.get_rAB,
                 value=np.zeros(self.nbeads, float),
                 dependencies=[dself._qAB])
-        dself.sigma = depend_value(name="sigma", func=self.get_sigma,
-                dependencies=dself._q+[dself.targetval])
         if self.targetval is None:
             # Set to the current value of the constraint function
             self.targetval = 0.0
             currentval = self.sigma
             self.targetval = currentval
-        dself.jac = depend_value(name="jac", func=self.get_jac,
-                                 dependencies=dself._q)
+
 
     def get_qAB(self):
         """Calculate the displacement vectors between the replicas of
@@ -227,11 +261,11 @@ class BondAngle(HolonomicConstraint):
     # Nine degrees of freedom -- three per atom
     _ndof =  9
 
-    def bind(self, replicas, **kwargs):
+    def bind(self, replicas, nm, **kwargs):
         """Bind the appropriate degrees of freedom to the holonomic constraint.
         """
 
-        super(BondAngle,self).bind(replicas, **kwargs)
+        super(BondAngle,self).bind(replicas, nm, **kwargs)
         dself = dd(self)
         dself._qXA = depend_array(name="_qXA", func=self.get_qXA,
                                   value=np.zeros((3,self.nbeads),float),
@@ -254,15 +288,11 @@ class BondAngle(HolonomicConstraint):
         dself._ct = depend_array(name="_ct", func=self.get_ct,
                                  value=np.zeros(self.nbeads, float),
                                  dependencies=[dself._unit_qXA, dself._unit_qXB])
-        dself.sigma = depend_value(name="sigma", func=self.get_sigma,
-                                   dependencies=dself._q+[dself.targetval])
         if self.targetval is None:
             # Set to initial bond angle
             self.targetval = 0.0
             currentval = self.sigma
             self.targetval = currentval
-        dself.jac = depend_value(name="jac", func=self.get_jac,
-                                 dependencies=dself._q)
 
     def get_qXA(self):
         """Calculate the displacement vectors between the replicas of
@@ -361,11 +391,11 @@ class EckartTrans(HolonomicConstraint):
                              self.__class__.__name__)
         super(EckartTrans,self).__init__(dofs[idx::3], val)
 
-    def bind(self, replicas, **kwargs):
+    def bind(self, replicas, nm, **kwargs):
         """Bind the appropriate coordinates to the constraint.
         """
 
-        super(EckartTrans, self).bind(replicas, **kwargs)
+        super(EckartTrans, self).bind(replicas, nm, **kwargs)
         dself = dd(self)
         dself._qc = depend_array(name="_qc", func=self.get_qc,
                                  value=np.zeros(self.ndof, float),
@@ -373,17 +403,11 @@ class EckartTrans(HolonomicConstraint):
         dself._mrel = depend_array(name="_mrel", func=self.get_mrel,
                                  value=np.zeros(self.ndof, float),
                                  dependencies=[dself._m])
-        dself.sigma = depend_value(name="sigma", func=self.get_sigma,
-                                   dependencies=[dself._qc,
-                                                 dself._mrel,
-                                                 dself.targetval])
         if self.targetval is None:
             # Set to the current position of the CoM
             self.targetval = 0.0
             currentval = self.sigma
             self.targetval = currentval
-        dself.jac = depend_value(name="jac", func=self.get_jac,
-                                 dependencies=[dself._mrel])
 
     def get_qc(self):
         """Calculate the centroids of the bead DoFs.
@@ -478,29 +502,34 @@ class EckartRot(HolonomicConstraint):
                              self.__class__.__name__)
         super(EckartRot,self).__init__(dofs[idces[0]::3]+dofs[idces[1]::3], 0.0)
 
-    def bind(self, replicas, **kwargs):
+    def bind(self, replicas, nm, **kwargs):
         """Bind the appropriate coordinates to the constraints.
           Args:
               replicas(list): List of Replicas
+              nm: A normal modes object used to do the normal modes transformation.
           **kwargs:
               ref(array-like): Reference configuration for the constraint; if
                                absent, taken to be the centroid configuration
 
         """
-        super(EckartRot, self).bind(replicas, **kwargs)
+
         dself = dd(self)
-        dself._mrel = depend_array(name="_mrel", func=self.get_mrel,
-                                 value=np.zeros((2,self.ndof//2), float),
-                                 dependencies=[dself._m])
         if "ref" in kwargs:
             lref = np.asarray(kwargs["ref"]).flatten()
             ref = np.asarray(
                     [ lref[i] for i in self.dofs ]).reshape((2, self.ndof//2))
         else:
-            # Use the centroids
-            ref = np.asarray(
-                    [ np.mean(q) for q in self._q] ).reshape((2, self.ndof//2))
+            ref = np.zeros((2, self.ndof//2))
         dself._ref = depend_array(name="_ref", value=ref)
+        self.params.append(dself._ref)
+        super(EckartRot, self).bind(replicas, nm, **kwargs)
+        if "ref" not in kwargs:
+            # Set the reference configuration to the centroid geometry
+            dself._ref[:,:] = np.asarray(
+                    [ np.mean(q) for q in self._q] ).reshape((2, self.ndof//2))
+        dself._mrel = depend_array(name="_mrel", func=self.get_mrel,
+                                 value=np.zeros((2,self.ndof//2), float),
+                                 dependencies=[dself._m])
         #NOTE: this is the mass-weighted configuration *in its CoM*
         dself._mref = depend_array(name="_mref", func=self.get_mref,
                                    value=dstrip(self._mrel)*dstrip(self._ref),
@@ -509,10 +538,6 @@ class EckartRot(HolonomicConstraint):
         dself._delqc = depend_array(name="_delqc", func=self.get_delqc,
                                  value=np.zeros((2,self.ndof//2), float),
                                  dependencies=dself._q+[dself._ref])
-        dself.sigma = depend_value(name="sigma", func=self.get_sigma,
-                                   dependencies=[dself._delqc, dself._mref])
-        dself.jac = depend_value(name="jac", func=self.get_jac,
-                                 dependencies=[dself._mref])
 
     def get_mrel(self):
         """Return the masses of the centroids, divided by the total mass.
