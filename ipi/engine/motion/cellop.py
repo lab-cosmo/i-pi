@@ -341,7 +341,12 @@ class BFGSOptimizer(DummyOptimizer):
 
         if step == 0:
             info(" @GEOP: Initializing BFGS", verbosity.debug)
-            self.d += dstrip(self.forces.f) / np.sqrt(np.dot(self.forces.f.flatten(), self.forces.f.flatten()))
+            print("if step 0")
+            print(self.d.shape, self.forces.f.shape)
+            ####should be rewritten properly
+            ff = np.zeros((1,105))
+            ff[:,9:] = dstrip(self.forces.f)
+            self.d += ff / np.sqrt(np.dot(ff.flatten(), ff.flatten()))
 
             if len(self.fixatoms) > 0:
                 for dqb in self.d:
@@ -349,14 +354,14 @@ class BFGSOptimizer(DummyOptimizer):
                     dqb[self.fixatoms * 3 + 1] = 0.0
                     dqb[self.fixatoms * 3 + 2] = 0.0
 
-        print(self.old_x[0,0:9])
-        print(self.beads.q)
-        print(self.gm.strain.flatten())
+        #print(self.old_x[0,0:9])
+        #print(self.beads.q)
+        #print(self.gm.strain.flatten())
 
-        print("1")
-        print(self.gm.strain.flatten().shape)
-        print("BFGSOptimizer step shape",self.old_x.shape)
-        self.old_x[0,0:9] = self.gm.strain.flatten()
+        #print("1")
+        #print(self.gm.strain.flatten().shape)
+        #print("BFGSOptimizer step shape",self.old_x.shape)
+        self.old_x[0,0:9] = np.zeros(9) #self.gm.strain.flatten()
         self.old_x[:,9:] = self.beads.q #old_x[0:9] = strain.flatten()
         self.old_u[:] = self.forces.pot #+pV = 0
         self.old_f[:,0:9] = np.zeros(9)
@@ -374,7 +379,10 @@ class BFGSOptimizer(DummyOptimizer):
         # The invhessian and the directions are updated inside.
         #####################e+pV, g (F on article)
         print("Bfgs")
-        print()
+        print("old_x", self.old_x)
+        print("d", self.d)
+        print("old_f", self.old_f)
+        print("fdf0", fdf0)
         BFGS(self.old_x, self.d, self.gm, fdf0, self.invhessian, self.big_step,
              self.ls_options["tolerance"] * self.tolerances["energy"], self.ls_options["iter"])
 

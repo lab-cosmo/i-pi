@@ -331,6 +331,8 @@ class BFGSOptimizer(DummyOptimizer):
 
         if step == 0:
             info(" @GEOP: Initializing BFGS", verbosity.debug)
+            print("if step 0")
+            print(self.d.shape, self.forces.f.shape)
             self.d += dstrip(self.forces.f) / np.sqrt(np.dot(self.forces.f.flatten(), self.forces.f.flatten()))
             if len(self.fixatoms) > 0:
                 for dqb in self.d:
@@ -352,6 +354,11 @@ class BFGSOptimizer(DummyOptimizer):
 
         # Do one iteration of BFGS
         # The invhessian and the directions are updated inside.
+        print("Bfgs")
+        print("old_x", self.old_x)
+        print("d", self.d)
+        print("old_f", self.old_f)
+        print("fdf0", fdf0)
         BFGS(self.old_x, self.d, self.gm, fdf0, self.invhessian, self.big_step,
              self.ls_options["tolerance"] * self.tolerances["energy"], self.ls_options["iter"])
 
