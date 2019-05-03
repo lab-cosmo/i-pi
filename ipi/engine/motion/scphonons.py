@@ -408,41 +408,56 @@ class SCPhononator(DummyPhononator):
 
         elif(self.dm.displace_mode == "rnmik"):
 
-            swl = 1.0
-            swl = 0.0
+            scale_forces = 1.0
 
             # Outer Optimization Loop
             while True:
 
                 # Inner Optimization Loop
+
+                w = 1.0
+
                 while True:
 
-                    # Checks if the force is statistically significant.
-                    f, ferr, swl = self.weighted_force()
-                    ferr = ferr
+                    # Calculates the reweighted force.
+                    f, ferr, batch_w = self.weighted_force()
+
+                    # Saves the change in the weight associated with
+                    # last batch.
+                    w_old = w
+                    w = batch_w[-1]
+                    if np.absolute(w - w_old) < 1e-4:
+                        scale_forces *= 1.1
+                        print "Increasing displacement by 10 %."
+
+                    # Computes the force along the normal modes.
                     fnm = np.dot(self.dm.V.T, f)
                     fnm[self.z] = 0.0
                     ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
 
                     if self.precheck and np.all(np.abs(fnm) < ferrnm):
-                        print "Forces are converegd down to statistical error."
+                        print "All forces components are statistically insignificant."
                         break
 
                     if self.checkweights and np.max(swl) < self.wthreshold:
-                        print "RNMIK : np.max(swl), self.wthreshold", np.max(
-                            swl), self.wthreshold
-                        print "Finished the optimization of q0. Modifying K."
+                        print "MAX batch weight, batch weight threshold", np.max(
+                            batch_w), self.wthreshold
+                        print "Finished the optimization of the mean position." 
+                        print "Modifying the force constant matrix."
                         break
 
-                    iKfnm = self.dm.iw2 * fnm / self.dm.dof
-                    iKfnm[np.abs(fnm) < ferrnm] = 0.0
-
-                    dqnm = iKfnm
+                    # Calculates the displacement along the normal modes.
+                    # Moves only if forces are statistically insignificant.
+                    # Does not move along zero modes.
+                    dqnm = self.dm.iw2 * fnm * scale_forces / self.dm.dof
+                    dqnm[np.abs(fnm) < ferrnm] = 0.0
                     dqnm[self.z] = 0.0
-
+                    
+                    # Calculates the displacement in Cartesian space.
                     self.dm.beads.q += np.dot(self.dm.V, dqnm)
-                    print "moving in the direction of D kbT times the force", np.linalg.norm(
-                        fnm), np.linalg.norm(ferrnm), swl
+
+                    print "Moving along the force. |f| = " , np.linalg.norm(fnm)
+                    print "Batch weights %s", batch_w
 
                 # Once q0 is optimized. Sets the K to the averaged one, thus imposing the steady state condition.
                 dK = self.weighted_hessian()
