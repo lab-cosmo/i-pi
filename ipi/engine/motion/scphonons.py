@@ -327,8 +327,7 @@ class SCPhononator(DummyPhononator):
         Displaces the center of the distribution towards the optimized limit.
         """
 
-        dK = self.weightedhessian(
-            self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+        dK = self.weighted_hessian()
         dm = np.dot(self.dm.isqM, np.dot((dK + dK.T) / 2.0, self.dm.isqM))
         dw, dU = np.linalg.eig(dm)
         dw[np.absolute(dw) < self.dm.atol] = self.dm.atol * 1e-3
@@ -337,8 +336,7 @@ class SCPhononator(DummyPhononator):
         # return
         # Checks if the force is statistically significant.
         if self.precheck:
-            f, ferr, swl = self.weightedforce(
-                self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+            f, ferr, swl = self.weighted_force()
             fnm = np.dot(self.dm.V.T, f)
             #!TODO - this heuristics seems to be based on the
             ferrnm = np.sqrt(np.dot(self.dm.V.T**2, ferr**2))
@@ -352,12 +350,10 @@ class SCPhononator(DummyPhononator):
                 return
 
         if(self.dm.displace_mode == "iK"):
-            f, ferr, swl = self.weightedforce(
-                self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+            f, ferr, swl = self.weighted_force()
             self.dm.beads.q += np.dot(self.dm.iK, f)
 
-            der = self.weightedhessian(
-                self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+            der = self.weighted_hessian()
             self.dm.dynmatrix = np.dot(self.dm.isqM, np.dot(
                 (der + der.T) / 2.0, self.dm.isqM))
             self.apply_asr()
@@ -367,11 +363,9 @@ class SCPhononator(DummyPhononator):
 
         elif(self.dm.displace_mode == "sd"):
 
-            f, ferr, swl = self.weightedforce(
-                self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+            f, ferr, swl = self.weighted_force()
 
-            der = self.weightedhessian(
-                self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+            der = self.weighted_hessian()
 
             self.dm.beads.q += np.dot(self.dm.D, f) * self.dm.tau
 
@@ -385,10 +379,8 @@ class SCPhononator(DummyPhononator):
 
         elif(self.dm.displace_mode == "nmik"):
 
-            f, ferr, swl = self.weightedforce(
-                self.dm.beads.q, self.dm.iD, self.dm.K)
-            dK = self.weightedhessian(
-                self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+            f, ferr, swl = self.weighted_force()
+            dK = self.weighted_hessian()
             self.dm.dynmatrix = np.dot(
                 self.dm.isqM, np.dot((dK + dK.T) / 2.0, self.dm.isqM))
             self.apply_asr()
@@ -410,21 +402,23 @@ class SCPhononator(DummyPhononator):
             dqnm[self.z] = 0.0
 
             self.dm.beads.q += np.dot(self.dm.V, dqnm)
-            f, ferr, swl = self.weightedforce(
-                self.dm.beads.q, self.dm.iD, self.dm.K)
+            f, ferr, swl = self.weighted_force()
             print "moving in the direction of D kbT times the force", np.linalg.norm(
                 f), np.linalg.norm(ferr), swl, self.wthreshold
 
         elif(self.dm.displace_mode == "rnmik"):
+
+            swl = 1.0
+            swl = 0.0
 
             # Outer Optimization Loop
             while True:
 
                 # Inner Optimization Loop
                 while True:
+
                     # Checks if the force is statistically significant.
-                    f, ferr, swl = self.weightedforce(
-                        self.dm.beads.q, self.dm.iD, self.dm.K)
+                    f, ferr, swl = self.weighted_force()
                     ferr = ferr
                     fnm = np.dot(self.dm.V.T, f)
                     fnm[self.z] = 0.0
@@ -451,8 +445,7 @@ class SCPhononator(DummyPhononator):
                         fnm), np.linalg.norm(ferrnm), swl
 
                 # Once q0 is optimized. Sets the K to the averaged one, thus imposing the steady state condition.
-                dK = self.weightedhessian(
-                    self.dm.beads.q.copy(), self.dm.iD, self.dm.K)
+                dK = self.weighted_hessian()
                 self.dm.dynmatrix = np.dot(
                     self.dm.isqM, np.dot((dK + dK.T) / 2.0, self.dm.isqM))
                 self.apply_asr()
@@ -461,8 +454,7 @@ class SCPhononator(DummyPhononator):
 
                 # Checks if the another round of optimization is possible.
                 fnm_old, ferrnm_old = fnm, ferrnm
-                f, ferr, swl = self.weightedforce(
-                    self.dm.beads.q, self.dm.iD, self.dm.K)
+                f, ferr, swl = self.weighted_force()
                 ferr = ferr
                 fnm = np.dot(self.dm.V.T, f)
                 fnm[self.z] = 0.0
@@ -482,80 +474,100 @@ class SCPhononator(DummyPhononator):
                     print "Convergece in forces reached."
                     break
 
-    def weightedforce(self, qp, iDp, Kp):
+    def weighted_force(self):
         """
-    Computes the weighted force at a given diplacement.
-    """
+        Returns the reweighted force, the associated statistical error
+        and the batch weights.
+        """
+
+        # Creates new variable names for easier referencing.
+        qp, iDp, Kp, i =  self.dm.beads.q, self.dm.iD, self.dm.K, self.dm.isc - 1
+
         # Takes the set of forces calculated at the previous step for (self.q, self.iD)
-        i = self.dm.isc - 1
-        af = dstrip(self.f[i]).copy()[-1] * 0.0
-        vf = dstrip(self.f[i]).copy()[-1] * 0.0
+        avg_f = dstrip(self.f[i]).copy()[-1] * 0.0
+        var_f = dstrip(self.f[i]).copy()[-1] * 0.0
         norm = 0.0
-        swl = np.zeros(self.dm.isc)
+        batch_w = np.zeros(self.dm.isc)
         for i in range(self.dm.isc):
             f = self.f[i]
             x = self.x[i]
-            fh = -1.0 * np.dot(x-qp, Kp)
+            fh = -1.0 * np.dot(x - qp, Kp)
             # Calculates the weights to calculate average for the distribution for (qp, iDp)
-            w, sw, rw = self.calculate_weights(qp, iDp, i)
-            swl[i] = sw
+            w, sw, rw = self.calculate_weights(i)
+            batch_w[i] = sw
+
             # Simply multiplies the forces by the weights and averages
             V1 = np.sum(rw)
             V2 = np.sum(rw**2)
-            afi = np.sum(rw * (f-fh), axis=0) / V1
-            vfi = np.sum(rw * (f-fh - afi)**2, axis=0) / (V1 - V2 / V1)
-            #sw = 1.0 / vfi
-            af += sw * afi
-            vf += sw ** 2 * vfi
+            avg_fi = np.sum(rw * (f - fh), axis=0) / V1
+            var_fi = np.sum(rw * (f - fh - avg_fi)**2, axis=0) / (V1 - V2 / V1)
+            avg_f += sw * avg_fi
+            var_f += sw**2 * var_fi
             norm += sw
-        return af / norm,  np.sqrt(vf / norm**2 / self.dm.max_steps), swl
+        return avg_f / norm,  np.sqrt(var_f / norm**2 / self.dm.max_steps), batch_w
 
-    def weightedhessian(self, qp, iDp, K):
+    def weighted_hessian(self):
         """
-        Computes the weighted Hessian at a given displacement.
+        Returns the reweighted Hessian.
         """
+
+        # Creates new variable names for easier referencing.
+        qp, iDp, Kp, i =  self.dm.beads.q, self.dm.iD, self.dm.K, self.dm.isc - 1
+
         # Takes the set of forces calculated at the previous step for (self.q, self.iD)
-        i = self.dm.isc - 1
-        aK = dstrip(self.dm.iD).copy() * 0.0
+        avg_K = dstrip(self.dm.iD).copy() * 0.0
         norm = 0.0
 
         for i in range(self.dm.isc):
+            #Draws the random configurations and forces.
             f = self.f[i]
             x = self.x[i]
-            fh = -1.0 * np.dot(x-qp, K)
+
+            # Calculates the harmonic forces.
+            fh = -1.0 * np.dot(x - qp, Kp)
+
             # Calculates the weights to calculate average for the distribution for (qp, iDp)
-            w, sw, rw = self.calculate_weights(qp, iDp, i)
+            w, sw, rw = self.calculate_weights(i)
+
             # Simply multiplies the forces by the weights and averages
             V1 = np.sum(rw)
+
             # Simply multiplies the forces by the weights and averages
-            adki = -np.dot(iDp, np.dot(((f-fh) * rw).T, (x - qp[-1])).T) / V1
-            aki = K + 0.50 * (adki + adki.T)
-            aK += sw * aki
+            avg_dKi = -np.dot(iDp, np.dot(((f - fh) * rw).T, (x - qp[-1])).T) / V1
+            avg_Ki = Kp + 0.50 * (avg_dKi + avg_dKi.T)
+            avg_K += sw * avg_Ki
             norm += sw
 
-        return aK / norm
+        return avg_K / norm
 
-    def calculate_weights(self, qp, iDp, i):
+    def calculate_weights(self, i):
         """
         Computes the weights to sample (verb) a distribution described at (qp, iDp) using
         samples (noun) generated at the i^th SCPhonons step.
         """
 
+        # Creates new variable names for easier referencing.
+        qp, iDp, Kp =  self.dm.beads.q, self.dm.iD, self.dm.K
+
         # Takes the set of positions calculated at the previous step for (self.q, self.iD)
         x = self.x[i].copy()
+
         # Stores self.q in a vector
         q0 = self.q[i]
         iD0 = self.iD[i]
+
         # Estimates the weights as the ratio of density matrix for (qp, iDp) to the density matrix for (self.q, self.iD)
         rw = np.exp(-(0.50 * np.dot(iDp, (qp - x).T).T * (qp - x)).sum(axis=1) +
                     (0.50 * np.dot(iD0, (x - q0).T).T * (x - q0)).sum(axis=1))
+
         if rw.sum() < 1e-24:
             w = rw * 0.0
         else:
             w = rw / rw.sum()
+
         w = w.reshape((self.dm.max_steps, 1))
         rw = rw.reshape((self.dm.max_steps, 1))
-        return w, np.nan_to_num(np.exp(-np.var(np.log(w))))**2, rw
+        return w, np.nan_to_num(np.exp(-np.var(np.log(w)))), rw
 
     def get_KnD(self):
         """
