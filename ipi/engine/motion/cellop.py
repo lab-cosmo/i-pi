@@ -318,7 +318,7 @@ class BFGSOptimizer(DummyOptimizer):
         # call bind function from DummyOptimizer
         super(BFGSOptimizer, self).bind(geop)
 
-        if geop.invhessian.size != (self.beads.q.size * self.beads.q.size):
+        if geop.invhessian.size != (self.beads.q.size+9 * self.beads.q.size+9):
             if geop.invhessian.size == 0:
                 geop.invhessian = np.eye(self.beads.q.size+9, self.beads.q.size+9, 0, float) ###change the hessioan
             else:
@@ -352,10 +352,11 @@ class BFGSOptimizer(DummyOptimizer):
         print(self.old_x[0,0:9])
         print(self.beads.q)
         print(self.gm.strain.flatten())
-        self.old_x[0,0:9] = self.gm.strain.flatten()
+
         print("1")
         print(self.gm.strain.flatten().shape)
         print("BFGSOptimizer step shape",self.old_x.shape)
+        self.old_x[0,0:9] = self.gm.strain.flatten()
         self.old_x[:,9:] = self.beads.q #old_x[0:9] = strain.flatten()
         self.old_u[:] = self.forces.pot #+pV = 0
         self.old_f[:,0:9] = np.zeros(9)
