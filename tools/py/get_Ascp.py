@@ -33,7 +33,6 @@ def get_A(path2iipi):
     isimul = InputSimulation()
     isimul.parse(xmlrestart.fields[0][1])
     simul = isimul.fetch()
-#    simul.bind()
 
     enablePrint()
 

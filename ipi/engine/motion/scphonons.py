@@ -440,7 +440,7 @@ class SCPhononator(DummyPhononator):
                         print "Finished the optimization of q0. Modifying K."
                         break
 
-                    iKfnm = self.dm.iw2 * fnm * 1e-3
+                    iKfnm = self.dm.iw2 * fnm / self.dm.dof
                     iKfnm[np.abs(fnm) < ferrnm] = 0.0
 
                     dqnm = iKfnm
