@@ -132,20 +132,24 @@ class Beads(dobject):
                                      dependencies=[dd(b).kstress for b in self._blist])
 
     def copy(self, nbeads=-1):
-        """Creates a new beads object with newP <= P beads from the original.
+        """Creates a new beads object with newP beads from the original.
 
         Returns:
            A Beads object with the first newP q, p, m and names arrays as the original.
         """
 
         if nbeads > self.nbeads:
-            raise ValueError("Cannot copy to an object with larger number of beads")
-        elif nbeads == -1:
-            nbeads = self.nbeads
+            newbd = Beads(self.natoms, nbeads)
+            newbd.q[:] = np.tile(dstrip(self.q[0]), (nbeads,1))
+            newbd.p[:] = np.tile(dstrip(self.p[0]), (nbeads,1))
+            newbd.q[:self.nbeads] = self.q
+            newbd.p[:self.nbeads] = self.p
+        else:
+            if nbeads == -1: nbeads = self.nbeads
+            newbd = Beads(self.natoms, nbeads)
+            newbd.p[:] = self.p[:nbeads]
+            newbd.q[:] = self.q[:nbeads]
 
-        newbd = Beads(self.natoms, nbeads)
-        newbd.q[:] = self.q[:nbeads]
-        newbd.p[:] = self.p[:nbeads]
         newbd.m[:] = self.m
         newbd.names[:] = self.names
         return newbd

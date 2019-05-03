@@ -90,6 +90,9 @@ class InputSCPhonons(InputDictionary):
         "chop": (InputValue, {"dtype": float,
             "default": 1e-09,
             "help": "Threshold below which frequencies are set to zero."}),
+        "nparallel": (InputValue, {"dtype": int,
+            "default": 1,
+            "help": "The number of Monte Carlo forces to be evaluated per i-PI step."}),
     }
 
     dynamic = {}
@@ -110,6 +113,7 @@ class InputSCPhonons(InputDictionary):
         self.chop.store(phonons.chop)
         self.random_type.store(phonons.random_type)
         self.displace_mode.store(phonons.displace_mode)
+        self.nparallel.store(phonons.nparallel)
 
     def fetch(self):
         rv = super(InputSCPhonons, self).fetch()

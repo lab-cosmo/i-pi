@@ -36,7 +36,7 @@ class SCPhononsMover(Motion):
     Self consistent phonons method.
     """
 
-    def __init__(self, fixcom=False, fixatoms=None, mode="sc", dynmat=np.zeros(0, float), prefix="", asr="none", max_steps=500, max_iter=1, tau=-1, chop=1e-9, random_type="pseudo", displace_mode="rewt", widening=1.0, wthreshold=0.0, precheck=True, checkweights=False):
+    def __init__(self, fixcom=False, fixatoms=None, mode="sc", dynmat=np.zeros(0, float), prefix="", asr="none", max_steps=500, max_iter=1, tau=-1, chop=1e-9, random_type="pseudo", displace_mode="rewt", widening=1.0, wthreshold=0.0, precheck=True, checkweights=False, nparallel=1):
         """
         Initialises SCPhononsMover.
         Args:
@@ -66,12 +66,18 @@ class SCPhononsMover(Motion):
         self.wthreshold = wthreshold
         self.precheck = precheck
         self.checkweights = checkweights
+        self.nparallel = nparallel 
         if self.prefix == "":
             self.prefix = "phonons"
 
     def bind(self, ens, beads, nm, cell, bforce, prng, omaker):
 
         super(SCPhononsMover, self).bind(ens, beads, nm, cell, bforce, prng, omaker)
+
+        # Raises error if nparallel is not a factor of max_steps
+        if self.max_steps % self.nparallel !=0:
+            raise ValueError(
+                "Number of parallel force evaluations is not a factor of the maximum number of Monte Carlo steps.")
 
         # Raises error for nbeads not equal to 1.
         if(self.beads.nbeads > 1):
@@ -92,7 +98,7 @@ class SCPhononsMover(Motion):
 
         # Creates dublicate classes to easer computation of forces.
         self.dof = 3 * self.beads.natoms
-        self.dbeads = self.beads.copy()
+        self.dbeads = self.beads.copy(nbeads=self.nparallel)
         self.dcell = self.cell.copy()
         self.dforces = self.forces.copy(self.dbeads, self.dcell)
 
@@ -285,16 +291,19 @@ class SCPhononator(DummyPhononator):
         Executes one monte carlo step.
         """
 
-        x = self.x[self.dm.isc, self.dm.imc - 1]
-        self.dm.dbeads.q = x.T
+        imcmin = self.dm.imc - 1
+        imcmax = self.dm.imc - 1 + self.dm.nparallel
 
-        v = dstrip(self.dm.dforces.pot).copy()
+        x = self.x[self.dm.isc, imcmin: imcmax]
+        self.dm.dbeads.q = x
+
+        v = dstrip(self.dm.dforces.pots).copy()
         f = dstrip(self.dm.dforces.f).copy()
 
-        self.v[self.dm.isc, self.dm.imc - 1] = v
-        self.f[self.dm.isc, self.dm.imc - 1] = f[-1]
+        self.v[self.dm.isc, imcmin : imcmax ] = v[:]
+        self.f[self.dm.isc, imcmin : imcmax ] = f[:]
 
-        self.dm.imc += 1
+        self.dm.imc += self.dm.nparallel
 
     def print_energetics(self):
         """
