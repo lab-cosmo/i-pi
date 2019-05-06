@@ -11,6 +11,7 @@ functions.
 import numpy as np
 
 from ipi.utils.depend import dobject, dd, depend_array, depend_value, dstrip
+from ipi.utils import nmtransform
 
 __all__ = ['Replicas','HolonomicConstraint','BondLength','BondAngle',
            'EckartTransX', 'EckartTransY', 'EckartTransZ',
@@ -93,14 +94,16 @@ class HolonomicConstraint(dobject):
     constraint classes.
 
     Attributes:
-        nbeads: The number of beads in the set of constrained ring-polymer
-                DoFs bound to the object
-        ndof: The number of degrees of freedom involved in the constraint
+        nbeads: The number of beads in the constrained ring-polymer DoFs
+        ndof: The number of DoFs in the constrained group
+        open_paths: the open-path ring-polymer DOFs
+                    in the constrained group
 
     Depend objects:
 
         targetval: The target value of the constraint function
         _q: List of Replicas' coordinates bound to the constraint
+        _p: List of Replicas' momenta bound to the constraint
         _m: List of Replicas' masses bound to the constraint
 
     """
@@ -139,16 +142,30 @@ class HolonomicConstraint(dobject):
         # of the constraint function and its gradient depend
         self.params = []
 
-    def bind(self, replicas, nm, **kwargs):
+    def bind(self, replicas, nm, transform=None, **kwargs):
         """Bind the appropriate degrees of freedom to the holonomic constraint.
-           Input:
-               replicas(list): List of Replicas objects containing the ring-polymer
-                               data grouped by degree of freedom.
-               nm: A normal modes object used to do the normal modes transformation.
+           Args:
+               replicas(list): List of Replicas objects containing the
+                   ring-polymer data grouped by degree
+                   of freedom.
+               nm: A normal modes object used to do the normal modes
+                   transformation.
+               transform: a normal mode transform object that is
+                   agnostic to the number of atoms and has no open paths
+                   (either no-op or nm_trans)
         """
 
         self.nbeads = replicas[0].q.size
+        # Local reference to the normal mode transform
         self._nm = nm
+        # Local transform (matrix version, agnostic to number of atoms)
+        if transform is not None:
+            #!! TODO add checks for type of transform and _open == []
+            self.transform = transform
+        elif self.nbeads == 1:
+            self.transform = nmtransform.nm_noop(nbeads = self.nbeads)
+        else:
+            self.transform = nmtransform.nm_trans(nbeads = self.nbeads)
         dself = dd(self)
         dself._q = [replicas[i].q for i in self.dofs]
         dself._p = [replicas[i].p for i in self.dofs]
@@ -156,10 +173,10 @@ class HolonomicConstraint(dobject):
                                 value=np.array([replicas[i].m for i in self.dofs])
                                 )
         dself.sigma = depend_value(name="sigma", func=self.get_sigma,
-                dependencies=dself._q+dself._m+[dself.targetval]+dself.params,
+                dependencies=dself.params+dself._q+[dself._m, dself.targetval],
                 value=0.0)
         dself.jac = depend_array(name="jac", func=self.get_jac,
-                dependencies=dself._q+dself._m+dself.params,
+                dependencies=dself.params+dself._q+[dself._m],
                 value=np.zeros_like(np.asarray(dself._q)))
         dself.mjac = depend_array(name="mjac", func=self.get_mjac,
                 dependencies=[dself.jac,dself._nm.dynm3],
@@ -178,18 +195,24 @@ class HolonomicConstraint(dobject):
 
     def get_mjac(self):
         """Calculate the constraint gradient, weighted by the inverse mass tensor"""
+
+
         mjac = dstrip(self.jac.get()).copy()
-        gnm = self._nm.transform.b2nm_closed(mjac.T)
-        for i,idof in enumerate(self.dofs):
-            # Override if DoF in open path
-            if idof//3 in self._nm.transform._open:
-                gnm[:,i] = np.dot(self._nm.transform._b2o_nm, mjac[i,:])
-            # Divide by the dynamical mass
-            gnm[:,i] /= dstrip(self._nm.dynm3)[:,idof]
-        mjac[:,:] = self._nm.transform.nm2b_closed(gnm).T
-        for i,idof in enumerate(self.dofs):
-            if idof//3 in self._nm.transform._open:
-                mjac[i,:] = np.dot(self._nm.transform._o_nm2b, gnm[:,i])
+        if self.nbeads == 1:
+            for i,idof in enumerate(self.dofs):
+                mjac[:,i] /= dstrip(self._nm.dynm3)[:,idof]
+        else:
+            gnm = self.transform.b2nm(mjac.T)
+            for i,idof in enumerate(self.dofs):
+                # Override if DoF in open path
+                if idof//3 in self._nm.transform._open:
+                    gnm[:,i] = np.dot(self._nm.transform._b2o_nm, mjac[i,:])
+                # Divide by the dynamical mass
+                gnm[:,i] /= dstrip(self._nm.dynm3)[:,idof]
+            mjac[:,:] = self.transform.nm2b(gnm).T
+            for i,idof in enumerate(self.dofs):
+                if idof//3 in self._nm.transform._open:
+                    mjac[i,:] = np.dot(self._nm.transform._o_nm2b, gnm[:,i])
         return mjac
 
     def get_sigmadot(self):

@@ -137,14 +137,8 @@ class nm_noop(object):
         if nbeads > 1:
             raise ValueError("Shouldn't use a noop transformation for ring-polymer systems ")
 
-    def b2nm_closed(self, q):
-        return q
-
     def b2nm(self, q):
         return q
-
-    def nm2b_closed(self, qnm):
-        return qnm
 
     def nm2b(self, qnm):
         return qnm
@@ -176,17 +170,6 @@ class nm_trans(object):
         self._b2o_nm = mk_o_nm_matrix(nbeads)
         self._o_nm2b = self._b2o_nm.T
 
-    def b2nm_closed(self, q):
-        """Transforms a matrix to the normal mode representation of a
-           closed path (ring polymer)
-
-        Args:
-           q: A matrix with nbeads rows, in the bead representation.
-        """
-
-        qnm = np.dot(self._b2nm, q)
-        return qnm
-
     def b2nm(self, q):
         """Transforms a matrix to the normal mode representation.
 
@@ -194,22 +177,12 @@ class nm_trans(object):
            q: A matrix with nbeads rows, in the bead representation.
         """
 
-        qnm = self.b2nm_closed(q)  #qnm = np.dot(self._b2nm, q)
+        qnm = np.dot(self._b2nm, q)
         for io in self._open:  # does separately the transformation for the atom that are marked as open paths
             qnm[:, 3 * io] = np.dot(self._b2o_nm, q[:, 3 * io])
             qnm[:, 3 * io + 1] = np.dot(self._b2o_nm, q[:, 3 * io + 1])
             qnm[:, 3 * io + 2] = np.dot(self._b2o_nm, q[:, 3 * io + 2])
         return qnm
-
-    def nm2b_closed(self, qnm):
-        """Transform a matrix to the bead representation, assuming
-           closed-path normal mode coordinates.
-
-       Args:
-           qnm: A matrix with nbeads rows, in the normal mode representation.
-        """
-        q = np.dot(self._nm2b, qnm)
-        return q
 
     def nm2b(self, qnm):
         """Transforms a matrix to the bead representation.
@@ -218,7 +191,7 @@ class nm_trans(object):
            q: A matrix with nbeads rows, in the normal mode representation.
         """
 
-        q = self.nm2b_closed(qnm)  #q = np.dot(self._nm2b, qnm)
+        q = np.dot(self._nm2b, qnm)
         for io in self._open:  # does separately the transformation for the atom that are marked as open paths
             q[:, 3 * io] = np.dot(self._o_nm2b, qnm[:, 3 * io])
             q[:, 3 * io + 1] = np.dot(self._o_nm2b, qnm[:, 3 * io + 1])
@@ -339,13 +312,12 @@ class nm_fft(object):  # ! TODO add (matrix-version) of the open path transforma
             self.fft = lambda: dummy_fft(self)
             self.ifft = lambda: dummy_ifft(self)
 
-
-    def b2nm_closed(self, q):
-        """Transforms a matrix to the normal mode representation of a
-           closed path (ring polymer)
+    def b2nm(self, q):
+        """Transforms a matrix to the normal mode representation.
 
         Args:
-           q: A matrix with nbeads rows, in the bead representation.
+           q: A matrix with nbeads rows and 3*natoms columns,
+              in the bead representation.
         """
 
         if self.nbeads == 1:
@@ -368,51 +340,21 @@ class nm_fft(object):  # ! TODO add (matrix-version) of the open path transforma
         else:
             self.qnmdummy[1:, :] *= np.sqrt(2)
             (qnm[1:nmodes + 1, :], qnm[self.nbeads:nmodes:-1, :]) = (self.qnmdummy[1:, :].real, self.qnmdummy[1:, :].imag)
-        return qnm
 
-    def b2nm(self, q):
-        """Transforms a matrix to the normal mode representation.
-
-        Args:
-           q: A matrix with nbeads rows and 3*natoms columns,
-              in the bead representation.
-        """
-
-#        if self.nbeads == 1:
-#            return q
-#        self.qdummy[:] = q
-#        self.fft()
-#        if self.nbeads == 2:
-#            return self.qnmdummy.real / np.sqrt(self.nbeads)
-#
-#        nmodes = self.nbeads / 2
-#
-#        self.qnmdummy /= np.sqrt(self.nbeads)
-#        qnm = np.zeros(q.shape)
-#        qnm[0, :] = self.qnmdummy[0, :].real
-#
-#        if self.nbeads % 2 == 0:
-#            self.qnmdummy[1:-1, :] *= np.sqrt(2)
-#            (qnm[1:nmodes, :], qnm[self.nbeads:nmodes:-1, :]) = (self.qnmdummy[1:-1, :].real, self.qnmdummy[1:-1, :].imag)
-#            qnm[nmodes, :] = self.qnmdummy[nmodes, :].real
-#        else:
-#            self.qnmdummy[1:, :] *= np.sqrt(2)
-#            (qnm[1:nmodes + 1, :], qnm[self.nbeads:nmodes:-1, :]) = (self.qnmdummy[1:, :].real, self.qnmdummy[1:, :].imag)
-
-        qnm = self.b2nm_closed(q)
         for io in self._open:  # does separately the transformation for the atom that are marked as open paths
             qnm[:, 3 * io] = np.dot(self._b2o_nm, q[:, 3 * io])
             qnm[:, 3 * io + 1] = np.dot(self._b2o_nm, q[:, 3 * io + 1])
             qnm[:, 3 * io + 2] = np.dot(self._b2o_nm, q[:, 3 * io + 2])
         return qnm
 
-    def nm2b_closed(self, qnm):
-        """Transform a matrix to the bead representation, assuming
-           closed-path normal mode coordinates.
+    def nm2b(self, qnm):
+        """Transforms a matrix to the bead representation.
 
-       Args:
-           qnm: A matrix with nbeads rows, in the normal mode representation.
+        Args:
+           qnm: A matrix with nbeads rows and 3*natoms columns,
+              in the normal mode representation.
         """
+
         if self.nbeads == 1:
             return qnm
         if self.nbeads == 2:
@@ -437,41 +379,6 @@ class nm_fft(object):  # ! TODO add (matrix-version) of the open path transforma
         self.ifft()
         q = np.zeros(qnm.shape)
         q = self.qdummy * np.sqrt(self.nbeads)
-        return q
-
-    def nm2b(self, qnm):
-        """Transforms a matrix to the bead representation.
-
-        Args:
-           qnm: A matrix with nbeads rows and 3*natoms columns,
-              in the normal mode representation.
-        """
-
-#        if self.nbeads == 1:
-#            return qnm
-#        if self.nbeads == 2:
-#            self.qnmdummy[:] = qnm
-#            self.ifft()
-#            return self.qdummy * np.sqrt(self.nbeads)
-#
-#        nmodes = self.nbeads / 2
-#        odd = self.nbeads - 2 * nmodes  # 0 if even, 1 if odd
-#
-#        qnm_complex = np.zeros((nmodes + 1, len(qnm[0, :])), complex)
-#        qnm_complex[0, :] = qnm[0, :]
-#        if not odd:
-#            (qnm_complex[1:-1, :].real, qnm_complex[1:-1, :].imag) = (qnm[1:nmodes, :], qnm[self.nbeads:nmodes:-1, :])
-#            qnm_complex[1:-1, :] /= np.sqrt(2)
-#            qnm_complex[nmodes, :] = qnm[nmodes, :]
-#        else:
-#            (qnm_complex[1:, :].real, qnm_complex[1:, :].imag) = (qnm[1:nmodes + 1, :], qnm[self.nbeads:nmodes:-1, :])
-#            qnm_complex[1:, :] /= np.sqrt(2)
-#
-#        self.qnmdummy[:] = qnm_complex
-#        self.ifft()
-#        q = np.zeros(qnm.shape)
-#        q = self.qdummy * np.sqrt(self.nbeads)
-        q = self.nm2b_closed(qnm)
         for io in self._open:  # does separately the transformation for the atom that are marked as open paths
             q[:, 3 * io] = np.dot(self._o_nm2b, qnm[:, 3 * io])
             q[:, 3 * io + 1] = np.dot(self._o_nm2b, qnm[:, 3 * io + 1])
