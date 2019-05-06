@@ -29,9 +29,9 @@ class Replicas(dobject):
        nbeads: The number of beads.
 
     Depend objects:
-       p: An array giving the replica momenta for this DoF.
-       q: An array giving the replica positions for this DoF.
-       m: A scalar giving the replica masses
+       p: An array that holds the momenta of all the replicas of this DoF.
+       q: An array that holds the positions of all the replicas of this DoF.
+       m: The mass associated with this DoF
     """
 
     def __init__(self, nbeads, beads=None, idof=None):
@@ -102,9 +102,12 @@ class HolonomicConstraint(dobject):
     Depend objects:
 
         targetval: The target value of the constraint function
-        _q: List of Replicas' coordinates bound to the constraint
-        _p: List of Replicas' momenta bound to the constraint
-        _m: List of Replicas' masses bound to the constraint
+        sigma: Difference between the current value of the constraint
+            and the target
+        jac: Gradient of the constraint function w.r.t the constrained
+            degrees of freedom (ndof-by-nbeads array)
+        mjac: Gradient left-multiplied by the inverse of the mass tensor
+        sigmadot: Total time derivative of the constraint function
 
     """
     # number of degrees of freedom expected by the constraint function
@@ -138,8 +141,7 @@ class HolonomicConstraint(dobject):
                 raise TypeError("Expecting a scalar for target constraint value")
         dself.targetval = depend_value(name="targetval")
         self.targetval = val
-        # A list of parameters in addition to targetval, upon which the value
-        # of the constraint function and its gradient depend
+        # List of additional parameters upon which sigma and jac depend
         self.params = []
 
     def bind(self, replicas, nm, transform=None, **kwargs):
@@ -155,7 +157,7 @@ class HolonomicConstraint(dobject):
                    (either no-op or nm_trans)
         """
 
-        self.nbeads = replicas[0].q.size
+        self.nbeads = len(replicas[0])
         # Local reference to the normal mode transform
         self._nm = nm
         # Local transform (matrix version, agnostic to number of atoms)
@@ -182,7 +184,7 @@ class HolonomicConstraint(dobject):
                 dependencies=[dself.jac,dself._nm.dynm3],
                 value=np.zeros_like(dstrip(dself.jac)))
         dself.sigmadot = depend_value(name="sigmadot", func=self.get_sigmadot,
-                dependencies=[dself.mjac]+dself._p,
+                dependencies=dself._p+[dself.mjac],
                 value=0.0)
 
     def get_sigma(self):
@@ -196,11 +198,10 @@ class HolonomicConstraint(dobject):
     def get_mjac(self):
         """Calculate the constraint gradient, weighted by the inverse mass tensor"""
 
-
         mjac = dstrip(self.jac.get()).copy()
         if self.nbeads == 1:
             for i,idof in enumerate(self.dofs):
-                mjac[:,i] /= dstrip(self._nm.dynm3)[:,idof]
+                mjac[i,:] /= dstrip(self._nm.dynm3)[:,idof]
         else:
             gnm = self.transform.b2nm(mjac.T)
             for i,idof in enumerate(self.dofs):
@@ -228,20 +229,23 @@ class BondLength(HolonomicConstraint):
     # Six degrees of freedom --- three per atom
     _ndof = 6
 
-    def bind(self, replicas, nm, **kwargs):
+    def bind(self, replicas, nm, transform=None, **kwargs):
         """Bind the appropriate degrees of freedom to the holonomic constraint.
         """
 
-        super(BondLength, self).bind(replicas, nm, **kwargs)
+        super(BondLength, self).bind(replicas, nm, transform, **kwargs)
         dself = dd(self)
+        # Displacement vectors from replicas of atom A
+        # to replicas of atom B
         dself._qAB = depend_array(name="_qAB", func=self.get_qAB,
                 value=np.zeros((3,self.nbeads), float),
                 dependencies=dself._q)
+        # Corresponding lengths
         dself._rAB = depend_array(name="_rAB", func=self.get_rAB,
                 value=np.zeros(self.nbeads, float),
                 dependencies=[dself._qAB])
         if self.targetval is None:
-            # Set to the current value of the constraint function
+            # Set to the current mean of _rAB
             self.targetval = 0.0
             currentval = self.sigma
             self.targetval = currentval
@@ -266,8 +270,6 @@ class BondLength(HolonomicConstraint):
         return np.mean(self._rAB) - self.targetval
 
     def get_jac(self):
-        """Calculate the gradient of the constraint function.
-        """
         jac = np.empty_like(dstrip(self._q))
         jac[3:] = self._qAB
         jac[3:] /= self._rAB
@@ -284,11 +286,11 @@ class BondAngle(HolonomicConstraint):
     # Nine degrees of freedom -- three per atom
     _ndof =  9
 
-    def bind(self, replicas, nm, **kwargs):
+    def bind(self, replicas, nm, transform=None, **kwargs):
         """Bind the appropriate degrees of freedom to the holonomic constraint.
         """
 
-        super(BondAngle,self).bind(replicas, nm, **kwargs)
+        super(BondAngle,self).bind(replicas, nm, transform, **kwargs)
         dself = dd(self)
         dself._qXA = depend_array(name="_qXA", func=self.get_qXA,
                                   value=np.zeros((3,self.nbeads),float),
@@ -308,6 +310,7 @@ class BondAngle(HolonomicConstraint):
         dself._unit_qXB = depend_array(name="_unit_qXB", func=self.get_unit_qXB,
                                   value=np.zeros((3,self.nbeads), float),
                                   dependencies=[dself._rXB])
+        # Cosines of the bond-angle for the different replicas
         dself._ct = depend_array(name="_ct", func=self.get_ct,
                                  value=np.zeros(self.nbeads, float),
                                  dependencies=[dself._unit_qXA, dself._unit_qXB])
@@ -369,18 +372,18 @@ class BondAngle(HolonomicConstraint):
     def get_jac(self):
         """Calculate the gradient of the constraint function.
         """
-        jac = np.zeros_like(self._q)
-        st = np.sqrt(1-self._ct**2)
+        jac = np.zeros_like(dstrip(self._q))
+        st = np.sqrt(1-self._ct**2) # sines of the angles
         jac[3:6] = (dstrip(self._ct)*dstrip(self._unit_qXA) -
                     dstrip(self._unit_qXB))
         jac[3:6] /= dstrip(self._rXA)
         jac[3:6] /= st
-        jac[3:6] /= dstrip(self._rXA).size
+        jac[3:6] /= self.nbeads
         jac[6:] = (dstrip(self._ct)*dstrip(self._unit_qXB) -
                     dstrip(self._unit_qXA))
         jac[6:] /= dstrip(self._rXB)
         jac[6:] /= st
-        jac[6:] /= dstrip(self._rXB).size
+        jac[6:] /= self.nbeads
         jac[:3] -= jac[3:6]
         jac[:3] -= jac[6:]
         return jac
@@ -414,15 +417,17 @@ class EckartTrans(HolonomicConstraint):
                              self.__class__.__name__)
         super(EckartTrans,self).__init__(dofs[idx::3], val)
 
-    def bind(self, replicas, nm, **kwargs):
+    def bind(self, replicas, nm, transform=None, **kwargs):
         """Bind the appropriate coordinates to the constraint.
         """
 
-        super(EckartTrans, self).bind(replicas, nm, **kwargs)
+        super(EckartTrans, self).bind(replicas, nm, transform, **kwargs)
         dself = dd(self)
+        # Centroids
         dself._qc = depend_array(name="_qc", func=self.get_qc,
                                  value=np.zeros(self.ndof, float),
                                  dependencies=dself._q)
+        # Centroid DoF masses divided by the total molecular mass
         dself._mrel = depend_array(name="_mrel", func=self.get_mrel,
                                  value=np.zeros(self.ndof, float),
                                  dependencies=[dself._m])
@@ -525,7 +530,7 @@ class EckartRot(HolonomicConstraint):
                              self.__class__.__name__)
         super(EckartRot,self).__init__(dofs[idces[0]::3]+dofs[idces[1]::3], 0.0)
 
-    def bind(self, replicas, nm, **kwargs):
+    def bind(self, replicas, nm, transform=None, **kwargs):
         """Bind the appropriate coordinates to the constraints.
           Args:
               replicas(list): List of Replicas
@@ -538,26 +543,30 @@ class EckartRot(HolonomicConstraint):
 
         dself = dd(self)
         if "ref" in kwargs:
-            lref = np.asarray(kwargs["ref"]).flatten()
+            # Reference configuration is provided
+            lref = np.asarray(kwargs["ref"]).flatten() # local copy
             ref = np.asarray(
                     [ lref[i] for i in self.dofs ]).reshape((2, self.ndof//2))
         else:
+            # Initialise to zero
             ref = np.zeros((2, self.ndof//2))
         dself._ref = depend_array(name="_ref", value=ref)
         self.params.append(dself._ref)
-        super(EckartRot, self).bind(replicas, nm, **kwargs)
+        super(EckartRot, self).bind(replicas, nm, transform, **kwargs)
         if "ref" not in kwargs:
             # Set the reference configuration to the centroid geometry
             dself._ref[:,:] = np.asarray(
                     [ np.mean(q) for q in self._q] ).reshape((2, self.ndof//2))
+        # Centroid masses divided by the total molecular mass
         dself._mrel = depend_array(name="_mrel", func=self.get_mrel,
                                  value=np.zeros((2,self.ndof//2), float),
                                  dependencies=[dself._m])
-        #NOTE: this is the mass-weighted configuration *in its CoM*
+        # Mass-weighted reference configuration in its CoM
         dself._mref = depend_array(name="_mref", func=self.get_mref,
                                    value=dstrip(self._mrel)*dstrip(self._ref),
                                    dependencies=[dself._mrel, dself._ref])
-        # Displacements between centroids and reference
+        # Displacements between centroid coordinates and the
+        # reference configuration
         dself._delqc = depend_array(name="_delqc", func=self.get_delqc,
                                  value=np.zeros((2,self.ndof//2), float),
                                  dependencies=dself._q+[dself._ref])
@@ -575,8 +584,8 @@ class EckartRot(HolonomicConstraint):
         """Return the coordinates of the reference configuration in its CoM frame,
            weighted by self._mrel
         """
-        ans = self._mrel*self._ref
-        CoM = dstrip(ans).sum(axis=-1)
+        ans = dstrip(self._mrel*self._ref)
+        CoM = ans.sum(axis=-1)
         ans[...] = dstrip(self._ref)-CoM[:,None]
         ans *= dstrip(self._mrel)
         return ans

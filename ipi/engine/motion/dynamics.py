@@ -16,6 +16,7 @@ import time
 import numpy as np
 
 from ipi.engine.motion import Motion
+from ipi.utils import nmtransform
 from ipi.utils.depend import *
 from ipi.engine.constraints import Replicas, BondLength, BondAngle, \
         EckartTransX, EckartTransY, EckartTransZ, \
@@ -94,6 +95,8 @@ class Dynamics(Motion):
             self.integrator = SCIntegrator()
         elif self.enstype == "scnpt":
             self.integrator = SCNPTIntegrator()
+        elif self.enstype == "qcmd":
+            self.integrator = QCMDWaterIntegrator()
         else:
             self.integrator = DummyIntegrator()
 
@@ -668,8 +671,6 @@ class SCNPTIntegrator(SCIntegrator):
             self.barostat.pscstep()
             self.beads.p += dstrip(self.forces.fsc_part_2) * self.dt * 0.5
 
-#!! TODO: re-write the below given that mass-weighted gradients have been moved
-#to the HolonomicConstraints class
 class QCMDWaterIntegrator(NVTIntegrator):
     """Integrator for a constant temperature simulation of water subject
        to quasi-centroid constraints.
@@ -680,10 +681,12 @@ class QCMDWaterIntegrator(NVTIntegrator):
        triatomics.
 
        Attributes:
-           TBC
+           replica_list: list of Replicas objects
+           clist: list of HolonomicConstraint objects
+
     """
 
-    _nfree = 5 # Number of free ring-polymer time-steps (hard-coded for now)
+    _nfree = 3 # Number of free ring-polymer time-steps (hard-coded for now)
     _maxcycle = 100 # Maximum number of cycles over constraints in SHAKE/RATTLE
     _tol = 1.0e-6 # Tolerance threshold for converging the constraints
 
@@ -695,8 +698,6 @@ class QCMDWaterIntegrator(NVTIntegrator):
                   are stored consecutively, and that the central atom is at the
                   beginning of each group of three.
         """
-        #!! TODO: this is currently agnostic of open paths, need to be
-        #   amended in the future
 
         super(QCMDWaterIntegrator, self).bind(motion)
         if (self.beads.natoms%3 != 0):
@@ -722,18 +723,10 @@ class QCMDWaterIntegrator(NVTIntegrator):
             for lst in [O_idx, H1_idx, H2_idx]:
                 for j in range(len(lst)):
                     lst[j] += 9
-        # Bind the coordinates to the constraints
+        # Create local normal mode transform
+        self._nmtrans = nmtransform.nm_trans(self.beads.nbeads)
         for c in self.clist:
-            c.bind(self.replica_list)
-
-    def pconstraints(self):
-        """This applies RATTLE to the momenta.
-
-        The propagator raises an error if the centre-of-mass of the
-        cell or any atoms are fixed.
-        """
-
-        pass
+            c.bind(self.replica_list, self.nm, transform=self._nmtrans)
 
     def qconstraints(self, dt):
         """This applies SHAKE to the positions and momenta.
@@ -741,8 +734,16 @@ class QCMDWaterIntegrator(NVTIntegrator):
         Args:
            dt: integration time-step for SHAKE/RATTLE
         """
-
+        # Store copies of the current gradients
+        glist = []
+        mglist = []
+        for c in self.clist:
+            glist.append(dstrip(c.jac.get()).copy())
+            mglist.append(dstrip(c.mjac.get()).copy())
         # Copy the current ring-polymer configuration into replica list
+        # This allows to use i-PI's caching mechanism, so that
+        # re-calculation of constraint gradients and the like is only
+        # triggered if the relevant DoFs are modified
         for idof in range(3*self.beads.natoms):
             self.replica_list[idof].q[:] = dstrip(self.beads.q)[:,idof]
         # Cycle over constraints until convergence
@@ -752,37 +753,69 @@ class QCMDWaterIntegrator(NVTIntegrator):
         while True:
             if (ncycle > self._maxcycle):
                 raise ValueError("Maximum number of iterations exceeded in SHAKE.")
-            all_converged = True
-            for i,(c,g) in enumerate(zip(self.clist, self.mglist)):
-                converged = abs(c.sigma) < self._tol
-                all_converged = all_converged and converged
-                if not converged:
-                    dlambda = -c.sigma / np.sum(c.jac*g)
-                    lambdas[i] += dlambda
-                    for idof,gvec in zip(c.dofs,g):
-                        self.replica_list[idof].q[:] += dlambda*gvec
-            if all_converged:
+            converged = True
+            for i,(c,mg) in enumerate(zip(self.clist,mglist)):
+                if abs(c.sigma) < self._tol:
+                    continue
+                # If any of the constraints are above tolerance
+                # the cycle is not yet finished
+                converged = False
+                dlambda = -c.sigma / np.sum(c.jac*mg)
+                lambdas[i] += dlambda
+                for idof,mgvec in zip(c.dofs,mg):
+                    self.replica_list[idof].q[:] += dlambda*mgvec
+            if converged:
                 break
             ncycle += 1
         # Update the momenta
-        for l,c,g in zip(lambdas, self.clist, self.glist):
+        for l,c,g in zip(lambdas, self.clist, glist):
             for idof,gvec in zip(c.dofs,g):
-                self.replica_list[idof].p[:] += l*g/dt
-        # Re-calculate the gradients
-        for c,g,mg in zip(self.clist,self.glist,self.mglist):
-            g[...] = dstrip(c.jac)
-            gnm = self.nm.transform.b2nm(g.T)
-            for idof in c.dofs:
-                gnm[:,idof] /= dstrip(self.nm.dynm3)[:,idof]
-            mg[...] = self.nm.transform.nm2b(gnm).T
+                self.replica_list[idof].p[:] += l*gvec/dt
         # Copy the coordinates back into beads
         temp = np.empty_like(dstrip(self.beads.q))
         for idof in range(3*self.beads.natoms):
             temp[:,idof] = dstrip(self.replica_list[idof].q)
-        self.beads.q = temp
+        self.beads.q[...] = temp
         for idof in range(3*self.beads.natoms):
             temp[:,idof] = dstrip(self.replica_list[idof].p)
-        self.beads.p = temp
+        self.beads.p[...] = temp
+
+    def pconstraints(self):
+        """This applies RATTLE to the momenta.
+
+        The propagator raises an error if the centre-of-mass of the
+        cell or any atoms are fixed.
+        """
+
+        #!! TODO: need to deal with the conserved quantity
+        # Copy the current ring-polymer momenta into replica list
+        for idof in range(3*self.beads.natoms):
+            self.replica_list[idof].p[:] = dstrip(self.beads.p)[:,idof]
+        # Calculate the diagonal elements of the Jacobian matrix
+        gmglist = []
+        for c in self.clist:
+            gmglist.append(np.sum(dstrip(c.jac*c.mjac)))
+        # Cycle over constraints until convergence
+        ncycle = 1
+        while True:
+            if (ncycle > self._maxcycle):
+                raise ValueError("Maximum number of iterations exceeded in RATTLE.")
+            converged = True
+            for i,(c,gmg) in enumerate(zip(self.clist,gmglist)):
+                if abs(c.sigmadot) < self._tol:
+                    continue
+                converged = False
+                dmu = -c.sigmadot/gmg
+                for idof,gvec in zip(c.dofs,dstrip(c.jac)):
+                    self.replica_list[idof].p[:] += dmu*gvec
+            if converged:
+                break
+            ncycle += 1
+        # Copy the coordinates back into beads
+        temp = np.empty_like(dstrip(self.beads.p))
+        for idof in range(3*self.beads.natoms):
+            temp[:,idof] = dstrip(self.replica_list[idof].p)
+        self.beads.p[...] = temp
 
     def free_p(self):
         """Velocity Verlet momentum propagator with ring-polymer spring forces,
@@ -799,21 +832,21 @@ class QCMDWaterIntegrator(NVTIntegrator):
            followed by SHAKE.
         """
         self.nm.qnm += (dstrip(self.nm.pnm) /
-                        dstrip(self.nm.dynm3))*(self.qdt//(2*self._nfree))
-        self.qconstraints(self.qdt//(2*self._nfree)) # SHAKE
+                        dstrip(self.nm.dynm3))*(self.qdt/(2*self._nfree))
+        self.qconstraints(self.qdt/(2*self._nfree)) # SHAKE
         self.pconstraints() #RATTLE
 
     def free_qstep_ba(self):
         """Override the exact normal mode propagator for the free ring-polymer
            with a sequence of RATTLE/SHAKE steps.
         """
-        for i in range(self.nfree//2):
+        for i in range(self._nfree//2):
             self.free_p()
             self.free_q()
             self.free_q()
             self.free_p()
 
-        if (self.nfree%2 == 1):
+        if (self._nfree%2 == 1):
             self.free_p()
             self.free_q()
 
@@ -822,11 +855,11 @@ class QCMDWaterIntegrator(NVTIntegrator):
            with a sequence of RATTLE/SHAKE steps.
         """
 
-        if (self.nfree%2 == 1):
+        if (self._nfree%2 == 1):
             self.free_q()
             self.free_p()
 
-        for i in range(self.nfree//2):
+        for i in range(self._nfree//2):
             self.free_p()
             self.free_q()
             self.free_q()
