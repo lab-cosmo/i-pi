@@ -39,6 +39,7 @@ def get_A(path2iipi):
     # Obtains various parameters and relevant filenames.
     prefix = simul.outtemplate.prefix + "." + simul.syslist[0].motion.prefix
     max_iter = simul.syslist[0].motion.max_iter
+    batch_exp = simul.syslist[0].motion.batch_weight_exponent
     kbT = float(simul.syslist[0].ensemble.temp)
     beta = 1.0 / kbT
 
@@ -49,6 +50,14 @@ def get_A(path2iipi):
         nz = 3
     elif asr == "molecule":
         nz = 6
+
+    iD_list = []
+    q_list = []
+    K_list = []
+    V_list = []
+    hw_list = []
+    x_list = []
+    v_list = []
 
     for i in range(max_iter):
 
@@ -62,15 +71,34 @@ def get_A(path2iipi):
             # hw -> the frequencies.
             # vH -> the ensemble average of the potential w.r.t the canonical density.
             # AH -> the free energy.
-            iD0 = np.loadtxt(prefix + ".iD." + str(i))
-            q0 = np.loadtxt(prefix + ".q." + str(i))
-            K0 = np.loadtxt(prefix + ".K." + str(i))
-            V0 = np.loadtxt(prefix + ".V0." + str(i))
-            hw0 = np.loadtxt(prefix + ".w." + str(i))[nz:]
-            betahw0 = beta * hw0
+            iD_list.append(np.loadtxt(prefix + ".iD." + str(i)))
+            q_list.append(np.loadtxt(prefix + ".q." + str(i)))
+            K_list.append(np.loadtxt(prefix + ".K." + str(i)))
+            V_list.append(np.loadtxt(prefix + ".V0." + str(i)))
+            hw_list.append(np.loadtxt(prefix + ".w." + str(i))[nz:])
+            # x  -> the samples drawn from the canonical density of the trial distribution.
+            # v  -> the potential enegry of the samples.
+            x_list.append(np.loadtxt(prefix + ".x." + str(i)))
+            v_list.append(np.loadtxt(prefix + ".v." + str(i)))
+
+        except IOError:
+            break
+
+    print "# Finished Import"
+    for i in range(max_iter):
+
+        try:
+            # Imports the q, iD, x, f from the i^th  SCP iteration.
+            iD0 = iD_list[i]
+            q0 = q_list[i]
+            K0 = K_list[i]
+            V0 = V_list[i]
+            hw0 = hw_list[i]
+            betahw0 = beta * hw0 
             vH0 = np.sum(hw0 * np.cosh(betahw0 / 2.0) /
                          np.sinh(betahw0 / 2.0) * 0.250)
             AH0 = np.sum(hw0 * 0.5 + kbT * np.log(1 - np.exp(-betahw0)))
+            
         except IOError:
             break
 
@@ -95,13 +123,13 @@ def get_A(path2iipi):
             try:
                 # Imports the q, iD of the j^th trial Hamiltonian.
                 # The idea is to reweight using samples drawn from the j <= i trial Hamiltonians.
-                iD = np.loadtxt(prefix + ".iD." + str(j))
-                q = np.loadtxt(prefix + ".q." + str(j))
+                iD = iD_list[j]
+                q = q_list[j] 
 
                 # x  -> the samples drawn from the canonical density of the trial distribution.
                 # v  -> the potential enegry of the samples.
-                x = np.loadtxt(prefix + ".x." + str(j))
-                v = np.loadtxt(prefix + ".v." + str(j))
+                x = x_list[j] 
+                v = v_list[j]
             except IOError:
                 break
 
@@ -123,7 +151,7 @@ def get_A(path2iipi):
                 np.sum(w * (v - vh - avg_dv_j)**2) / (V1 - V2 / V1))
 
             # Calculates the "batch" weight.
-            c = np.nan_to_num(np.exp(-np.var(np.log(w))))
+            c = np.nan_to_num(np.exp(-np.var(np.log(w))))**batch_exp
 
             # Accumulates the contribution to the average (and error) from the j^th batch.
             avg_dv += c * avg_dv_j

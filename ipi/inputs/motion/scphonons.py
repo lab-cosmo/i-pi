@@ -77,7 +77,7 @@ class InputSCPhonons(InputDictionary):
             "help": "Step size along the gradient for the sd displace_mode"}),
         "wthreshold": (InputValue, {
             "dtype": float,
-            "default": 0.5,
+            "default": 0.90,
             "help": "Threshold on minimum Boltzmann weights before more statistics must be accumulated."}),
         "precheck": (InputValue, {
             "dtype": bool,
@@ -85,7 +85,7 @@ class InputSCPhonons(InputDictionary):
             "help": "Flag for checking statistical significance of forces before optimisation of mean position."}),
         "checkweights": (InputValue, {
             "dtype": bool,
-            "default": False,
+            "default": True,
             "help": "Flag for checking Boltzmann weights for whether more statistics are required."}),
         "chop": (InputValue, {"dtype": float,
             "default": 1e-09,
@@ -93,6 +93,9 @@ class InputSCPhonons(InputDictionary):
         "nparallel": (InputValue, {"dtype": int,
             "default": 1,
             "help": "The number of Monte Carlo forces to be evaluated per i-PI step."}),
+        "batch_weight_exponent": (InputValue, {"dtype": int,
+            "default": 1,
+            "help": "The exponent used to supress low batch weights."}),
     }
 
     dynamic = {}
@@ -114,6 +117,7 @@ class InputSCPhonons(InputDictionary):
         self.random_type.store(phonons.random_type)
         self.displace_mode.store(phonons.displace_mode)
         self.nparallel.store(phonons.nparallel)
+        self.batch_weight_exponent.store(phonons.batch_weight_exponent)
 
     def fetch(self):
         rv = super(InputSCPhonons, self).fetch()
