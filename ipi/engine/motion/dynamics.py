@@ -781,13 +781,22 @@ class QCMDWaterIntegrator(NVTIntegrator):
         self.beads.p[...] = temp
 
     def pconstraints(self):
-        """This applies RATTLE to the momenta.
+        """This applies RATTLE to the momenta and returns the change in the
+        total kinetic energy that arises from applying the constraint. This
+        is used to modify the conserved quantity externally, as it cannot
+        always be assumed that the motion perpendicular to the constraint
+        isosurface is due to the thermostat.
 
         The propagator raises an error if the centre-of-mass of the
         cell or any atoms are fixed.
         """
 
-        #!! TODO: need to deal with the conserved quantity
+        if self.fixcom:
+            #!! TODO: ignore for the present
+            pass
+            #raise ValueError("Cannot explicitly fix CoM in a constrained simulation")
+        if len(self.fixatoms) > 0:
+            raise ValueError("Cannot explicitly fix atoms in a constrained simulation")
         # Copy the current ring-polymer momenta into replica list
         for idof in range(3*self.beads.natoms):
             self.replica_list[idof].p[:] = dstrip(self.beads.p)[:,idof]
@@ -797,15 +806,21 @@ class QCMDWaterIntegrator(NVTIntegrator):
             gmglist.append(np.sum(dstrip(c.jac*c.mjac)))
         # Cycle over constraints until convergence
         ncycle = 1
+        mus = np.zeros(len(self.clist))
+        sdots = np.zeros_like(mus)
         while True:
             if (ncycle > self._maxcycle):
                 raise ValueError("Maximum number of iterations exceeded in RATTLE.")
             converged = True
             for i,(c,gmg) in enumerate(zip(self.clist,gmglist)):
+                if ncycle == 1:
+                    # Record the initial value of D[sigma, t]
+                    sdots[i] = c.sigmadot
                 if abs(c.sigmadot) < self._tol:
                     continue
                 converged = False
                 dmu = -c.sigmadot/gmg
+                mus[i] += dmu
                 for idof,gvec in zip(c.dofs,dstrip(c.jac)):
                     self.replica_list[idof].p[:] += dmu*gvec
             if converged:
@@ -816,6 +831,9 @@ class QCMDWaterIntegrator(NVTIntegrator):
         for idof in range(3*self.beads.natoms):
             temp[:,idof] = dstrip(self.replica_list[idof].p)
         self.beads.p[...] = temp
+        # Return the value to be added to the ensemble energy when
+        # monitoring the conserved quantity
+        return -np.dot(mus,sdots)/2
 
     def free_p(self):
         """Velocity Verlet momentum propagator with ring-polymer spring forces,
@@ -866,6 +884,11 @@ class QCMDWaterIntegrator(NVTIntegrator):
             self.free_p()
 
     def tstep(self):
-        """Velocity Verlet thermostat step, followed by RATTLE"""
+        """Velocity Verlet thermostat step, followed by RATTLE. This also
+        calculates the kinetic energy removed after enforcing the constraint
+        and modifies the contribution to the constrained quantity due to this
+        subtraction
+        """
         super(QCMDWaterIntegrator,self).tstep()
-        self.pconstraints()
+        dens = self.pconstraints()
+        self.ensemble.eens += dens
