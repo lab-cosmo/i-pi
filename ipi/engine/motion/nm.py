@@ -300,6 +300,8 @@ class IMF(DummyCalculator):
         # Initializes the SHO wvfn basis for solving the 1D Schroedinger equation
         self.hermite_functions = [hermite(i) for i in xrange(4 * self.nbasis)]
 
+        # Evaluates the wave functions on a grid
+
     def psi(self, n, m, hw, q):
         """
         Returns the value of the n^th wavefunction of a 
@@ -316,31 +318,77 @@ class IMF(DummyCalculator):
 
         return psival
 
+    def solve_schroedingers_equation(self, hw, nbasis, qlist, vtspline):
+        """
+        Given nbasis the number of elements in the basis set
+        and potential the potential energy on a grid, solves
+        the schrodinger's equation.
+        """
+
+        # Set up the wavefunction basis
+        psigrid = np.zeros((self.nint, nbasis))
+        norm_psi = np.zeros(nbasis)
+        mass = 1
+
+        # Defines the grid in normal mode position space.
+        dnmd = np.linspace(np.min(qlist), np.max(qlist), self.nint)
+
+        # Calculates the wavefunctions on the grid.
+        norm = np.zeros(nbasis)
+        for i in xrange(nbasis):
+            psigrid[:,i] = self.psi(i, mass, hw, dnmd)
+            norm[i] = np.dot(psigrid.T[i],psigrid.T[i])
+
+        # Construct the Hamiltonian matrix.
+        h = np.zeros((nbasis,nbasis))
+        vsplinegrid = np.asarray([(np.nan_to_num(vtspline(x)) - 0.5 * hw**2 * x**2) for x in dnmd])
+
+        for i in xrange(nbasis):
+            for j in xrange(i, nbasis, 1):
+                h[i][j] = np.dot(psigrid[:,i] * psigrid[:,j], vsplinegrid) / np.sqrt(norm[i] * norm[j])
+            h[i][i] *= 0.5
+            h[i][i] += 0.5 * (i + 0.5) * hw
+        h += h.T 
+
+        # Diagonalise Hamiltonian matrix and evaluate anharmonic free energy and vibrational freq
+        evals, evecs = np.linalg.eigh(h)
+        
+        # Calculates the free and internal energy
+        A = -logsumexp(-1.0 * evals / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
+        E = np.sum(evals * np.exp(-1.0 * evals / dstrip(self.imm.temp))) / np.sum(np.exp(-1.0 * evals / dstrip(self.imm.temp)))
+        return A, E
+
+        
+
     def step(self, step=None):
         """Computes the Born Oppenheimer curve along a normal mode."""
 
-        print "TREATING NM #", step, self.imm.w2[step]
+        print step, self.imm.nz
 
-        if np.abs(self.imm.w2[step]) < 1e-9 :
-           self.imm.nz += 1
-           print "# IGNORING THE NM. FREQUENCY IS SMALLER THEN 2 cm^-1"
-           return 
+        # Ignores (near) zero modes.
+        if step < self.imm.nz:
+            info("Ignoring the zero mode.", verbosity.high)
+            return 
+        elif self.imm.w[step] < 9.1126705e-06:
+            info("Ignoring normal mode no. " + str(step) + " with frequency " + str(self.imm.w[step]) + "cm^-1 < 2 cm^-1.", verbosity.high)
+            self.imm.nz += 1
+            return 
 
-        # initializes the finite deviation
-        vknorm = np.sqrt(np.dot(self.imm.V[:, step], self.imm.V[:, step]))
-
-        # initializes the list containing sampled displacements, forces, and energies
+        # initializes the list containing sampled displacements,
+        # forces and energies.
         vlist = []
         vtlist = []
         flist = []
         ftlist = []
         qlist = []
 
+        # Adds to the list of "sampled configuration" the one that
+        # corresponds to the minimum.
         q0 = 0.0
         v0 = dstrip(self.imm.forces.pots).copy()[0] / self.nprim
         f0 = np.dot(dstrip(self.imm.forces.f).copy()[0], np.real(self.imm.V.T[step])) / self.nprim
 
-        self.v0 = v0
+        self.v0 = v0 # TODO CHECK IF NECESSARY
 
         vlist.append(0.0)
         vtlist.append(0.0)
@@ -357,182 +405,175 @@ class IMF(DummyCalculator):
         Adiff = []
         Aanh.append(1e-20)
         Adiff.append(0.0)
-        Athresh = 1e-2
-        fiter = -1
+        Athresh = self.athresh 
+
+        sampling_density_iter = -1
+
         while True:
-            fiter += 1
-            # doubles the grid spacing, so that an estimate of the anharmonic free energy convergence is 
+            
+            sampling_density_iter += 1
+
+            # Doubles the grid spacing, so that an estimate of the
+            # anharmonic free energy convergence is 
             # possible at default/input grid spacing
-            ffnmrms = self.fnmrms * 0.5**fiter * 2.0
+            ffnmrms = self.fnmrms * 0.5**sampling_density_iter * 2.0
+
+            # Calculates the displacement in Cartesian coordinates.
             nmd = ffnmrms * self.imm.nmrms[step]
             dev = np.real(self.imm.V.T[step]) * nmd * np.sqrt(self.nprim)
-  
-            if (fiter == 0):
-                dcounter = 1
+ 
+            # After the first iteration doubles the displacement to avoid
+            # calculation of the potential at configurations already visited
+            # in the previous iteration.
+            if (sampling_density_iter == 0):
+                delta_counter = 1
             else:
-                dcounter = 2
- 
-            counter = 1
-            while True:
-            # displaces by dev along kth normal mode.
-                self.imm.dbeads.q = self.imm.beads.q + dev * counter
-                dv = dstrip(self.imm.dforces.pots).copy()[0] / self.nprim - 0.50 * self.imm.w2[step] * (nmd * counter)**2 - v0
-                df = np.dot(dstrip(self.imm.dforces.f).copy()[0], np.real(self.imm.V.T[step])) / self.nprim + self.imm.w2[step] * (nmd * counter)
-    
-                vlist.append(dv)
-                vtlist.append(dv + 0.50 * self.imm.w2[step] * (nmd * counter)**2)
-                flist.append(df)
-                ftlist.append(df - self.imm.w2[step] * (nmd * counter))
-                qlist.append(nmd * counter)  
-    
-                if self.nevib * self.imm.nmevib[step] < np.abs(0.50 * self.imm.w2[step] * (nmd * counter)**2 + dv):
-                    break
-                counter += dcounter
-    
-            print "# NUMBER OF FORCE EVALUATIONS ALONG THE -VE DIRECTION:", counter
-            counter = -1
-            while True:
-            # displaces by dev along kth normal mode.
-                self.imm.dbeads.q = self.imm.beads.q + dev * counter
-                dv = dstrip(self.imm.dforces.pots).copy()[0] / self.nprim - 0.50 * self.imm.w2[step] * (nmd * counter)**2 - v0
-                df = np.dot(dstrip(self.imm.dforces.f).copy()[0], np.real(self.imm.V.T[step])) / self.nprim + self.imm.w2[step] * (nmd * counter)
-    
-                vlist.append(dv)
-                vtlist.append(dv + 0.50 * self.imm.w2[step] * (nmd * counter)**2)
-                flist.append(df)
-                ftlist.append(df - self.imm.w2[step] * (nmd * counter))
-                qlist.append(nmd * counter)  
-    
-                if self.nevib * self.imm.nmevib[step] < np.abs(0.50 * self.imm.w2[step] * (nmd * counter)**2 + dv):
-                    break
-                counter -= dcounter
-    
-            print "# NUMBER OF FORCE EVALUATIONS ALONG THE +VE DIRECTION:", counter
-            print "# PRINTING"
-    
-            # extend the list of displacements and potentials using the force information
-            vexlist = []
-            vtexlist = []
-            fexlist = []
-            ftexlist = []
-            qexlist = []
-            fnmd = 0.05 # fractional displacement between nearest-neighbour sampling points for extension
-            for counter in range(len(vlist)):
-                dv = vlist[counter]
-                dvt = vtlist[counter]
-                df = flist[counter]
-                dft = ftlist[counter]
-                dq = qlist[counter]
-    
-                vexlist.append(dv)
-                vtexlist.append(dvt)
-                fexlist.append(df)
-                ftexlist.append(dft)
-                qexlist.append(dq)
-   
- 
-            print "# FITTING A CUBIC SPLINE TO THE DATA"
-            vspline = interp1d(qexlist, vexlist, kind='cubic', bounds_error=False)
-            vtspline = interp1d(qexlist, vtexlist, kind='cubic', bounds_error=False)
-            grid = np.linspace(np.min(qexlist), np.max(qexlist), 100)
+                delta_counter = 2
 
-            print "# SOLVING THE 1D SCHROEDINGER EQUATION"
-            # Set up the wavefunction basis
-            # this only needs to happen once
-            if (fiter == 0):
-                mass = 1.0
-                dnmd = np.linspace(np.min(qlist), np.max(qlist), self.nint)
-                psigrid = np.zeros((self.nint, self.nbasis))
-                normi = np.zeros(self.nbasis)
-                for i in xrange(self.nbasis):
-                    psigrid[:,i] = self.psi(i, mass, self.imm.w[step], dnmd)
-                    normi[i] = np.dot(psigrid.T[i],psigrid.T[i])
-                psiigrid = np.zeros((self.nbasis, self.nbasis, self.nint))
-                for i in xrange(self.nbasis):
-                    for j in xrange(self.nbasis):
-                        psiigrid[i,j] = self.psi(i, mass, self.imm.w[step], dnmd) * self.psi(j, mass, self.imm.w[step], dnmd)
-    
-            # Construct the Hamiltonian matrix
-            h = np.zeros((self.nbasis,self.nbasis))
-            vsplinegrid = np.asarray([(np.nan_to_num(vtspline(x)) - 0.5 * self.imm.w2[step] * x**2) for x in dnmd])
-            for i in xrange(self.nbasis):
-                for j in xrange(i,self.nbasis,1):
-                    h[i][j] = np.dot(psiigrid[i][j], vsplinegrid) / np.sqrt(normi[i]*normi[j])
-                h[i][i] *= 0.5
-                h[i][i] += 0.5 * (i + 0.5) * np.sqrt(self.imm.w2[step])
-            h += h.T # fill in the lower triangle 
-    
-            # Diagonalise Hamiltonian matrix and evaluate anharmonic free energy and vibrational freq
-            evals, evecs = np.linalg.eigh(h)
-    
-            Aanh.append(-logsumexp(-1.0 * evals / dstrip(self.imm.temp)) * dstrip(self.imm.temp))
-            Adiff.append(Aanh-Ahar)
-    
-            # Check whether anharmonic frequency is converged
-            if ( (np.abs(Aanh[-1]-Aanh[-2])/np.abs(Aanh[-2])) < Athresh ): break
+            counter = 1
+
+            # Explores configurations until the sampled energy exceeds
+            # a user-defined threshold of the zero-point energy.
+            while True:
+                
+                # Displaces along the normal mode.
+                self.imm.dbeads.q = self.imm.beads.q + dev * counter
+
+                # Stores the "anharmonic" component of the potential
+                # and the force.
+                dv = dstrip(self.imm.dforces.pots).copy()[0] / self.nprim - 0.50 * self.imm.w2[step] * (nmd * counter)**2 - v0
+                df = np.dot(dstrip(self.imm.dforces.f).copy()[0], np.real(self.imm.V.T[step])) / self.nprim + self.imm.w2[step] * (nmd * counter)
    
-        # Done converging wrt sample point density.
+                # Adds to the list.
+                # Also stores the total energetics i.e. including 
+                # the harmonic component.
+                vlist.append(dv)
+                vtlist.append(dv + 0.50 * self.imm.w2[step] * (nmd * counter)**2)
+                flist.append(df)
+                ftlist.append(df - self.imm.w2[step] * (nmd * counter))
+                qlist.append(nmd * counter)  
+    
+                # Bailout condition.
+                if self.nevib * self.imm.nmevib[step] < np.abs(0.50 * self.imm.w2[step] * (nmd * counter)**2 + dv):
+                    break
+                
+                # Increases the displacement by 1 or 2 depending on the iteration.
+                counter += delta_counter
+    
+            info("# NUMBER OF FORCE EVALUATIONS ALONG THE +VE DIRECTION: " + str(counter), verbosity.high)
+
+            counter = -1
+
+            # Similarly displaces in the "-ve direction"
+            while True:
+
+                # Displaces along the normal mode.
+                self.imm.dbeads.q = self.imm.beads.q + dev * counter
+
+                # Stores the "anharmonic" component of the potential
+                # and the force.
+                dv = dstrip(self.imm.dforces.pots).copy()[0] / self.nprim - 0.50 * self.imm.w2[step] * (nmd * counter)**2 - v0
+                df = np.dot(dstrip(self.imm.dforces.f).copy()[0], np.real(self.imm.V.T[step])) / self.nprim + self.imm.w2[step] * (nmd * counter)
+
+                # Adds to the list.
+                # Also stores the total energetics i.e. including 
+                # the harmonic component.
+                vlist.append(dv)
+                vtlist.append(dv + 0.50 * self.imm.w2[step] * (nmd * counter)**2)
+                flist.append(df)
+                ftlist.append(df - self.imm.w2[step] * (nmd * counter))
+                qlist.append(nmd * counter)  
+    
+                # Bailout condition.
+                if self.nevib * self.imm.nmevib[step] < np.abs(0.50 * self.imm.w2[step] * (nmd * counter)**2 + dv):
+                    break
+
+                # Increases the displacement by 1 or 2 depending on the iteration.
+                counter -= delta_counter
+    
+            info("# NUMBER OF FORCE EVALUATIONS ALONG THE -VE DIRECTION: " + str(abs(counter)), verbosity.high)
+   
+            # Fits cubic splines to data. 
+            info("# Fitting cubic splines to the potential." + str(abs(counter)), verbosity.high)
+            vspline = interp1d(qlist, vlist, kind='cubic', bounds_error=False)
+            vtspline = interp1d(qlist, vtlist, kind='cubic', bounds_error=False)
+
+            # Converge wrt size of SHO basis
+            bs_iter = 0
+            bs_Aanh = [1e-20]
+            bs_Eanh = [1e-20]
+            while True:
+                bs_iter += 1
+                nnbasis = self.nbasis + 5 * bs_iter
+
+                if nnbasis > len(self.hermite_functions):
+                    print "# COVERGENCE W.R.T BASIS SET FAILED."
+                else:
+                    print "# SOLVING THE 1D SCHROEDINGER EQUATION"
+
+                ## Set up the wavefunction basis
+                #psigrid = np.zeros((self.nint, nnbasis))
+                #normi = np.zeros(nnbasis)
+                #mass = 1
+                #dnmd = np.linspace(np.min(qlist), np.max(qlist), self.nint)
+                #for i in xrange(nnbasis):
+                #    psigrid[:,i] = self.psi(i,mass,np.sqrt(self.imm.w2[step]), dnmd)
+                #    normi[i] = np.dot(psigrid.T[i],psigrid.T[i])
+                #    print i, normi[i]
+                #psiigrid = np.zeros((nnbasis, nnbasis, self.nint))
+                #for i in xrange(nnbasis):
+                #    for j in xrange(nnbasis):
+                #        psiigrid[i,j] = self.psi(i,mass,np.sqrt(self.imm.w2[step]), dnmd) * self.psi(j,mass,np.sqrt(self.imm.w2[step]), dnmd)
+
+                ## Construct the Hamiltonian matrix
+                #h = np.zeros((nnbasis,nnbasis))
+                #vsplinegrid = np.asarray([(np.nan_to_num(vtspline(x)) - 0.5 * self.imm.w2[step] * x**2) for x in dnmd])
+                #for i in xrange(nnbasis):
+                #    for j in xrange(i,nnbasis,1):
+                #        h[i][j] = np.dot(psiigrid[i][j], vsplinegrid) / np.sqrt(normi[i]*normi[j])
+                #    h[i][i] *= 0.5
+                #    h[i][i] += 0.5 * (i + 0.5) * np.sqrt(self.imm.w2[step])
+                #h += h.T # fill in the lower triangle 
+
+                ## Diagonalise Hamiltonian matrix and evaluate anharmonic free energy and vibrational freq
+                #evals, evecs = np.linalg.eigh(h)
+
+                # Solves the Schroedinger's Equation.
+                bs_AEanh = self.solve_schroedingers_equation(self.imm.w[step], nnbasis, qlist, vtspline)
+                bs_Aanh.append(bs_AEanh[0])
+                bs_Eanh.append(bs_AEanh[1])
+
+                Adiff.append(Aanh-Ahar)
+                print " Converging w.r.t the basis : nbasis = ", nnbasis, " anharmonic free = ", bs_Aanh[-1], " diff / threshold", (np.abs(bs_Aanh[-1]-bs_Aanh[-2])/np.abs(bs_Aanh[-2])), self.athresh
+
+                # Check whether anharmonic frequency is converged
+                if (np.abs(bs_Aanh[-1] - bs_Aanh[-2]) / np.abs(bs_Aanh[-2])) < self.athresh:
+                    print "BREAKING OUT!!!!!"
+                    break
+
+            Aanh.append(bs_Aanh[-1])
+            Eanh.append(bs_Eanh[-1])
+            # Check whether anharmonic frequency is converged
+            if (np.abs(Aanh[-1] - Aanh[-2]) / np.abs(Aanh[-2])) < self.athresh:
+                break
+
         # Prints the normal mode displacement, the potential and the force.
         outfile = self.imm.output_maker.get_output(self.imm.prefix + '.' + str(step) + '.qvf')
-        np.savetxt(outfile,  np.c_[qexlist, vexlist, fexlist])
+        np.savetxt(outfile,  np.c_[qlist, vlist, flist])
         outfile.close()
 
         # prints the mapped potential.
+        output_grid = np.linspace(np.min(qlist), np.max(qlist), 100)
         outfile = self.imm.output_maker.get_output(self.imm.prefix + '.' + str(step) + '.vfit')
-        np.savetxt(outfile,  np.c_[grid, vspline(grid)])
+        np.savetxt(outfile,  np.c_[output_grid, vspline(output_grid)])
         outfile.close()
-
-        # Converge wrt size of SHO basis
-        biter = 0
-        while True:
-            biter += 1
-            nnbasis = self.nbasis + 5*biter
-
-	    if nnbasis > len(self.hermite_functions):
-		print "# COVERGENCE W.R.T BASIS SET FAILED."
-            else:
-                print "# SOLVING THE 1D SCHROEDINGER EQUATION"
-
-            # Set up the wavefunction basis
-            psigrid = np.zeros((self.nint, nnbasis))
-            normi = np.zeros(nnbasis)
-            for i in xrange(nnbasis):
-                psigrid[:,i] = self.psi(i,mass,np.sqrt(self.imm.w2[step]), dnmd)
-                normi[i] = np.dot(psigrid.T[i],psigrid.T[i])
-            psiigrid = np.zeros((nnbasis, nnbasis, self.nint))
-            for i in xrange(nnbasis):
-                for j in xrange(nnbasis):
-                    psiigrid[i,j] = self.psi(i,mass,np.sqrt(self.imm.w2[step]), dnmd) * self.psi(j,mass,np.sqrt(self.imm.w2[step]), dnmd)
-
-            # Construct the Hamiltonian matrix
-            h = np.zeros((nnbasis,nnbasis))
-            vsplinegrid = np.asarray([(np.nan_to_num(vtspline(x)) - 0.5 * self.imm.w2[step] * x**2) for x in dnmd])
-            for i in xrange(nnbasis):
-                for j in xrange(i,nnbasis,1):
-                    h[i][j] = np.dot(psiigrid[i][j], vsplinegrid) / np.sqrt(normi[i]*normi[j])
-                h[i][i] *= 0.5
-                h[i][i] += 0.5 * (i + 0.5) * np.sqrt(self.imm.w2[step])
-            h += h.T # fill in the lower triangle 
-
-            # Diagonalise Hamiltonian matrix and evaluate anharmonic free energy and vibrational freq
-            evals, evecs = np.linalg.eigh(h)
-
-            Aanh.append(-logsumexp(-1.0 * evals / dstrip(self.imm.temp)) * dstrip(self.imm.temp))
-            Eanh.append(np.sum(evals * np.exp(-1.0 * evals / dstrip(self.imm.temp)))  / np.sum(np.exp(-1.0 * evals / dstrip(self.imm.temp)))  )
-            Adiff.append(Aanh-Ahar)
-
-            print " Converging w.r.t the basis : nbasis = ", nnbasis, " anharmonic free = ", Aanh[-1], " diff / threshold", (np.abs(Aanh[-1]-Aanh[-2])/np.abs(Aanh[-2])), Athresh
-
-            # Check whether anharmonic frequency is converged
-            if ( (np.abs(Aanh[-1]-Aanh[-2])/np.abs(Aanh[-2])) < Athresh ):
-                break
 
         # Done converging wrt size of SHO basis
 
-        print '   harmonic rms = ',nmd
-        print '  harmonic freq = ',np.sqrt(self.imm.w2[step])
-        print '  harmonic free = ',Ahar
-        print 'anharmonic free = ',Aanh[-1]
+        print '   harmonic rms = ', nmd
+        print '  harmonic freq = ', np.sqrt(self.imm.w2[step])
+        print '  harmonic free = ', Ahar
+        print 'anharmonic free = ', Aanh[-1]
         self.total_anhar_free_energy += Aanh[-1]
         self.total_har_free_energy += Ahar
         self.total_anhar_internal_energy += Eanh[-1]
