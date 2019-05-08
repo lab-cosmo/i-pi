@@ -47,7 +47,7 @@ class NormalModeMover(Motion):
     """Normal Mode analysis.
     """
 
-    def __init__(self, fixcom=False, fixatoms=None, mode="imf", dynmat=np.zeros(0, float), refdynmat=np.zeros(0, float), prefix="", asr="none", nprim="1", fnmrms="1.0", nevib="25.0", nint="101", nbasis="10", athresh="1e-2", ethresh="1e-2", nkbt="4.0", nexc="5", mptwo=False, print_mftpot=False, print_2b_map=False, threebody=False, print_vib_density=False):
+    def __init__(self, fixcom=False, fixatoms=None, mode="imf", dynmat=np.zeros(0, float),  prefix="", asr="none", nprim="1", fnmrms="1.0", nevib="25.0", nint="101", nbasis="10", athresh="1e-2", ethresh="1e-2", nkbt="4.0", nexc="5", mptwo=False, print_mftpot=False, print_2b_map=False, threebody=False, print_vib_density=False, nparallel=1):
         """Initialises NormalModeMover.
         Args:
         fixcom	: An optional boolean which decides whether the centre of mass
@@ -71,7 +71,6 @@ class NormalModeMover(Motion):
 
         self.dynmatrix = dynmat
         self.mode = mode
-        self.refdynmatrix = refdynmat
         self.frefine = False
         self.U = None
         self.V = None
@@ -92,13 +91,14 @@ class NormalModeMover(Motion):
         self.print_2b_map = print_2b_map #False
         self.threebody = threebody #False
         self.print_vib_density = print_vib_density #False
+        self.nparallel = nparallel #False
 
         if self.prefix == "":
-            self.prefix = "PHONONS"
+            self.prefix = "nm"
 
-    def bind(self, ens, beads, nm, cell, bforce, prng):
+    def bind(self, ens, beads, nm, cell, bforce, prng, omaker):
 
-        super(NormalModeMover, self).bind(ens, beads, nm, cell, bforce, prng)
+        super(NormalModeMover, self).bind(ens, beads, nm, cell, bforce, prng, omaker)
         self.temp = self.ensemble.temp
 
         # Raises error for nbeads not equal to 1.
@@ -109,7 +109,7 @@ class NormalModeMover(Motion):
         self.m = dstrip(self.beads.m)
         self.calc.bind(self)
 
-        self.dbeads = self.beads.copy()
+        self.dbeads = self.beads.copy(nbeads=self.nparallel)
         self.dcell = self.cell.copy()
         self.dforces = self.forces.copy(self.dbeads, self.dcell)
 
@@ -153,6 +153,9 @@ class NormalModeMover(Motion):
             # Computes the transformation matrix.
             transfmatrix = np.eye(3 * self.beads.natoms) - np.dot(D.T, D)
             r = np.dot(transfmatrix.T, np.dot(dm, transfmatrix))
+
+            # Sets the number of  zero modes.
+            self.nz = 3
             return r
 
         elif(self.asr == "poly"):
@@ -186,6 +189,9 @@ class NormalModeMover(Motion):
             # Computes the transformation matrix.
             transfmatrix = np.eye(3 * self.beads.natoms) - np.dot(D.T, D)
             r = np.dot(transfmatrix.T, np.dot(dm, transfmatrix))
+
+            # Sets the number of zero modes. (Assumes poly-atomic molecules)
+            self.nz = 6
             return r
 
 
@@ -207,7 +213,7 @@ class DummyCalculator(dobject):
         """Dummy simulation time step which does nothing."""
         pass
 
-    def transform(self):
+    def terminate(self):
         """Dummy transformation step which does nothing."""
         pass
 
@@ -233,39 +239,63 @@ class IMF(DummyCalculator):
         else:
             self.imm.dynmatrix = self.imm.dynmatrix.reshape(((self.imm.beads.q.size, self.imm.beads.q.size)))
 
-        # Initialises a 3*number of atoms X 3*number of atoms refined dynamic matrix.
-        if(self.imm.refdynmatrix.size != (self.imm.beads.q.size * self.imm.beads.q.size)):
-            if(self.imm.refdynmatrix.size == 0):
-                self.imm.refdynmatrix = np.zeros((self.imm.beads.q.size, self.imm.beads.q.size), float)
-            else:
-                raise ValueError("Force constant matrix size does not match system size")
-        else:
-            self.imm.refdynmatrix = self.imm.refdynmatrix.reshape(((self.imm.beads.q.size, self.imm.beads.q.size)))
+        # Applies ASR
+        self.imm.dynmatrix = self.imm.apply_asr(self.imm.dynmatrix)
 
         # Calculates normal mode directions.
         self.imm.w2, self.imm.U = np.linalg.eigh(self.imm.dynmatrix)
+
+        # Calculates the normal mode frequencies.
+        # TODO : Should also handle soft modes.
+        self.imm.w = self.imm.w2 * 0
+        self.imm.w[self.imm.nz:] = np.sqrt(dstrip(self.imm.w2[self.imm.nz:]))
+        
         self.imm.V = self.imm.U.copy()
         for i in xrange(len(self.imm.V)):
             self.imm.V[:, i] *= self.imm.ism
 
-        # not temperature dependent so that sampled potentials can easily be reused to evaluate free energy at different temp
-        self.imm.nmrms = np.sqrt( 0.5 / np.sqrt(self.imm.w2)) # harm ZP RMS displacement along normal mode
-        # not temperature dependent so that sampled potentials can easily be reused to evaluate free energy at different temp
-        self.imm.nmevib =  0.5 * np.sqrt(dstrip(self.imm.w2)) # harm vibr energy at finite temp
+        # Harm ZP RMS displacement along normal mode
+        # Not temperature dependent so that sampled potentials can easily be 
+        # reused to evaluate free energy at different temperature.
+        self.imm.nmrms = np.zeros(len(self.imm.w)) 
+        self.imm.nmrms[self.imm.nz:] = np.sqrt( 0.5 / self.imm.w[self.imm.nz:])
 
-        self.fnmrms = self.imm.fnmrms # 4.0 # fraction of the harmonic RMS displacement used to sample along a normal mode
-        self.nevib = self.imm.nevib # multiple of harmonic vibrational energy up to which the BO surface is sampled
-        self.nint = self.imm.nint # integration points for numerical integration of Hamiltonian matrix elements
-        self.nbasis = self.imm.nbasis # number of SHO states used as basis for anharmonic wvfn
-        self.athresh = self.imm.athresh # convergence threshold for fractional error in vibrational free energy
-        self.nprim = self.imm.nprim # number of primitive unit (cells) per simulation (cell)
-        self.dof = 3 * self.imm.beads.natoms # total number of vibrational modes
+        # Harm vibr energy at finite temp
+        # Similarly this is also not temperature dependent.
+        self.imm.nmevib =  0.5 * self.imm.w 
 
+        # Fraction of the harmonic RMS displacement 
+        # used to sample along a normal mode
+        self.fnmrms = self.imm.fnmrms
+
+        # Multiple of harmonic vibrational energy up to which 
+        # the BO surface is sampled 
+        self.nevib = self.imm.nevib
+
+        # Integration points for numerical integration of 
+        # Hamiltonian matrix elements 
+        self.nint = self.imm.nint
+
+        # Number of SHO states used as basis for anharmonic wvfn
+        self.nbasis = self.imm.nbasis
+
+        # Convergence threshold for fractional error in vibrational free energy
+        self.athresh = self.imm.athresh
+
+        # Number of primitive unit (cells) per simulation (cell) 
+        self.nprim = self.imm.nprim
+
+        # Total number of vibrational modes
+        self.dof = 3 * self.imm.beads.natoms 
+
+        # Initializes the (an)har energy correction
         self.total_anhar_free_energy = 0.0
         self.total_har_free_energy = 0.0
         self.total_anhar_internal_energy = 0.0
         self.total_har_internal_energy = 0.0
-        self.v0 = 0 # potential energy (offset) at equilibrium positions per primitve unit (cell)
+
+        # Potential energy (offset) at equilibrium positions per primitve unit (cell)
+        self.v0 = 0
 
     def step(self, step=None):
         """Computes the Born Oppenheimer curve along a normal mode."""
@@ -391,17 +421,17 @@ class IMF(DummyCalculator):
                 fexlist.append(df)
                 ftexlist.append(dft)
                 qexlist.append(dq)
-    
-            np.savetxt(self.imm.prefix + '.' + str(step) + '.v', np.asarray(vexlist))
-            np.savetxt(self.imm.prefix + '.' + str(step) + '.f', np.asarray(fexlist))
-            np.savetxt(self.imm.prefix + '.' + str(step) + '.q', np.asarray(qexlist))
+   
+ 
+            #np.savetxt(self.imm.prefix + '.' + str(step) + '.v', np.asarray(vexlist))
+            #np.savetxt(self.imm.prefix + '.' + str(step) + '.f', np.asarray(fexlist))
+            #np.savetxt(self.imm.prefix + '.' + str(step) + '.q', np.asarray(qexlist))
     
             print "# FITTING A CUBIC SPLINE TO THE DATA"
             vspline = interp1d(qexlist, vexlist, kind='cubic', bounds_error=False)
             vtspline = interp1d(qexlist, vtexlist, kind='cubic', bounds_error=False)
             grid = np.linspace(np.min(qexlist), np.max(qexlist), 100)
-            np.savetxt(self.imm.prefix + '.' + str(step) + '.vfit', np.column_stack((grid, vspline(grid))))
-            
+
             print "# SOLVING THE 1D SCHROEDINGER EQUATION"
             # Set up the wavefunction basis
             # this only needs to happen once
@@ -435,12 +465,20 @@ class IMF(DummyCalculator):
     
             Aanh.append(-logsumexp(-1.0 * evals / dstrip(self.imm.temp)) * dstrip(self.imm.temp))
             Adiff.append(Aanh-Ahar)
-	    #print Aanh[-1]
     
             # Check whether anharmonic frequency is converged
             if ( (np.abs(Aanh[-1]-Aanh[-2])/np.abs(Aanh[-2])) < Athresh ): break
    
-        # Done converging wrt sample point density
+        # Done converging wrt sample point density.
+        # Prints the normal mode displacement, the potential and the force.
+        outfile = self.imm.output_maker.get_output(self.imm.prefix + '.' + str(step) + '.qvf')
+        np.savetxt(outfile,  np.c_[qexlist, vexlist, fexlist])
+        outfile.close()
+
+        # prints the mapped potential.
+        outfile = self.imm.output_maker.get_output(self.imm.prefix + '.' + str(step) + '.vfit')
+        np.savetxt(outfile,  np.c_[grid, vspline(grid)])
+        outfile.close()
 
         # Converge wrt size of SHO basis
         biter = 0
@@ -500,7 +538,7 @@ class IMF(DummyCalculator):
         self.total_anhar_internal_energy += Eanh[-1]
         self.total_har_internal_energy += Ehar
 
-    def transform(self):
+    def terminate(self):
         """ Does nothing """
         print 'POTENTIAL OFFSET         = ', self.v0
         print 'HAR FREE ENERGY          = ', np.sum((0.5 * np.sqrt(self.imm.w2[self.imm.nz:]) + self.imm.temp * np.log(1.0 - np.exp(-np.sqrt(self.imm.w2[self.imm.nz:]) / self.imm.temp)))) / self.nprim + self.v0

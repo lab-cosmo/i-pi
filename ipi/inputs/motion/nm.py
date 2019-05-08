@@ -95,9 +95,9 @@ class InputNormalMode(InputDictionary):
                 "threebody": (InputValue, {"dtype": bool,
                                         "default": False,
                                         "help": "Flag determining whether three-mode coupling terms are accounted for."}),
-                "refdynmat": (InputArray, {"dtype": float,
-                                           "default": np.zeros(0, float),
-                                           "help": "Portion of the refined dynamical matrix known up to now."})
+                "nparallel": (InputValue, {"dtype": int,
+                    "default": 1,
+                    "help": "The number of forces evaluations per i-PI step."}),
     }
 
     dynamic = {}
@@ -112,7 +112,6 @@ class InputNormalMode(InputDictionary):
         self.asr.store(nm.asr)
         self.dynmat.store(nm.dynmatrix)
         self.nprim.store(nm.nprim)
-        self.refdynmat.store(nm.refdynmatrix)
         self.fnmrms.store(nm.fnmrms) #"1.0"
         self.nevib.store(nm.nevib) #"25.0"
         self.nint.store(nm.nint) #"101"
@@ -126,6 +125,7 @@ class InputNormalMode(InputDictionary):
         self.print_2b_map.store(nm.print_2b_map) #False
         self.print_vib_density.store(nm.print_vib_density) #False
         self.threebody.store(nm.threebody) #False
+        self.nparallel.store(nm.nparallel) #1
 
     def fetch(self):
         rv = super(InputNormalMode, self).fetch()
