@@ -36,6 +36,7 @@ from scipy.interpolate import interp1d
 from scipy.interpolate import interp2d
 from scipy.interpolate import RegularGridInterpolator
 from scipy.misc import logsumexp
+import time
 #from guppy import hpy
 
 #==========================================================================
@@ -795,7 +796,10 @@ class VSCFMapper(IMF):
                             nmjs = np.zeros(npts[jnm]+4)
                             dnmi = self.fnmrms * self.imm.nmrms[inm]
                             dnmj = self.fnmrms * self.imm.nmrms[jnm]
-                            
+                           
+                            # TIMINGS
+                            TIME0 = time.time() 
+
                             for i in range(npts[inm]+4):
                                 nmi = (-nptsmin[inm]+i-2.0)*dnmi
                                 nmis[i] = nmi
@@ -814,6 +818,11 @@ class VSCFMapper(IMF):
                                         self.imm.dbeads.q = dstrip(self.imm.beads.q) + np.real(self.imm.V.T[inm]) * nmis[i] * np.sqrt(self.nprim) + np.real(self.imm.V.T[jnm]) * nmjs[j] * np.sqrt(self.nprim)
                                         vtots[k] = dstrip(self.imm.dforces.pots)[0] / self.nprim
     
+                            print "TIME TAKEN TO MAP THE POTENTIAL: ", time.time() - TIME0
+
+                            # TIMINGS
+                            TIME0 = time.time() 
+
                             # Store mapped coupling
                             if self.print_2b_map:
                                 nmijs = np.zeros(((npts[inm]+4)*(npts[jnm]+4),3))
@@ -823,17 +832,25 @@ class VSCFMapper(IMF):
                                         k += 1
                                         nmijs[k] = [nmi,nmj,vtots[k]-v0]
                                 np.savetxt('vcoupledmap.'+str(inm)+'.'+str(jnm)+'.dat',nmijs)
+                            print "TIME TAKEN TO SAVE THE COUPLING: ", time.time() - TIME0
 
+                            # TIMINGS
+                            TIME0 = time.time() 
     
                             #print hpyobject.heap()
 
                             # fit 1D and 2D cubic splines to sampled potentials
-                            vtspl = interp2d(nmis, nmjs, vtots, kind='cubic', bounds_error=False)
+                            vtspl = interp2d(nmis, nmjs, vtots, kind='cubic', bounds_error=False)\
+
+                            print "TIME TAKEN TO PERFORM INTERPOLATION: ", time.time() - TIME0
      
                             # Save integration grid for given pair of mode
                             igrid = np.linspace(-nptsmin[inm]*dnmi,nptsmax[inm]*dnmi,self.nint)
                             jgrid = np.linspace(-nptsmin[jnm]*dnmj,nptsmax[jnm]*dnmj,self.nint)
     
+                            # TIMINGS
+                            TIME0 = time.time()
+ 
                             # if mapping of 1D slice has been perfomed previously, skip printing grid to file
                             potfile = 'vindep.'+str(inm)+'.dat'
                             if os.path.exists(potfile)==False:
@@ -844,6 +861,7 @@ class VSCFMapper(IMF):
                                 vigrid = np.asarray([np.asscalar(vtspl(0.0,jgrid[ijnm]) - 0.5 * self.imm.w2[jnm] * jgrid[ijnm]**2 - vtspl(0.0,0.0)) for ijnm in range(self.nint)])
                                 np.savetxt('vindep.'+str(jnm)+'.dat',np.column_stack((jgrid,vigrid)))
 
+                            print "TIME TAKEN TO SAVE THE INTERPOLATED DATA: ", time.time() - TIME0
     
                             # Store coupling corr potentials in terms of integration grids
                             vijgrid = np.zeros((self.nint, self.nint))
@@ -1068,7 +1086,7 @@ class VSCFSolver(IMF):
         ## SET UP WVFN BASIS
         # initializes the SHO wvfn basis for solving the 1D Schroedinger equ
         hf = []
-        for i in xrange(4*self.nbasis):
+        for i in xrange(self.nbasis):
             hf.append(hermite(i))
 
         def psi(n,mass,freq,x):
@@ -1126,200 +1144,212 @@ class VSCFSolver(IMF):
 
             print '# INDEPENDENT MODE ',inm,' FREE ENERGY: ',ai[inm]
 
-        ## PREPARE EIGENSTATES OF COMPLETE SYSTEM
-        # check highest relevant independent mode excitation
-        nmbasis = []
-        for inm in inms:
-            nbasiscurr = 0
-            for ibasis in range(self.nbasis):
-                if (evals[inm][ibasis] - evals[inm][0]) < self.nkbt * dstrip(self.imm.temp):
-                    nbasiscurr += 1
-            nmbasis.append(range(nbasiscurr))
+        if self.mptwo:
+            ## PREPARE EIGENSTATES OF COMPLETE SYSTEM
+            # check highest relevant independent mode excitation
+            nmbasis = []
+            for inm in inms:
+                nbasiscurr = 0
+                for ibasis in range(self.nbasis):
+                    if (evals[inm][ibasis] - evals[inm][0]) < self.nkbt * dstrip(self.imm.temp):
+                        nbasiscurr += 1
+                nmbasis.append(range(nbasiscurr))
         
-        nstates = np.product([len(nmbasis[i]) for i in range(len(nmbasis))])
-        print '# NUMBERS OF INDEPENDENT MODE EIGENSTATES CONSIDERED IN ENUMERATION OF FEASIBLE GLOBAL EIGENSTATES: ', nstates, nmbasis
-        egs = np.sum(np.asarray([evals[inm][0] for inm in inms]))
-        sred = nmbasis[0]
-        for inm in range(len(inms)):
-            if inm == 0: continue
-            listtmp = []
-            listtmp.append(sred)
-            listtmp.append(nmbasis[inm])
-            stmp = list(itertools.product(*listtmp))
-            if inm > 1:
-                for el in range(len(stmp)):
-                    stmp[el] = stmp[el][0] + (stmp[el][1],)
-            stmp = list(stmp)
-            sred = []
-            ered = []
-            for state in stmp:
-                e = np.sum(np.asarray([evals[inms[jnm]][state[jnm]] for jnm in range(inm+1)]))
-                e -= np.sum(np.asarray([evals[inms[jnm]][0] for jnm in range(inm+1)]))
-                ## DETERMINE FROM IMF ENERGIES WHICH CONTRIBUTE SIGNIFICANTLY TO PARTITION FUNCTION
-                if e > self.nkbt * dstrip(self.imm.temp): continue
-                sred.append(state)
-                ered.append(e + egs)
+            nstates = np.product([len(nmbasis[i]) for i in range(len(nmbasis))])
+            print '# NUMBERS OF INDEPENDENT MODE EIGENSTATES CONSIDERED IN ENUMERATION OF FEASIBLE GLOBAL EIGENSTATES: ', nstates, nmbasis
+            egs = np.sum(np.asarray([evals[inm][0] for inm in inms]))
+            sred = nmbasis[0]
+            for inm in range(len(inms)):
+                if inm == 0: continue
+                listtmp = []
+                listtmp.append(sred)
+                listtmp.append(nmbasis[inm])
+                stmp = list(itertools.product(*listtmp))
+                if inm > 1:
+                    for el in range(len(stmp)):
+                        stmp[el] = stmp[el][0] + (stmp[el][1],)
+                stmp = list(stmp)
+                sred = []
+                ered = []
+                for state in stmp:
+                    e = np.sum(np.asarray([evals[inms[jnm]][state[jnm]] for jnm in range(inm+1)]))
+                    e -= np.sum(np.asarray([evals[inms[jnm]][0] for jnm in range(inm+1)]))
+                    ## DETERMINE FROM IMF ENERGIES WHICH CONTRIBUTE SIGNIFICANTLY TO PARTITION FUNCTION
+                    if e > self.nkbt * dstrip(self.imm.temp): continue
+                    sred.append(state)
+                    ered.append(e + egs)
 
-            if len(sred) < 10000:
-              print 'AMONG THE FIRST',inm+1,'MODES WE CONSIDER',len(sred),'STATES'
-            else:
-              print 'TOO MANY (>10000) POSSIBLE GLOBAL VIBRATIONAL STATES'
-              print edgar
+                if len(sred) > 1e3:
+                    print 'TOO MANY (>1e3) POSSIBLE GLOBAL VIBRATIONAL STATES'
+                else:
+                    print 'AMONG THE FIRST',inm+1,'MODES WE CONSIDER',len(sred),'STATE(S)'
 
-        nstates = len(sred)
-        s = np.zeros((nstates,self.dof),dtype=int)
-        for istate in range(nstates):
-            s[istate][inms] = sred[istate]
+            nstates = len(sred)
+            s = np.zeros((nstates,self.dof),dtype=int)
+            for istate in range(nstates):
+                s[istate][inms] = sred[istate]
 
-        ## IF THERE ARE TOO FEW LOW-ENERGY EIGENSTATES OF COMPLETE SYSTEM FOR REASONABLE MP2 CORRECTION
-        #if nstates < self.nexc:
-            # manually add some low-lying states
-        # TOCHECK
+            print "# SOLVING VSCF PROBLEM FOR", nstates, "STATE(S)!"
 
-        #if nstates > 150:
-        #  print "# REDUCING NUMBER OF STATES FROM",nstates,"TO 150!"
-        #  nstates = 150
+        # START WITH INDEPENDENT MODE THERMAL VIBRATIONAL DENSITY
+        evalsvscf = evals.copy()
+        evecsvscf = evecs.copy()
 
-        ## SOLVE VSCF PROBLEM ONE EIGENSTATE (OUT OF THE RELEVANT ONES) AT A TIME
-        print "# SOLVING VSCF PROBLEM FOR", nstates, "STATE(S)!"
+        aharmfull = np.sum((0.5 * np.sqrt(self.imm.w2[inms]) + self.imm.temp * np.log(1.0 - np.exp(-np.sqrt(self.imm.w2[inms]) / self.imm.temp))))
+        aindepfull = np.sum(np.asarray([ -logsumexp(-1.0 * evals[inm] / dstrip(self.imm.temp)) for inm in inms])) * dstrip(self.imm.temp)
+        eharmfull = np.sum(np.sqrt(self.imm.w2[inms]) * (0.5 + 1.0 / (np.exp(np.sqrt(self.imm.w2[inms]) / self.imm.temp) -1)))
+        eindepfull = np.sum(np.asarray([ np.sum(evals[inm] * np.exp(-1.0 * evals[inm] / dstrip(self.imm.temp))) / np.sum(np.exp(-1.0 * evals[inm] / dstrip(self.imm.temp))) for inm in inms]))
 
-        # START WITH GS
-        evaltotindep = []
-        evaltotcoupled = []
-        evalsnew = np.zeros((nstates, self.dof, self.nbasis))
-        evecsnew = np.zeros((nstates, self.dof, self.nbasis, self.nbasis))
-        evalsmix = np.zeros((nstates, self.dof, self.nbasis))
-        evecsmix = np.zeros((nstates, self.dof, self.nbasis, self.nbasis))
-        for istate in range(nstates):
+        if self.mptwo:
+            evaltotharm = np.asarray([ np.sum(np.asarray([ (0.5 + s[istate][inm])*np.sqrt(self.imm.w2[inm]) for inm in inms ])) for istate in range(nstates)])
+            evaltotindep = np.asarray([ np.sum(np.asarray([ evals[inm][s[istate][inm]] for inm in inms ])) for istate in range(nstates)])
+            aharm = -logsumexp(-1.0 * np.asarray(evaltotharm) / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
+            aindep = -logsumexp(-1.0 * np.asarray(evaltotindep) / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
+            eharm = np.sum((0.5 * np.sqrt(self.imm.w2[inms]) + self.imm.temp * np.log(1.0 - np.exp(-np.sqrt(self.imm.w2[inms]) / self.imm.temp))))
+            eindep = np.sum(np.asarray(evaltotindep) * np.exp(-1.0 * (np.asarray(evaltotindep)-np.asarray(evaltotindep)[0]) / dstrip(self.imm.temp)))
+            eindep /= np.sum(np.exp(-1.0 * (np.asarray(evaltotindep)-np.asarray(evaltotindep)[0]) / dstrip(self.imm.temp)))
+        else:
+            aharm = aharmfull
+            aindep = aindepfull
+            eharm = eharmfull
+            eindep = eindepfull
 
-            # Check if VSCF has been performed previously and if so... skip state
-            evalfile = 'eigval.'+str(istate)+'.dat'
-            if os.path.exists(evalfile):
-                ered[istate],evaltot = np.loadtxt(evalfile)
-                ## SAVE MFT EIGENVALUE FOR GIVEN STATE TO ARRAY
-                evaltotcoupled.append(evaltot.copy())
-            # if VSCF has not been performed previously... run VSCF
-            else:
-                # VSCF iteration
-                iiter = 0
-                evalsmix[istate] = evals.copy()
-                evecsmix[istate] = evecs.copy()
-                evalsnew[istate] = evals.copy()
-                evecsnew[istate] = evecs.copy()
-                evaltot = np.sum(np.asarray([ evals[inm][s[istate][inm]] for inm in inms ]))
-                evaltotold = evaltot.copy()
-                ## SAVE IMF EIGENVALUE FOR GIVEN STATE TO ARRAY
-                evaltotindep.append(evaltot.copy())
+        aold = aindep.copy()
 
-                print 'Iteration = HAR , state = ',istate,' , evals = ',np.asarray([ np.sqrt(self.imm.w2[inm]) * (0.5+s[istate][inm]) for inm in inms ])
-                print 'Iteration = IMF , state = ',istate,' , evals = ',np.asarray([ evalsnew[istate][inm][s[istate][inm]] for inm in inms ])
+        print 'Iteration = HAR , A = ',aharm#,np.asarray([np.sqrt(self.imm.w2[1])*(0.5+i) for i in range(3)]),np.asarray([np.sqrt(self.imm.w2[2])*(0.5+i) for i in range(3)])
+        print 'Iteration = IMF , A = ',aindep#,evals[1][:3],evals[2][:3]
 
-                while True:
-                    iiter += 1
-        
-                    ## RUN OVER MODES 
-                    for inm in inms:
-            
-                        # MF potential that mode inm lives in given that the overall state is s[istate]
-                        vmft = np.zeros(vigrid[inm].shape)
-                        vmft += vigrid[inm]
+        # MF potentials initialised to the independent mode potentials
+        vmft = vigrid.copy()
 
-                        for jnm in inms:
-                            # avoid mode coupling to itself
-                            if jnm == inm:
-                                continue
-                            # sum up all MFT two-body contributions
-                            psjgrid = np.dot(psigrid[jnm],evecsmix[istate][jnm][s[istate][jnm]])
-                            vmft += np.dot(vijgrid[inm][jnm].T,psjgrid**2) / self.nprim 
+        # fraction of new/updated MFT potential mixed into that from the previous VSCF step
+        alphamix = 0.5
 
-                            # ===========================================
-                            # if three-body terms are to be accounted for
-                            if self.threebody:
-                                for knm in inms:
-                                    if knm == inm or knm == jnm:
-                                        continue
-                                    # sum up all MFT three-body contributions
-                                    pskgrid = np.dot(psigrid[knm],evecsmix[istate][knm][s[istate][knm]])
-                                    vmft += 0.5 * np.dot(np.dot(vijkgrid[inm][jnm][knm].T,pskgrid**2),psjgrid**2) / self.nprim**2 
-                            # ===========================================
+        iiter = 0
+        while True:
+            iiter += 1
 
-                        # Save MFT anharmonic correction to file for visualisation
-                        if self.print_mftpot:
-                            if self.threebody == False:
-                                np.savetxt('vmft_twobody.'+str(istate)+'.'+str(inm)+'.dat',np.column_stack((igrid[inm],vigrid[inm],vmft)))
-                            else:
-                                np.savetxt('vmft_threebody.'+str(istate)+'.'+str(inm)+'.dat',np.column_stack((igrid[inm],vigrid[inm],vmft)))
+            # 1D density
+            rhoigrid = np.zeros((self.dof, self.nint))
+            for inm in inms:
+                # reduced thermal vibrational density just accounting for the reduced number of global vibrational eigenstates
+                #for istate in range(nstates):
+                #    rhoigrid[inm] += np.exp(-1.0 * np.sum(np.asarray([ (evalsvscf[jnm][s[istate][jnm]] - evalsvscf[jnm][s[0][jnm]]) for jnm in inms ])) / dstrip(self.imm.temp)) \
+                #    * np.dot(psigrid[inm],evecsvscf[inm][s[istate][inm]])**2
+                #rhoigrid[inm] /= np.sum(rhoigrid[inm])
 
-                        # Construct Hamiltonian matrices
-                        h = np.zeros((self.nbasis,self.nbasis))
-                        for ibasis in xrange(self.nbasis):
-                            for jbasis in xrange(ibasis,self.nbasis,1):
-                                # mode inm MFT Hamiltonian
-                                h[ibasis][jbasis] = np.dot(psiigrid[inm][ibasis][jbasis], vmft)
-                            h[ibasis][ibasis] *= 0.5
-                            h[ibasis][ibasis] += 0.5 * (ibasis + 0.5) * np.sqrt(self.imm.w2[inm])
-                        h += h.T # fill in the lower triangle 
+                for ibasis in range(self.nbasis):
+                    rhoigrid[inm] += np.exp(-1.0 * (evalsvscf[inm][ibasis] - evalsvscf[inm][0]) / dstrip(self.imm.temp)) \
+                    * np.dot(psigrid[inm],evecsvscf[inm][ibasis])**2
+                rhoigrid[inm] /= np.sum(rhoigrid[inm])
 
-                        # Diagonalise Hamiltonian matrix given mode 0 in state s0 and mode 1 in state s1
-                        evalstmp, U = np.linalg.eigh(h)
-                        evecstmp = U.T
-                        ## Mixing of states for improved convergence --> used for next VSCF iteration
-                        #evalsmix[istate][inm] = 0.5 * evalsnew[istate][inm] + 0.5 * evalstmp.copy()
-                        #evecsmix[istate][inm] = 0.5 * evecsnew[istate][inm] + 0.5 * evecstmp.copy()
-                        ## New eigenvalues and -vectors used when convergence is achieved (ensuring orthonormality)
-                        #evalsnew[istate][inm] = evalstmp.copy()
-                        #evecsnew[istate][inm] = evecstmp.copy()
-                        ## Renormalise eigenvectors after mixing
-                        #for knm in xrange(self.nbasis):
-                        #  evecsmix[istate][inm][knm] /= np.sqrt(np.dot(evecsmix[istate][inm][knm],evecsmix[istate][inm][knm]))
-                        evalsmix[istate][inm] = evalstmp.copy()
-                        evecsmix[istate][inm] = evecstmp.copy()
-                        ## New eigenvalues and -vectors used when convergence is achieved (ensuring orthonormality)
-                        evalsnew[istate][inm] = evalstmp.copy()
-                        evecsnew[istate][inm] = evecstmp.copy()
-        
-                    ## CHECK THAT ALL MODES HAVE CONVERGED
-                    evaltot = np.sum(np.asarray([ evalsnew[istate][inm][s[istate][inm]] for inm in inms ]))
-                    print 'Iteration =',iiter,' , state = ',istate,' , evals = ',np.asarray([ evalsnew[istate][inm][s[istate][inm]] for inm in inms ])
-                    if iiter > 3:
-                        if ( np.abs(evaltot - evaltotold)/np.abs(evaltotold) < self.ethresh): 
-                            break
-                    if iiter > 200:
-                        print 'WARNING WARNING WARNING : VSCF DID NOT CONVERGE'
-                        break
-                    evaltotold = evaltot.copy()
-          
-                ## SAVE MFT EIGENVALUE FOR GIVEN STATE TO ARRAY
-                evaltotcoupled.append(evaltot.copy())
-                ## SAVE MFT EIGENVALUE FOR GIVEN STATE TO FILE
-                np.savetxt('eigval.'+str(istate)+'.dat',np.column_stack((ered[istate],evaltot)))
-                np.savetxt('eigvalext.'+str(istate)+'.dat',np.column_stack((np.asarray([ evals[inm][s[istate][inm]] for inm in inms ]),np.asarray([ evalsnew[istate][inm][s[istate][inm]] for inm in inms ]))))
-
-
-            if self.print_vib_density == True:
+                if iiter == 1:
+                    np.savetxt('rho_indep.'+str(inm)+'.dat',np.c_[igrid[inm],rhoigrid[inm]])
+                else:
+                    np.savetxt('rho_mft.'+str(inm)+'.dat',np.c_[igrid[inm],rhoigrid[inm]])
+            # 2D density
+            if self.threebody:
+                rhoijgrid = np.zeros((self.dof, self.dof, self.nint, self.nint))
                 for inm in inms:
-                    psjgrid = np.dot(psigrid[inm],evecsmix[0][inm][0])
-                    normj = np.dot(psjgrid,psjgrid)
-                    np.savetxt('rho.'+str(istate)+str(inm)+'.dat',np.c_[igrid[inm],psjgrid**2,psjgrid**2/normj])
+                    for jnm in inms:
+                        if jnm == inm:
+                            continue
+                        # reduced thermal vibrational density just accounting for the reduced number of global vibrational eigenstates
+                        #for istate in range(nstates):
+                        #    rhoijgrid[inm] += np.exp(-1.0 * np.sum(np.asarray([ (evalsvscf[jnm][s[istate][jnm]] - evalsvscf[jnm][s[0][jnm]]) for knm in inms ])) / dstrip(self.imm.temp)) \
+                        #            * np.outer(np.dot(psigrid[inm],evecsvscf[inm][s[istate][inm]])**2 , \
+                        #            np.dot(psigrid[jnm],evecsvscf[jnm][s[istate][jnm]])**2)
+                        #rhoijgrid[inm,jnm] /= np.sum(rhoijgrid[inm,jnm])
+
+                        rhoijgrid[inm,jnm] = np.outer(rhoigrid[inm],rhoigrid[jnm])
+
+                        if iiter == 1:
+                            np.savetxt('rho_indep_pair.'+str(inm)+'.'+str(jnm)+'.dat',rhoijgrid[inm,jnm])
+                        else:
+                            np.savetxt('rho_mft_pair.'+str(inm)+'.'+str(jnm)+'.dat',rhoijgrid[inm,jnm])
+
+            ## RUN OVER MODES 
+            for inm in inms:
+                # MF potential that mode inm lives in
+                #vmft = np.zeros(vigrid[inm].shape)
+                #vmft += vigrid[inm]
+                vmft[inm] = vigrid[inm] + (1.0 - alphamix) * (vmft[inm] - vigrid[inm])
+                for jnm in inms:
+                    # avoid mode coupling to itself
+                    if jnm == inm:
+                        continue
+                    # sum up all MFT two-body contributions
+                    vmft[inm] += alphamix * np.dot(vijgrid[inm][jnm].T,rhoigrid[jnm]) / self.nprim
+
+                    # if three-body terms are to be accounted for
+                    if self.threebody:
+                        for knm in inms:
+                            if knm == inm or knm == jnm:
+                                continue
+                            # sum up all MFT three-body contributions
+                            vmft[inm] += 0.5 * alphamix * np.sum(vijkgrid[inm][jnm][knm] * rhoijgrid[jnm,knm]) / self.nprim**2 # eae : to check whether vijkgrid needs to be transposed
+
+                # Save MFT anharmonic correction to file for visualisation
+                if self.print_mftpot:
+                    if self.threebody == False:
+                        np.savetxt('vmft_twobody.'+str(inm)+'.dat',np.column_stack((igrid[inm],vigrid[inm],vmft[inm])))
+                    else:
+                        np.savetxt('vmft_threebody.'+str(inm)+'.dat',np.column_stack((igrid[inm],vigrid[inm],vmft[inm])))
+
+                # Construct Hamiltonian matrices
+                h = np.zeros((self.nbasis,self.nbasis))
+                for ibasis in xrange(self.nbasis):
+                    for jbasis in xrange(ibasis,self.nbasis,1):
+                        # mode inm MFT Hamiltonian
+                        h[ibasis][jbasis] = np.dot(psiigrid[inm][ibasis][jbasis], vmft[inm])
+                    h[ibasis][ibasis] *= 0.5
+                    h[ibasis][ibasis] += 0.5 * (ibasis + 0.5) * np.sqrt(self.imm.w2[inm])
+                h += h.T # fill in the lower triangle
+
+                # Diagonalise Hamiltonian matrix given mode 0 in state s0 and mode 1 in state s1
+                evalsvscf[inm], U = np.linalg.eigh(h)
+                evecsvscf[inm] = U.T
+
+            # Loop over all modes within an VSCF step completed
+
+            # Calculate current MFT free energy
+            if self.mptwo:
+                evaltotcoupled = np.asarray([np.sum([ evalsvscf[inm][s[istate][inm]] for inm in inms ]) for istate in range(nstates)])
+                acoupled = -logsumexp(-1.0 * evaltotcoupled / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
+            else:
+                acoupled = np.sum(np.asarray([ -logsumexp(-1.0 * evalsvscf[inm] / dstrip(self.imm.temp)) for inm in inms])) * dstrip(self.imm.temp)
+
+            ## CHECK THAT FREE ENERGY HAS CONVERGED
+            print 'Iteration =',iiter,' A = ',acoupled#,evalsvscf[1][:3],evalsvscf[2][:3]
+            if iiter > 5:
+                if ( np.abs(acoupled - aold)/np.abs(aold) < self.athresh):
+                    break
+                if iiter > 200:
+                    print 'WARNING WARNING WARNING : VSCF DID NOT CONVERGE'
+                    break
+            aold = acoupled.copy()
 
         ## ALREADY PRINT OUT IN CASE MP2 CRASHES
-        aharm = np.sum(np.asarray([ -np.log(np.sum([np.exp(-1.0 * np.sqrt(self.imm.w2[inm]) * (0.5+i) / dstrip(self.imm.temp)) for i in range(self.nbasis)]))*dstrip(self.imm.temp) for inm in inms ]))
-
-        aindep = -logsumexp(-1.0 * np.asarray(evaltotindep) / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
-        eindep = np.sum(np.asarray(evaltotindep) * np.exp(-1.0 * (np.asarray(evaltotindep)-np.asarray(evaltotindep)[0]) / dstrip(self.imm.temp)))
-        eindep /= np.sum(np.exp(-1.0 * (np.asarray(evaltotindep)-np.asarray(evaltotindep)[0]) / dstrip(self.imm.temp)))
-
-        acoupled = -logsumexp(-1.0 * np.asarray(evaltotcoupled) / dstrip(self.imm.temp)) * dstrip(self.imm.temp)
-        ecoupled = np.sum(np.asarray(evaltotcoupled) * np.exp(-1.0 * (np.asarray(evaltotcoupled)-np.asarray(evaltotcoupled)[0]) / dstrip(self.imm.temp)))
-        ecoupled /= np.sum(np.exp(-1.0 * (np.asarray(evaltotcoupled)-np.asarray(evaltotcoupled)[0]) / dstrip(self.imm.temp)))
+        if self.mptwo:
+            ecoupled = np.sum(np.asarray(evaltotcoupled) * np.exp(-1.0 * (np.asarray(evaltotcoupled)-np.asarray(evaltotcoupled)[0]) / dstrip(self.imm.temp)))
+            ecoupled /= np.sum(np.exp(-1.0 * (np.asarray(evaltotcoupled)-np.asarray(evaltotcoupled)[0]) / dstrip(self.imm.temp)))
+        else:
+            ecoupled = np.sum(np.asarray([ np.sum(evalsvscf[inm] * np.exp(-1.0 * evalsvscf[inm] / dstrip(self.imm.temp))) / np.sum(np.exp(-1.0 * evalsvscf[inm] / dstrip(self.imm.temp))) for inm in inms]))
 
         print 'POTENTIAL OFFSET          = ', self.v0
-        print 'HAR FREE ENERGY           = ', np.sum((0.5 * np.sqrt(self.imm.w2[3:]) + self.imm.temp * np.log(1.0 - np.exp(-np.sqrt(self.imm.w2[3:]) / self.imm.temp)))) / self.nprim + self.v0
+        print ''
+        print 'FULL HAR FREE ENERGY      = ', aharmfull / self.nprim + self.v0
+        print 'FULL IMF FREE ENERGY      = ', aindepfull / self.nprim + self.v0
+        print 'HAR FREE ENERGY           = ', aharm / self.nprim + self.v0
         print 'IMF FREE ENERGY           = ', aindep / self.nprim + self.v0
         print 'VSCF FREE ENERGY CORR     = ', (acoupled - aindep) / self.nprim
-        print 'HAR INTERNAL ENERGY       = ', np.sum(np.sqrt(self.imm.w2[3:]) * (0.5 + 1.0 / (np.exp(np.sqrt(self.imm.w2[3:]) / self.imm.temp) -1))) / self.nprim + self.v0
+        print ''
+        print 'FULL HAR INTERNAL ENERGY  = ', eharmfull / self.nprim + self.v0
+        print 'FULL IMF INTERNAL ENERGY  = ', eindepfull / self.nprim + self.v0
+        print 'HAR INTERNAL ENERGY       = ', eharm / self.nprim + self.v0
+        print 'IMF INTERNAL ENERGY       = ', eindep / self.nprim + self.v0
         print 'VSCF INTERNAL ENERGY CORR = ', (ecoupled - eindep) / self.nprim
-        print 'ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE)'
+        print ''
 
 
         if self.mptwo:
@@ -1343,16 +1373,16 @@ class VSCFSolver(IMF):
                 dvmfti = np.zeros((self.dof,self.nint))
                 for inm in inms : 
                     # anharmonic MFT wvfn for mode inm normalised for the given integration grid
-                    Psigrid[inm] = np.dot((psigrid[inm]/np.sqrt(np.sum(psigrid[inm]**2, axis=0))),evecsnew[istate][inm][s[istate][inm]])
+                    Psigrid[inm] = np.dot((psigrid[inm]/np.sqrt(np.sum(psigrid[inm]**2, axis=0))),evecsvscf[inm][s[istate][inm]])
     
-                    # MF potential that mode inm lives in given that the overall state is s[istate]
+                    # MF potential that mode inm lives in
                     vmft = np.zeros(self.nint)
                     for jnm in inms:
                         # skip mode if frequency indicates a translation/rotation
                         if jnm == inm:
                             continue
                         # sum up all MFT contributions
-                        psjgrid = np.dot((psigrid[jnm]/np.sqrt(np.sum(psigrid[jnm]**2, axis=0))),evecsnew[istate][jnm][s[istate][jnm]])
+                        psjgrid = np.dot((psigrid[jnm]/np.sqrt(np.sum(psigrid[jnm]**2, axis=0))),evecsvscf[jnm][s[istate][jnm]])
                         vmft += np.dot(vijgrid[inm][jnm].T,psjgrid**2)
                     dvmfti[inm] = vmft
     
@@ -1366,7 +1396,7 @@ class VSCFSolver(IMF):
                     Psjgrid = np.zeros((self.dof,self.nint))
                     Normj = np.zeros(self.dof)
                     for jnm in inms : 
-                        Psjgrid[jnm] = np.dot((psigrid[jnm]/np.sqrt(np.sum(psigrid[jnm]**2, axis=0))),evecsnew[jstate][jnm][s[jstate][jnm]])
+                        Psjgrid[jnm] = np.dot((psigrid[jnm]/np.sqrt(np.sum(psigrid[jnm]**2, axis=0))),evecsvscf[jnm][s[jstate][jnm]])
     
                     # V - VMFT --> sum_j (vijgrid - dvmfti)
                     matel = 0.0
@@ -1382,7 +1412,7 @@ class VSCFSolver(IMF):
                             for knm in inms:
                                 if knm == inm or knm == jnm:
                                     continue
-                                matel1 *= np.dot(evecsnew[jstate][knm][s[jstate][knm]], evecsnew[istate][knm][s[istate][knm]])
+                                matel1 *= np.dot(evecsvscf[knm][s[jstate][knm]], evecsvscf[knm][s[istate][knm]])
                             # terms involved in the current pairwise coupling
                             matel2 = np.sum( np.outer(Psjgrid[inm], Psjgrid[jnm]) * vijgrid[inm][jnm].T * np.outer(Psigrid[inm], Psigrid[jnm]))
                             matelcpl += 0.5 * matel1 * matel2
@@ -1391,7 +1421,7 @@ class VSCFSolver(IMF):
                         for knm in inms:
                             if knm == inm:
                                 continue
-                            matel3 *= np.dot(evecsnew[jstate][knm][s[jstate][knm]], evecsnew[istate][knm][s[istate][knm]])
+                            matel3 *= np.dot(evecsvscf[knm][s[jstate][knm]], evecsvscf[knm][s[istate][knm]])
                         matel3 *= np.sum( Psjgrid[inm] * dvmfti[inm] * Psigrid[inm] )
                         matelmft += matelmft 
                         #matelmft += matel3 #eae32
