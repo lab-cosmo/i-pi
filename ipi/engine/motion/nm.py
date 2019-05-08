@@ -118,7 +118,7 @@ class NormalModeMover(Motion):
         if (step < 3 * self.beads.natoms):
             self.calc.step(step)
         else:
-            self.calc.transform()
+            self.calc.terminate()
             softexit.trigger("Independent Mode Calculation has terminated. Exiting.")
 
     def apply_asr(self, dm):
@@ -297,6 +297,25 @@ class IMF(DummyCalculator):
         # Potential energy (offset) at equilibrium positions per primitve unit (cell)
         self.v0 = 0
 
+        # Initializes the SHO wvfn basis for solving the 1D Schroedinger equation
+        self.hermite_functions = [hermite(i) for i in xrange(4 * self.nbasis)]
+
+    def psi(self, n, m, hw, q):
+        """
+        Returns the value of the n^th wavefunction of a 
+        harmonic oscillator with mass m, frequency freq
+        at position x.
+        """
+
+        # Defines variables for easier referencing
+        alpha = m * hw
+        herfun = self.hermite_functions[n]
+
+        norm = (alpha / np.pi)**0.25 * np.sqrt( 1.0 / (2.0 ** (n) * np.math.factorial(n)))
+        psival = norm * np.exp(-alpha * q**2 / 2.0) * herfun(np.sqrt(alpha) * q)
+
+        return psival
+
     def step(self, step=None):
         """Computes the Born Oppenheimer curve along a normal mode."""
 
@@ -309,17 +328,6 @@ class IMF(DummyCalculator):
 
         # initializes the finite deviation
         vknorm = np.sqrt(np.dot(self.imm.V[:, step], self.imm.V[:, step]))
-
-        # initializes the SHO wvfn basis for solving the 1D Schroedinger equ
-        hf = []
-        for i in xrange(4 * self.nbasis):
-            hf.append(hermite(i))
-
-        def psi(n,mass,freq,x):
-            nu = mass * freq
-            norm = (nu/np.pi)**0.25 * np.sqrt(1.0/(2.0**(n)*np.math.factorial(n)))
-            psival = norm * np.exp(-nu * x**2 /2.0) * hf[n](np.sqrt(nu)*x)
-            return psival
 
         # initializes the list containing sampled displacements, forces, and energies
         vlist = []
@@ -423,10 +431,6 @@ class IMF(DummyCalculator):
                 qexlist.append(dq)
    
  
-            #np.savetxt(self.imm.prefix + '.' + str(step) + '.v', np.asarray(vexlist))
-            #np.savetxt(self.imm.prefix + '.' + str(step) + '.f', np.asarray(fexlist))
-            #np.savetxt(self.imm.prefix + '.' + str(step) + '.q', np.asarray(qexlist))
-    
             print "# FITTING A CUBIC SPLINE TO THE DATA"
             vspline = interp1d(qexlist, vexlist, kind='cubic', bounds_error=False)
             vtspline = interp1d(qexlist, vtexlist, kind='cubic', bounds_error=False)
@@ -441,14 +445,12 @@ class IMF(DummyCalculator):
                 psigrid = np.zeros((self.nint, self.nbasis))
                 normi = np.zeros(self.nbasis)
                 for i in xrange(self.nbasis):
-                    for k in xrange(self.nint):
-                        psigrid[k][i] = psi(i,mass,np.sqrt(self.imm.w2[step]), dnmd[k])
+                    psigrid[:,i] = self.psi(i, mass, self.imm.w[step], dnmd)
                     normi[i] = np.dot(psigrid.T[i],psigrid.T[i])
                 psiigrid = np.zeros((self.nbasis, self.nbasis, self.nint))
                 for i in xrange(self.nbasis):
                     for j in xrange(self.nbasis):
-                        for k in xrange(self.nint):
-                            psiigrid[i][j][k] = psi(i,mass,np.sqrt(self.imm.w2[step]), dnmd[k]) * psi(j,mass,np.sqrt(self.imm.w2[step]), dnmd[k])
+                        psiigrid[i,j] = self.psi(i, mass, self.imm.w[step], dnmd) * self.psi(j, mass, self.imm.w[step], dnmd)
     
             # Construct the Hamiltonian matrix
             h = np.zeros((self.nbasis,self.nbasis))
@@ -486,7 +488,7 @@ class IMF(DummyCalculator):
             biter += 1
             nnbasis = self.nbasis + 5*biter
 
-	    if nnbasis > len(hf):
+	    if nnbasis > len(self.hermite_functions):
 		print "# COVERGENCE W.R.T BASIS SET FAILED."
             else:
                 print "# SOLVING THE 1D SCHROEDINGER EQUATION"
@@ -495,14 +497,12 @@ class IMF(DummyCalculator):
             psigrid = np.zeros((self.nint, nnbasis))
             normi = np.zeros(nnbasis)
             for i in xrange(nnbasis):
-                for k in xrange(self.nint):
-                    psigrid[k][i] = psi(i,mass,np.sqrt(self.imm.w2[step]), dnmd[k])
+                psigrid[:,i] = self.psi(i,mass,np.sqrt(self.imm.w2[step]), dnmd)
                 normi[i] = np.dot(psigrid.T[i],psigrid.T[i])
             psiigrid = np.zeros((nnbasis, nnbasis, self.nint))
             for i in xrange(nnbasis):
                 for j in xrange(nnbasis):
-                    for k in xrange(self.nint):
-                        psiigrid[i][j][k] = psi(i,mass,np.sqrt(self.imm.w2[step]), dnmd[k]) * psi(j,mass,np.sqrt(self.imm.w2[step]), dnmd[k])
+                    psiigrid[i,j] = self.psi(i,mass,np.sqrt(self.imm.w2[step]), dnmd) * self.psi(j,mass,np.sqrt(self.imm.w2[step]), dnmd)
 
             # Construct the Hamiltonian matrix
             h = np.zeros((nnbasis,nnbasis))
