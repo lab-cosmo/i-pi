@@ -1,4 +1,4 @@
-<simulation mode='static' verbosity='low'>
+<simulation mode='static' verbosity='medium'>
   <output prefix='simulation'>
     <properties stride='10' filename='out'>  [ step, potential ] </properties>
   </output>
@@ -20,10 +20,14 @@
       <temperature units='kelvin'> 100 </temperature>
     </ensemble>
     <motion mode='normalmodes'>
-      <normalmodes mode='vscf'>
-        <dynmat mode='file'> data.dynmat </dynmat>
+      <normalmodes mode='imf'>
+        <dynmat mode='file'> dynmat.data </dynmat>
         <prefix> simulation </prefix>
         <asr> poly </asr>
+        <nbasis> 10 </nbasis>
+        <nevib> 16 </nevib>
+        <athresh> 1e-6 </athresh>
+        <nint> 501 </nint>
       </normalmodes>
     </motion>
   </system>

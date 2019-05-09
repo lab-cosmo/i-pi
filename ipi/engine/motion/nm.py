@@ -119,7 +119,6 @@ class NormalModeMover(Motion):
             self.calc.step(step)
         else:
             self.calc.terminate()
-            softexit.trigger("Independent Mode Calculation has terminated. Exiting.")
 
     def apply_asr(self, dm):
         """
@@ -557,6 +556,7 @@ class IMF(DummyCalculator):
         info(' @NM : HAR internal energy            =  %10.8e' % (np.sum(np.sqrt(self.imm.w2[self.imm.nz:]) * (0.5 + 1.0 / (np.exp(np.sqrt(self.imm.w2[self.imm.nz:]) / self.imm.temp) -1))) / self.nprim + self.v0,), verbosity.medium)
         info(' @NM : IMF internal energy correction =  %10.8e' % ((self.total_anhar_internal_energy -self.total_har_internal_energy) / self.nprim,), verbosity.medium)
         info(' @NM : ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE) \n', verbosity.medium)
+        softexit.trigger(" @NM : The IMF calculation has terminated.")
 
 
 class PC(IMF):
