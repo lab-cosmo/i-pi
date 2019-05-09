@@ -57,7 +57,7 @@ class Replicas(object):
                                  "beads.")
             qtemp = dstrip(beads.q)[:,idof].copy()
             ptemp = dstrip(beads.p)[:,idof].copy()
-            mtemp = beads.m3[0:1,idof]
+            mtemp = dstrip(beads.m3)[0:1,idof].copy()
         self.q = qtemp
         self.p = ptemp
         self.m = mtemp
@@ -176,9 +176,9 @@ class HolonomicConstraint(object):
         self._p = [replicas[i].p for i in self.dofs]
         self._m = [replicas[i].m for i in self.dofs]
         # Private attributes for caching
-        self.__qtainted = True
-        self.__mtainted = True
-        self.__ptainted = True
+        self.__qtainted = False
+        self.__mtainted = False
+        self.__ptainted = False
         self.__sigma = 0.0
         self.__sigmadot = 0.0
         self.__jac = np.zeros_like(np.asarray(self._q))
@@ -276,6 +276,7 @@ class BondLength(HolonomicConstraint):
         """
 
         super(BondLength, self).bind(replicas, nm, transform, **kwargs)
+        self.qtaint()
         if self.targetval is None:
             # Set to the current mean bond-length
             self.targetval = 0.0
@@ -306,17 +307,12 @@ class BondAngle(HolonomicConstraint):
         """
 
         super(BondAngle,self).bind(replicas, nm, transform, **kwargs)
+        self.qtaint()
         if self.targetval is None:
             # Set to initial bond angle
             self.targetval = 0.0
             currentval = self.sigma
             self.targetval = currentval
-
-    def get_ct(self):
-        """Calculate the cosines of the bond-angles across the ring-polymer
-           replicas.
-        """
-        return
 
     def get_sigma(self):
         """Calculate the difference between the mean angle and the
@@ -377,6 +373,7 @@ class EckartTrans(HolonomicConstraint):
         """
 
         super(EckartTrans, self).bind(replicas, nm, transform, **kwargs)
+        self.qtaint()
         if self.targetval is None:
             # Set to the current position of the CoM
             self.targetval = 0.0
@@ -387,12 +384,10 @@ class EckartTrans(HolonomicConstraint):
         mrel = np.asarray(self._m).reshape(-1)
         mtot = np.sum(mrel)
         mrel /= mtot
-        qc = np.asarray([np.mean(q) for q in self._q])
+        qc = np.mean(np.asarray(self._q),axis=-1)
         sigma = np.dot(mrel, qc)
-        jac = np.empty((self.ndof,self.nbeads))
-        jac = mrel[:,None]
-        jac /= self.nbeads
-        return sigma, jac
+        mrel /= self.nbeads
+        return sigma, mrel[:,None]
 
 class EckartTransX(EckartTrans):
     """Constraint on the x-component of the CoM of a group of atoms.
@@ -479,6 +474,7 @@ class EckartRot(HolonomicConstraint):
 
 
         super(EckartRot, self).bind(replicas, nm, transform, **kwargs)
+        self.qtaint()
         if "ref" in kwargs:
             # Reference configuration is provided
             lref = np.asarray(kwargs["ref"]).flatten() # local copy
@@ -490,15 +486,6 @@ class EckartRot(HolonomicConstraint):
                     [ np.mean(q) for q in self._q] ).reshape((2, self.ndof//2))
         self._ref = ref
 
-    def get_delqc(self):
-        """Return the displacement between the centroid coordinates and the
-           reference configuration (not mass-weighted, lab-frame).
-        """
-        delqc = np.asarray(
-                    [ np.mean(q) for q in self._q] ).reshape((2, self.ndof//2))
-        delqc -= self._ref
-        return delqc
-
     def get_sigma(self):
         # Individual centroid masses divided by the molecular mass
         mrel = np.asarray(self._m).reshape((2,self.ndof//2))
@@ -509,16 +496,11 @@ class EckartRot(HolonomicConstraint):
         mref[...] = self._ref-CoM[:,None]
         mref *= mrel
         # Displacement between centroid and reference configs
-        delqc = np.asarray(
-                    [ np.mean(q) for q in self._q]
-                    ).reshape((2, self.ndof//2))
+        delqc = np.mean(np.asarray(self._q), axis=-1).reshape((2, self.ndof//2))
         delqc -= self._ref
-        jac = np.empty_like(dstrip(self._q))
-        jac[:self.ndof//2,:] = -mref[1,:,None]
-        jac[self.ndof//2:,:] = mref[0,:,None]
-        jac /= self.nbeads
-        return np.sum(mref[0]*delqc[1] -
-                      mref[1]*delqc[0]), jac
+        sigma = np.sum(mref[0]*delqc[1] - mref[1]*delqc[0])
+        mref /= self.nbeads
+        return sigma, np.hstack((-mref[1],mref[0]))[:,None]
 
 class EckartRotX(EckartRot):
     """Constraint on the x-component of the Eckart "angular momentum"
