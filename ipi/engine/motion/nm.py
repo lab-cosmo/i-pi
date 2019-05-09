@@ -37,10 +37,6 @@ from scipy.interpolate import interp2d
 from scipy.interpolate import RegularGridInterpolator
 from scipy.misc import logsumexp
 import time
-#from guppy import hpy
-
-#==========================================================================
-#==========================================================================
 
 
 class NormalModeMover(Motion):
@@ -115,7 +111,7 @@ class NormalModeMover(Motion):
 
     def step(self, step=None):
         """Executes one step of phonon computation. """
-        if (step < 3 * self.beads.natoms):
+        if (step < self.calc.total_steps):
             self.calc.step(step)
         else:
             self.calc.terminate()
@@ -194,10 +190,6 @@ class NormalModeMover(Motion):
             return r
 
 
-#==========================================================================
-#==========================================================================
-
-
 class DummyCalculator(dobject):
     """ No-op Calculator """
 
@@ -215,10 +207,6 @@ class DummyCalculator(dobject):
     def terminate(self):
         """Dummy transformation step which does nothing."""
         pass
-
-
-#==========================================================================
-#==========================================================================
 
 
 class IMF(DummyCalculator):
@@ -299,7 +287,8 @@ class IMF(DummyCalculator):
         # Initializes the SHO wvfn basis for solving the 1D Schroedinger equation
         self.hermite_functions = [hermite(i) for i in xrange(max(20, 4 * self.nbasis))]
 
-        # Evaluates the wave functions on a grid
+        # Sets the total number of steps for IMF.
+        self.total_steps = 3 * self.imm.beads.natoms
 
     def psi(self, n, m, hw, q):
         """
@@ -559,116 +548,6 @@ class IMF(DummyCalculator):
         softexit.trigger(" @NM : The IMF calculation has terminated.")
 
 
-class PC(IMF):
-    """ Temperature scaled normal mode Born-Oppenheimer preconditioner for Self Consistent Phonons.
-    """
-
-    def bind(self, imm):
-        """ Reference all the variables for simpler access."""
-        super(PC, self).bind(imm)
-
-        # Initiaizes the preconditioned posititon and frequencies.
-        self.qpc = np.zeros(self.imm.beads.q.shape)
-        self.w2pc = np.zeros(self.imm.w2.shape)
-        self.fnmrms = 2.0 # 4.0 # fraction of the harmonic RMS displacement used to sample along a normal mode
-
-    def step(self, step=None):
-        """Computes the Born Oppenheimer curve along a normal mode."""
-
-        print "TREATING NM #", step, self.imm.w2[step]
-
-        if np.abs(self.imm.w2[step]) < 1e-10 :
-	   
-           print "# IGNORING THE NM. FREQUENCY IS SMALLER THEN 2 cm^-1"
-           return 
-
-        # initializes the list containing sampled displacements, forces, and energies
-        vlist = []
-        flist = []
-        qlist = []
-
-        q0 = 0.0
-        v0 = dstrip(self.imm.forces.pots).copy()[0] / self.nprim
-        f0 = np.dot(dstrip(self.imm.forces.f).copy()[0], np.real(self.imm.V.T[step])) / self.nprim
-
-        self.v0 = v0
-
-        vlist.append(0.0)
-        flist.append(f0)
-        qlist.append(q0)
-
-        ffnmrms = self.fnmrms
-        nmd = ffnmrms * self.imm.nmrms[step]
-        dev = np.real(self.imm.V.T[step]) * nmd * np.sqrt(self.nprim)
-
-        counter = 1
-        while True:
-        # displaces by dev along kth normal mode.
-            self.imm.dbeads.q = self.imm.beads.q + dev * counter
-            dv = dstrip(self.imm.dforces.pots).copy()[0] / self.nprim - v0
-            df = np.dot(dstrip(self.imm.dforces.f).copy()[0], np.real(self.imm.V.T[step])) / self.nprim
-
-            if dv + 0.50 * self.imm.w2[step] * (nmd * counter)**2 >  self.imm.nmevib[step] * ffnmrms * 0.75: 
-                vlist.append(dv)
-                flist.append(df)
-                qlist.append(nmd * counter)  
-                break
-            counter += 1.0
-
-        print "# NUMBER OF FORCE EVALUATIONS ALONG THE -VE DIRECTION:", counter
-        counter = -1
-        while True:
-        # displaces by dev along kth normal mode.
-            self.imm.dbeads.q = self.imm.beads.q + dev * counter
-            dv = dstrip(self.imm.dforces.pots).copy()[0] / self.nprim - v0
-            df = np.dot(dstrip(self.imm.dforces.f).copy()[0], np.real(self.imm.V.T[step])) / self.nprim
-
-            if dv + 0.50 * self.imm.w2[step] * (nmd * counter)**2 >  self.imm.nmevib[step] * ffnmrms * 0.75: 
-                vlist.append(dv)
-                flist.append(df)
-                qlist.append(nmd * counter)  
-                break
-            counter -= 1.0 
-
-        print "# NUMBER OF FORCE EVALUATIONS ALONG THE +VE DIRECTION:", counter
-        print "# PRINTING"
-
-        np.savetxt(self.imm.prefix + '.' + str(step) + '.v', np.asarray(vlist))
-        np.savetxt(self.imm.prefix + '.' + str(step) + '.f', np.asarray(flist))
-        np.savetxt(self.imm.prefix + '.' + str(step) + '.q', np.asarray(qlist))
-
-        print "# FITS A QUADRATIC TO THE DATA"
-        a,b,c = np.polyfit(x = qlist, y = vlist, deg = 2)
-        print a, b, c
-        print np.real(self.imm.V.T[step]) * (-b / a / 2.0)  * np.sqrt(self.nprim)
-        self.qpc +=  np.real(self.imm.V.T[step]) * (-b / a / 2.0)  * np.sqrt(self.nprim)
-        self.w2pc[step] = 2 * a
-
-
-    def transform(self):
-        """ Does nothing """
-        self.imm.dbeads.q = self.imm.beads.q + self.qpc
-        print 'PRECONDITIONED POSITION                = ', self.imm.dbeads.q 
-        print 'PRECONDITIONED FREQUENCIES             = ', self.w2pc
-  
-        print "PRINTING XYZ FILE"
-        dapc = Atoms(self.imm.dbeads.natoms)
-        dapc.q = self.imm.dbeads.q[-1]
-        dapc.names = self.imm.dbeads.names
-        ff = open(self.imm.prefix +  ".qpc." + "xyz", 'w')
-        print_file("xyz", dapc, self.imm.cell, filedesc=ff)
-        ff.close()
-
-        print "PRINTING THE UPDATED DYNMAT"
-        ddmpc = np.eye(self.dof) * 0.0
-
-        for i in range(self.dof):
-            U = self.imm.U.T[i].reshape((1, self.dof))
-            ddmpc += self.w2pc[i] * np.dot(U.T, U)
-        np.savetxt(self.imm.prefix +  ".dmpc." + "data", ddmpc)
-#==========================================================================
-#==========================================================================
-
 class VSCFMapper(IMF):
     """ 
     """
@@ -682,8 +561,6 @@ class VSCFMapper(IMF):
 
     def step(self, step=None):
         """Computes the Born Oppenheimer curve along a normal mode."""
-
-        #hpyobject = hpy()
 
         # soft exit if more than one step, because everything is calculated in one single step
         if step > 0:
