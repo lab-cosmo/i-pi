@@ -13,9 +13,9 @@ import numpy as np
 from ipi.utils.depend import dstrip
 from ipi.utils import nmtransform
 
-__all__ = ['Replicas','HolonomicConstraint','BondLength']#,'BondAngle',
-#           'EckartTransX', 'EckartTransY', 'EckartTransZ',
-#           'EckartRotX', 'EckartRotY', 'EckartRotZ',]
+__all__ = ['Replicas','HolonomicConstraint','BondLength','BondAngle',
+           'EckartTransX', 'EckartTransY', 'EckartTransZ',
+           'EckartRotX', 'EckartRotY', 'EckartRotZ',]
 
 class Replicas(object):
 
@@ -177,16 +177,19 @@ class HolonomicConstraint(object):
         self._m = [replicas[i].m for i in self.dofs]
         # Private attributes for caching
         self.__qtainted = True
+        self.__mtainted = True
         self.__ptainted = True
         self.__sigma = 0.0
         self.__sigmadot = 0.0
         self.__jac = np.zeros_like(np.asarray(self._q))
+        self.__mjac = np.zeros_like(self.__jac)
 
     def qtaint(self):
         """Notify the class that the holonomic constraint and its gradient
            have to be recalculated when next referenced.
         """
         self.__qtainted = True
+        self.__mtainted = True
         self.ptaint() # It follows that sigmadot is also affected
 
     def ptaint(self):
@@ -209,13 +212,13 @@ class HolonomicConstraint(object):
 
     @property
     def mjac(self):
-        #!TODO: may need a separate tainter for this
-        return self.get_mjac()
+        if self.__mtainted:
+            self.update_mjac()
+            self.__mtainted = False
+        return self.__mjac
 
     @property
     def sigmadot(self):
-        if self.__qtainted:
-            self.update_qfxns()
         if self.__ptainted:
             self.__sigmadot = self.get_sigmadot()
             self.__ptainted = False
@@ -232,26 +235,28 @@ class HolonomicConstraint(object):
         """Dummy constraint function calculator that does nothing."""
         pass
 
-    def get_mjac(self):
+    def update_mjac(self):
         """Calculate the constraint gradient, weighted by the inverse mass tensor"""
 
-        mjac = np.copy(self.jac)
+        self.__mjac[...] = self.jac
         if self.nbeads == 1:
-            for i,idof in enumerate(self.dofs):
-                mjac[i,:] /= dstrip(self._nm.dynm3)[:,idof]
+            self.__mjac /= dstrip(self._nm.dynm3)[0,self.dofs,None]
+#            for i,idof in enumerate(self.dofs):
+#                mjac[i,:] /= dstrip(self._nm.dynm3)[:,idof]
         else:
-            gnm = self.transform.b2nm(mjac.T)
+            gnm = self.transform.b2nm(self.__mjac.T)
             for i,idof in enumerate(self.dofs):
                 # Override if DoF in open path
                 if idof//3 in self._nm.transform._open:
-                    gnm[:,i] = np.dot(self._nm.transform._b2o_nm, mjac[i,:])
-                # Divide by the dynamical mass
-                gnm[:,i] /= dstrip(self._nm.dynm3)[:,idof]
-            mjac[:,:] = self.transform.nm2b(gnm).T
+                    gnm[:,i] = np.dot(self._nm.transform._b2o_nm,
+                                      self.__mjac[i,:])
+            # Divide by the dynamical mass
+            gnm /= dstrip(self._nm.dynm3)[:,self.dofs]
+            self.__mjac[...] = self.transform.nm2b(gnm).T
             for i,idof in enumerate(self.dofs):
                 if idof//3 in self._nm.transform._open:
-                    mjac[i,:] = np.dot(self._nm.transform._o_nm2b, gnm[:,i])
-        return mjac
+                    self.__mjac[i,:] = np.dot(self._nm.transform._o_nm2b,
+                                              gnm[:,i])
 
     def get_sigmadot(self):
         """Calculate the total derivative of the constraint function w.r.t. time."""

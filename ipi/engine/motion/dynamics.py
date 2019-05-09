@@ -709,17 +709,22 @@ class QCMDWaterIntegrator(NVTIntegrator):
         self.replica_list = []
         for i in range(3*self.beads.natoms):
             self.replica_list.append(Replicas(self.beads.nbeads, self.beads, i))
-        # Generate a list of Constraints to fix the quasi-centroids
+        # Generate a list of constraints to fix the quasi-centroids
         self.clist = []
+        # Store references to the constraints that involve a given DoF
+        idx2c = [ [] for i in range(0,self.beads.natoms*3) ]
         O_idx = [0,1,2]
         H1_idx = [3,4,5]
         H2_idx = [6,7,8]
         for i in range(0,self.beads.natoms,3):
-            self.clist.append(BondLength(O_idx+H1_idx))
-            self.clist.append(BondLength(O_idx+H2_idx))
-            for cls in [BondAngle, EckartTransX, EckartTransY, EckartTransZ,
-                        EckartRotX, EckartRotY, EckartRotZ]:
-                self.clist.append(cls(O_idx+H1_idx+H2_idx))
+            for cls,idxlst in zip(2*[BondLength]+[BondAngle,
+                               EckartTransX, EckartTransY, EckartTransZ,
+                               EckartRotX, EckartRotY, EckartRotZ],
+                               [O_idx+H1_idx, O_idx+H2_idx]+
+                               7*[O_idx+H1_idx+H2_idx]):
+                self.clist.append(cls(idxlst))
+                for idx in idxlst:
+                    idx2c[idx].append(self.clist[-1])
             for lst in [O_idx, H1_idx, H2_idx]:
                 for j in range(len(lst)):
                     lst[j] += 9
@@ -727,6 +732,18 @@ class QCMDWaterIntegrator(NVTIntegrator):
         self._nmtrans = nmtransform.nm_trans(self.beads.nbeads)
         for c in self.clist:
             c.bind(self.replica_list, self.nm, transform=self._nmtrans)
+        # Generate a list of references to constraints that have to be
+        # tainted if coordinates reference by self.clist[i] are modified
+        self._c2c = []
+        for c in self.clist:
+            c2c_elem = []
+            for dof in c.dofs:
+                # Cycle over constraints that depend on this DoF
+                for cc in idx2c[dof]:
+                    # Append to list if not already there
+                    if cc not in c2c_elem:
+                        c2c_elem.append(cc)
+            self._c2c.append(c2c_elem)
 
     def qconstraints(self, dt):
         """This applies SHAKE to the positions and momenta.
@@ -738,14 +755,15 @@ class QCMDWaterIntegrator(NVTIntegrator):
         glist = []
         mglist = []
         for c in self.clist:
-            glist.append(dstrip(c.jac.get()).copy())
-            mglist.append(dstrip(c.mjac.get()).copy())
+            glist.append(c.jac.copy())
+            mglist.append(c.mjac.copy())
         # Copy the current ring-polymer configuration into replica list
-        # This allows to use i-PI's caching mechanism, so that
-        # re-calculation of constraint gradients and the like is only
-        # triggered if the relevant DoFs are modified
+        temp = dstrip(self.beads.q).copy()
         for idof in range(3*self.beads.natoms):
-            self.replica_list[idof].q[:] = dstrip(self.beads.q)[:,idof]
+            self.replica_list[idof].q[:] = temp[:,idof]
+        # Taint the constraints
+        for c in self.clist:
+            c.qtaint()
         # Cycle over constraints until convergence
         ncycle = 1
         # Initialise the Lagrange multipliers
@@ -764,6 +782,9 @@ class QCMDWaterIntegrator(NVTIntegrator):
                 lambdas[i] += dlambda
                 for idof,mgvec in zip(c.dofs,mg):
                     self.replica_list[idof].q[:] += dlambda*mgvec
+                # Now taint all the affected constraints
+                for cc in self._c2c[i]:
+                    cc.qtaint()
             if converged:
                 break
             ncycle += 1
@@ -772,12 +793,11 @@ class QCMDWaterIntegrator(NVTIntegrator):
             for idof,gvec in zip(c.dofs,g):
                 self.replica_list[idof].p[:] += l*gvec/dt
         # Copy the coordinates back into beads
-        temp = np.empty_like(dstrip(self.beads.q))
         for idof in range(3*self.beads.natoms):
-            temp[:,idof] = dstrip(self.replica_list[idof].q)
+            temp[:,idof] = self.replica_list[idof].q
         self.beads.q[...] = temp
         for idof in range(3*self.beads.natoms):
-            temp[:,idof] = dstrip(self.replica_list[idof].p)
+            temp[:,idof] = self.replica_list[idof].p
         self.beads.p[...] = temp
 
     def pconstraints(self):
@@ -798,12 +818,15 @@ class QCMDWaterIntegrator(NVTIntegrator):
         if len(self.fixatoms) > 0:
             raise ValueError("Cannot explicitly fix atoms in a constrained simulation")
         # Copy the current ring-polymer momenta into replica list
+        temp = dstrip(self.beads.p).copy()
         for idof in range(3*self.beads.natoms):
-            self.replica_list[idof].p[:] = dstrip(self.beads.p)[:,idof]
-        # Calculate the diagonal elements of the Jacobian matrix
+            self.replica_list[idof].p[:] = temp[:,idof]
+        # Calculate the diagonal elements of the Jacobian matrix and taint
+        # all the constraints
         gmglist = []
         for c in self.clist:
-            gmglist.append(np.sum(dstrip(c.jac*c.mjac)))
+            gmglist.append(np.sum(c.jac*c.mjac))
+            c.ptaint()
         # Cycle over constraints until convergence
         ncycle = 1
         mus = np.zeros(len(self.clist))
@@ -821,15 +844,17 @@ class QCMDWaterIntegrator(NVTIntegrator):
                 converged = False
                 dmu = -c.sigmadot/gmg
                 mus[i] += dmu
-                for idof,gvec in zip(c.dofs,dstrip(c.jac)):
+                for idof,gvec in zip(c.dofs,c.jac):
                     self.replica_list[idof].p[:] += dmu*gvec
+                # Now taint all the affected constraints
+                for cc in self._c2c[i]:
+                    cc.ptaint()
             if converged:
                 break
             ncycle += 1
         # Copy the coordinates back into beads
-        temp = np.empty_like(dstrip(self.beads.p))
         for idof in range(3*self.beads.natoms):
-            temp[:,idof] = dstrip(self.replica_list[idof].p)
+            temp[:,idof] = self.replica_list[idof].p
         self.beads.p[...] = temp
         # Return the value to be added to the ensemble energy when
         # monitoring the conserved quantity
