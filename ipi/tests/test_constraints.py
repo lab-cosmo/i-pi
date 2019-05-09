@@ -189,29 +189,31 @@ def test_bond():
     assert not (bond_constraint.sigma == pytest.approx(sigma))
     assert not (bond_constraint.jac == pytest.approx(grad))
     replicas[dofs[2]].q[0] = beads.q[0,dofs[2]]
+    bond_constraint.qtaint()
     assert (bond_constraint.sigma == pytest.approx(sigma))
     assert (bond_constraint.jac == pytest.approx(grad))
 
 def test_angle():
     beads, replicas, nm = create_beads(local("test.ice_Ih.xyz"))
     dofs = list(range(9))
-    bond_constraint = BondAngle(dofs)
-    bond_constraint.bind(replicas, nm)
-    sigma, grad = bondangle(beads, dofs, bond_constraint.targetval)
-    assert bond_constraint.sigma == pytest.approx(sigma)
-    assert bond_constraint.jac == pytest.approx(grad)
+    angle_constraint = BondAngle(dofs)
+    angle_constraint.bind(replicas, nm)
+    sigma, grad = bondangle(beads, dofs, angle_constraint.targetval)
+    assert angle_constraint.sigma == pytest.approx(sigma)
+    assert angle_constraint.jac == pytest.approx(grad)
     # vary targetval
     new_target = np.pi/4
-    bond_constraint.targetval = new_target
+    angle_constraint.targetval = new_target
     sigma, grad = bondangle(beads, dofs, new_target)
-    assert bond_constraint.sigma == pytest.approx(sigma)
-    assert bond_constraint.jac == pytest.approx(grad)
+    assert angle_constraint.sigma == pytest.approx(sigma)
+    assert angle_constraint.jac == pytest.approx(grad)
     # vary configuration
     beads.q[0,dofs[2]] = 1.0
     replicas[dofs[2]].q[0] = beads.q[0,dofs[2]]
+    angle_constraint.qtaint()
     sigma, grad = bondangle(beads, dofs, new_target)
-    assert bond_constraint.sigma == pytest.approx(sigma)
-    assert bond_constraint.jac == pytest.approx(grad)
+    assert angle_constraint.sigma == pytest.approx(sigma)
+    assert angle_constraint.jac == pytest.approx(grad)
 
 def test_eckart_trans():
     beads, replicas, nm = create_beads(local("test.ice_Ih.xyz"))
@@ -223,6 +225,7 @@ def test_eckart_trans():
     nmtrans = nmtransform.nm_trans(nbeads = beads.nbeads)
     for c in com_constraints:
         c.bind(replicas, nm, transform=nmtrans)
+        c.qtaint()
     sigma, grad = com(
             beads, dofs, np.asarray(
                     [c.targetval for c in com_constraints]))
@@ -233,18 +236,21 @@ def test_eckart_trans():
     new_target = [2.5, -1.0, 5.0]
     for c,t in zip(com_constraints,new_target):
         c.targetval = t
+        c.qtaint()
     sigma, grad = com(beads, dofs, np.asarray(new_target))
     assert np.asarray([c.sigma for c in com_constraints]) == pytest.approx(sigma)
     for c in com_constraints:
         assert c.jac == pytest.approx(grad)
     # vary configuration
-    beads.q[0,dofs[2]] = 1.0
+    beads.q[0,dofs[0]] = 1.0
     beads.q[1,dofs[4]] =-1.5
     beads.q[3,dofs[8]] = 2.7
     sigma, grad = com(beads, dofs, np.asarray(new_target))
-    replicas[dofs[2]].q[0] = beads.q[0,dofs[2]]
+    replicas[dofs[0]].q[0] = beads.q[0,dofs[0]]
     replicas[dofs[4]].q[1] = beads.q[1,dofs[4]]
     replicas[dofs[8]].q[3] = beads.q[3,dofs[8]]
+    for c in com_constraints:
+        c.qtaint()
     assert np.asarray([c.sigma for c in com_constraints]) == pytest.approx(sigma)
     for c in com_constraints:
         assert c.jac == pytest.approx(grad)
@@ -280,6 +286,7 @@ def test_eckart_rot():
     reference[8] -= 3.87
     for c in constraints:
         c._ref[...] = reference[c.dofs].reshape((2,-1))
+        c.qtaint()
     sigma, grad = eckart_rot(
             beads, dofs, reference)
     for i,c in enumerate(constraints):
@@ -293,6 +300,8 @@ def test_eckart_rot():
     replicas[dofs[2]].q[0] = beads.q[0,dofs[2]]
     replicas[dofs[4]].q[1] = beads.q[1,dofs[4]]
     replicas[dofs[8]].q[3] = beads.q[3,dofs[8]]
+    for c in constraints:
+        c.qtaint()
     for i,c in enumerate(constraints):
         assert c.sigma == pytest.approx(sigma[i])
         assert c.jac == pytest.approx(grad[i])
