@@ -18,9 +18,9 @@ import numpy as np
 from ipi.engine.motion import Motion
 from ipi.utils import nmtransform
 from ipi.utils.depend import *
-from ipi.engine.constraints import Replicas, BondLength, BondAngle, \
-        EckartTransX, EckartTransY, EckartTransZ, \
-        EckartRotX, EckartRotY, EckartRotZ
+from ipi.engine.constraints import Replicas, BondLength, BondAngle#, \
+#        EckartTransX, EckartTransY, EckartTransZ, \
+#        EckartRotX, EckartRotY, EckartRotZ
 from ipi.engine.thermostats import Thermostat
 from ipi.engine.barostats import Barostat
 
@@ -717,11 +717,11 @@ class QCMDWaterIntegrator(NVTIntegrator):
         H1_idx = [3,4,5]
         H2_idx = [6,7,8]
         for i in range(0,self.beads.natoms,3):
-            for cls,idxlst in zip(2*[BondLength]+[BondAngle,
-                               EckartTransX, EckartTransY, EckartTransZ,
-                               EckartRotX, EckartRotY, EckartRotZ],
+            for cls,idxlst in zip(2*[BondLength]+[BondAngle],
+#                               EckartTransX, EckartTransY, EckartTransZ,
+#                               EckartRotX, EckartRotY, EckartRotZ],
                                [O_idx+H1_idx, O_idx+H2_idx]+
-                               7*[O_idx+H1_idx+H2_idx]):
+                               [O_idx+H1_idx+H2_idx]):
                 self.clist.append(cls(idxlst))
                 for idx in idxlst:
                     idx2c[idx].append(self.clist[-1])

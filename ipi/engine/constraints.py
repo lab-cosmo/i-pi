@@ -11,11 +11,11 @@ functions.
 import numpy as np
 
 from ipi.utils.depend import dstrip
-from ipi.utils import nmtransform
+#from ipi.utils import nmtransform
 
-__all__ = ['Replicas','HolonomicConstraint','BondLength','BondAngle',
-           'EckartTransX', 'EckartTransY', 'EckartTransZ',
-           'EckartRotX', 'EckartRotY', 'EckartRotZ',]
+__all__ = ['Replicas','HolonomicConstraint','BondLength','BondAngle',]
+#           'EckartTransX', 'EckartTransY', 'EckartTransZ',
+#           'EckartRotX', 'EckartRotY', 'EckartRotZ',]
 
 class Replicas(object):
 
@@ -97,201 +97,72 @@ class HolonomicConstraint(object):
     constraint classes.
 
     Attributes:
-        nbeads: The number of beads in the constrained ring-polymer DoFs
-        ndof: The number of DoFs in the constrained group
-        open_paths: the open-path ring-polymer DOFs
-                    in the constrained group
-        targetval: The target value of the constraint function
-
-    Properties:
-        sigma: Difference between the current value of the constraint
-               and targetval
-        jac: Gradient of the constraint function w.r.t the constrained
-             degrees of freedom (ndof-by-nbeads array)
-        mjac: Gradient left-multiplied by the inverse of the mass tensor
-        sigmadot: Total time derivative of the constraint function
+        natoms: The number of atoms in the constrained group
+        indices: The indices of the atoms involved in the constraint
 
     Methods:
-        qtaint: Taint the properties that depend on the configurational
-                degrees of freedom
-        ptaint: Taint sigmadot only
+        get_natoms: Return the number of atoms involved in the constraint
+        sigma: Return the value of the constraint function and its gradient.
 
     """
     # number of degrees of freedom expected by the constraint function
-    _ndof = 0
+    _natoms = 0
 
     @classmethod
-    def get_ndof(cls):
+    def get_natoms(cls):
         """The number of degrees of freedom expected by the constraint function.
         """
-        if (cls._ndof == 0):
-            raise TypeError("Trying to get the number of degrees of freedom "+
+        if (cls._natoms == 0):
+            raise TypeError("Trying to get the number of atoms "+
                             "from base HolonomicConstraint class")
-        return cls._ndof
+        return cls._natoms
 
-    def __init__(self, dofs, val=None):
+    def __init__(self, indices, **kwargs):
         """Initialise the holonomic constraint.
+
+        Args:
+            indices: a list of integer indices identifying the constrained atoms.
         """
-        ndof = self.get_ndof()
-        dofs = np.asarray(dofs, dtype=int).copy()
-        if (dofs.ndim != 1):
-            raise ValueError("Shape of constrained DoF group incompatible "+
+        natoms = self.get_natoms()
+        atoms = np.asarray(indices, dtype=int).copy()
+        if (atoms.ndim != 1):
+            raise ValueError("Shape of constrained atom group incompatible "+
                              "with "+self.__class__.__name__)
-        if (dofs.size != ndof and ndof != -1):
-            raise ValueError("Size of constrained DoF group incompatible "+
+        if (atoms.size != natoms and natoms != -1):
+            raise ValueError("Size of constrained atom group incompatible "+
                              "with "+self.__class__.__name__)
-        self.dofs = dofs
-        self.ndof = len(self.dofs)
-        if val is not None:
-            if not np.isscalar(val):
-                raise TypeError("Expecting a scalar for target constraint value")
-        self.targetval = val
+        self.indices = atoms
+        self.natoms = len(self.indices)
 
-    def bind(self, replicas, nm, transform=None, **kwargs):
-        """Bind the appropriate degrees of freedom to the holonomic constraint.
-           Args:
-               replicas(list): List of Replicas objects containing the
-                   ring-polymer data grouped by degree
-                   of freedom.
-               nm: A normal modes object used to do the normal modes
-                   transformation.
-               transform: a normal mode transform object that is
-                   agnostic to the number of atoms and has no open paths
-                   (either no-op or nm_trans)
-        """
-
-        self.nbeads = len(replicas[0])
-        # Local reference to the normal mode transform
-        self._nm = nm
-        # Local transform (matrix version, agnostic to number of atoms)
-        if transform is not None:
-            #!! TODO add checks for type of transform and _open == []
-            self.transform = transform
-        elif self.nbeads == 1:
-            self.transform = nmtransform.nm_noop(nbeads = self.nbeads)
-        else:
-            self.transform = nmtransform.nm_trans(nbeads = self.nbeads)
-        # Local references to array sections involved in the constraint
-        self._q = [replicas[i].q for i in self.dofs]
-        self._p = [replicas[i].p for i in self.dofs]
-        self._m = [replicas[i].m for i in self.dofs]
-        # Private attributes for caching
-        self.__qtainted = False
-        self.__mtainted = False
-        self.__ptainted = False
-        self.__sigma = 0.0
-        self.__sigmadot = 0.0
-        self.__jac = np.zeros_like(np.asarray(self._q))
-        self.__mjac = np.zeros_like(self.__jac)
-
-    def qtaint(self):
-        """Notify the class that the holonomic constraint and its gradient
-           have to be recalculated when next referenced.
-        """
-        self.__qtainted = True
-        self.__mtainted = True
-        self.ptaint() # It follows that sigmadot is also affected
-
-    def ptaint(self):
-        """Notify the class that the time-derivative of the constraint will
-           have to be recalculated when next referenced.
-        """
-        self.__ptainted = True
-
-    @property
-    def sigma(self):
-        if self.__qtainted:
-            self.update_qfxns()
-        return self.__sigma - self.targetval
-
-    @property
-    def jac(self):
-        if self.__qtainted:
-            self.update_qfxns()
-        return self.__jac
-
-    @property
-    def mjac(self):
-        if self.__mtainted:
-            self.update_mjac()
-            self.__mtainted = False
-        return self.__mjac
-
-    @property
-    def sigmadot(self):
-        if self.__ptainted:
-            self.__sigmadot = self.get_sigmadot()
-            self.__ptainted = False
-        return self.__sigmadot
-
-    def update_qfxns(self):
-        """Re-calculate the constraint function and its gradient.
-        """
-        self.__sigma, self.__jac[...] = self.get_sigma()
-        self.__qtainted = False
-        self.__ptainted = True # Sigmadot now has to be recalculated
-
-    def get_sigma(self):
+    def __call__(self, q, jac):
         """Dummy constraint function calculator that does nothing."""
         pass
-
-    def update_mjac(self):
-        """Calculate the constraint gradient, weighted by the inverse mass tensor"""
-
-        self.__mjac[...] = self.jac
-        if self.nbeads == 1:
-            self.__mjac /= dstrip(self._nm.dynm3)[0,self.dofs,None]
-#            for i,idof in enumerate(self.dofs):
-#                mjac[i,:] /= dstrip(self._nm.dynm3)[:,idof]
-        else:
-            gnm = self.transform.b2nm(self.__mjac.T)
-            for i,idof in enumerate(self.dofs):
-                # Override if DoF in open path
-                if idof//3 in self._nm.transform._open:
-                    gnm[:,i] = np.dot(self._nm.transform._b2o_nm,
-                                      self.__mjac[i,:])
-            # Divide by the dynamical mass
-            gnm /= dstrip(self._nm.dynm3)[:,self.dofs]
-            self.__mjac[...] = self.transform.nm2b(gnm).T
-            for i,idof in enumerate(self.dofs):
-                if idof//3 in self._nm.transform._open:
-                    self.__mjac[i,:] = np.dot(self._nm.transform._o_nm2b,
-                                              gnm[:,i])
-
-    def get_sigmadot(self):
-        """Calculate the total derivative of the constraint function w.r.t. time."""
-        return np.sum(np.asarray(self._p)*self.mjac)
 
 #------------- Specialisations of the Holonomic Constraint class -----------#
 class BondLength(HolonomicConstraint):
     """Constraint on the length of a bond between two atoms,
        averaged over the replicas.
     """
+    _natoms = 2
 
-    # Six degrees of freedom --- three per atom
-    _ndof = 6
-
-    def bind(self, replicas, nm, transform=None, **kwargs):
-        """Bind the appropriate degrees of freedom to the holonomic constraint.
-        """
-
-        super(BondLength, self).bind(replicas, nm, transform, **kwargs)
-        self.qtaint()
-        if self.targetval is None:
-            # Set to the current mean bond-length
-            self.targetval = 0.0
-            currentval = self.sigma
-            self.targetval = currentval
-
-    def get_sigma(self):
+    def __call__(self, q, jac):
         """Calculate the difference between the mean bond-length and the
            target value and its gradient.
         """
-        qAB = np.asarray([self._q[i+3]-self._q[i] for i in range(3)])
-        rAB = np.sqrt(np.sum(qAB**2, axis=0))
-        qAB /= rAB
-        qAB /= self.nbeads
-        return np.mean(rAB), np.vstack((-qAB,qAB))
+        jac *= 0
+        nbeads = q.shape[-1]
+        slcA, slcB = (slice(3*idx,3*idx+3) for idx in self.indices)
+        # A->B displacement vector
+        jac[...,slcB,:] = q[...,slcB,:]-q[...,slcA,:]
+        # Norm
+        jac[...,slcA.start,:] = np.sqrt(np.sum(jac[...,slcB,:]**2, axis=-2))
+        # Normalised A->B displacement vector
+        jac[...,slcB,:] /= nbeads*jac[...,slcA.start:slcA.start+1,:]
+        # Mean bond-length
+        sigma = np.mean(jac[...,slcA.start,:], axis=-1)
+        # Gradient wrt atom A
+        jac[...,slcA,:] = -jac[...,slcB,:]
+        return sigma, jac
 
 class BondAngle(HolonomicConstraint):
     """Constraint on the A--X--B bond-angle, averaged over the replicas.
@@ -300,243 +171,244 @@ class BondAngle(HolonomicConstraint):
     """
 
     # Nine degrees of freedom -- three per atom
-    _ndof =  9
+    _natoms = 3
 
-    def bind(self, replicas, nm, transform=None, **kwargs):
-        """Bind the appropriate degrees of freedom to the holonomic constraint.
-        """
-
-        super(BondAngle,self).bind(replicas, nm, transform, **kwargs)
-        self.qtaint()
-        if self.targetval is None:
-            # Set to initial bond angle
-            self.targetval = 0.0
-            currentval = self.sigma
-            self.targetval = currentval
-
-    def get_sigma(self):
+    def __call__(self, q, jac):
         """Calculate the difference between the mean angle and the
            target value.
         """
-        qXA = np.asarray([self._q[i+3]-self._q[i] for i in range(3)])
-        rXA = np.sqrt(np.sum(qXA**2, axis=0))
+        jac *= 0
+        nbeads = q.shape[-1]
+        slcX, slcA, slcB = (slice(3*idx,3*idx+3) for idx in self.indices)
+        # X->A displacement vector
+        qXA = q[...,slcA,:]-q[...,slcX,:]
+        # Vector norm
+        jac[...,slcX.start,:] = np.sqrt(np.sum(qXA**2, axis=-2))
+        rXA = jac[...,slcX.start:slcX.start+1,:]
+        # Normalised X->A
         qXA /= rXA
-        qXB =  np.asarray([self._q[i+6]-self._q[i] for i in range(3)])
-        rXB = np.sqrt(np.sum(qXB**2, axis=0))
+        # Repeat for B
+        jac[...,slcB,:] = q[...,slcB,:]-q[...,slcX,:]
+        qXB = jac[...,slcB,:]
+        # Norm
+        jac[...,slcX.start+1,:] = np.sqrt(np.sum(qXB**2, axis=-2))
+        rXB = jac[...,slcX.start+1:slcX.start+2,:]
+        # Normalise
         qXB /= rXB
-        # Cosine and sine of the angle
-        ct = np.sum(qXA*qXB, axis=0)
-        st = np.sqrt(1.0-ct**2)
+        # Cosine of the angle
+        jac[...,slcX.start+2,:] = np.sum(qXA*qXB, axis=-2)
+        ct = jac[...,slcX.start+2:slcX.start+3,:]
         # Gradients w.r.t peripheral atoms
-        jac_A = ct*qXA - qXB
-        jac_A /= st
-        jac_A /= rXA
-        jac_A /= self.nbeads
-        jac_B = ct*qXB - qXA
-        jac_B /= st
-        jac_B /= rXB
-        jac_B /= self.nbeads
-
-        return np.mean(np.arccos(ct)), np.vstack((-(jac_A+jac_B), jac_A, jac_B))
-
-class EckartTrans(HolonomicConstraint):
-    """Constraint on one of the components of the centre of mass.
-    """
-
-    # Number of DoFs determined upon initialisation
-    _ndof = -1
-
-    def __init__(self, dofs, coord, val=None):
-        """Initialise the holonomic constraint.
-
-           Args:
-               dofs(list): integers indexing *all* the degrees of freedom of the
-                           atoms subject to this Eckart constraint
-               coord(str): 'x', 'y', 'z' -- specifies the component of the CoM
-                           to be constrained
-               val(float): the position at which the component is to be constrained.
-        """
-        q_str = coord.lower()
-        if q_str=="x":
-            idx = 0
-        elif q_str=="y":
-            idx = 1
-        elif q_str=="z":
-            idx = 2
-        else:
-            raise ValueError("Invalid coordinate specification supplied to "+
-                             self.__class__.__name__)
-        super(EckartTrans,self).__init__(dofs[idx::3], val)
-
-    def bind(self, replicas, nm, transform=None, **kwargs):
-        """Bind the appropriate coordinates to the constraint.
-        """
-
-        super(EckartTrans, self).bind(replicas, nm, transform, **kwargs)
-        self.qtaint()
-        if self.targetval is None:
-            # Set to the current position of the CoM
-            self.targetval = 0.0
-            currentval = self.sigma
-            self.targetval = currentval
-
-    def get_sigma(self):
-        mrel = np.asarray(self._m).reshape(-1)
-        mtot = np.sum(mrel)
-        mrel /= mtot
-        qc = np.mean(np.asarray(self._q),axis=-1)
-        sigma = np.dot(mrel, qc)
-        mrel /= self.nbeads
-        return sigma, mrel[:,None]
-
-class EckartTransX(EckartTrans):
-    """Constraint on the x-component of the CoM of a group of atoms.
-    """
-    def __init__(self, dofs, val=None):
-        """Initialise the holonomic constraint.
-
-           Args:
-               dofs(list): integers indexing *all* the degrees of freedom of the
-                           atoms subject to this Eckart constraint
-               val(float): the position at which the component is to be constrained.
-        """
-        super(EckartTransX,self).__init__(dofs, "x", val)
-
-class EckartTransY(EckartTrans):
-    """Constraint on the y-component of the CoM of a group of atoms.
-    """
-    def __init__(self, dofs, val=None):
-        """Initialise the holonomic constraint.
-
-           Args:
-               dofs(list): integers indexing *all* the degrees of freedom of the
-                           atoms subject to this Eckart constraint
-               val(float): the position at which the component is to be constrained.
-        """
-        super(EckartTransY,self).__init__(dofs, "y", val)
-
-class EckartTransZ(EckartTrans):
-    """Constraint on the z-component of the CoM of a group of atoms.
-    """
-    def __init__(self, dofs, val=None):
-        """Initialise the holonomic constraint.
-
-           Args:
-               dofs(list): integers indexing *all* the degrees of freedom of the
-                           atoms subject to this Eckart constraint
-               val(float): the position at which the component is to be constrained.
-        """
-        super(EckartTransZ,self).__init__(dofs, "z", val)
-
-class EckartRot(HolonomicConstraint):
-    """One of the components of the Eckart rotational constraint.
-
-       NOTE: in this definition the usual sum over cross-products is divided by
-             the total mass of the system.
-    """
-
-    # Number of DoFs determined upon initialisation
-    _ndof = -1
-
-    def __init__(self, dofs, coord, val=None):
-        """Initialise the holonomic constraint.
-
-           Args:
-               dofs(list): integers indexing *all* the degrees of freedom of the
-                           atoms subject to this Eckart constraint
-               coord(str): 'x', 'y', 'z' -- specifies the component of the
-                           angular-momentum-like quantity to be constrained
-               val(array-like): this argument is not used
-        """
-        q_str = coord.lower()
-        if q_str=="x":
-            idces = (1,2)
-        elif q_str=="y":
-            idces = (2,0)
-        elif q_str=="z":
-            idces = (0,1)
-        else:
-            raise ValueError("Invalid coordinate specification supplied to "+
-                             self.__class__.__name__)
-        super(EckartRot,self).__init__(dofs[idces[0]::3]+dofs[idces[1]::3], 0.0)
-
-    def bind(self, replicas, nm, transform=None, **kwargs):
-        """Bind the appropriate coordinates to the constraints.
-          Args:
-              replicas(list): List of Replicas
-              nm: A normal modes object used to do the normal modes transformation.
-          **kwargs:
-              ref(array-like): Reference configuration for the constraint; if
-                               absent, taken to be the centroid configuration
-
-        """
-
-
-
-        super(EckartRot, self).bind(replicas, nm, transform, **kwargs)
-        self.qtaint()
-        if "ref" in kwargs:
-            # Reference configuration is provided
-            lref = np.asarray(kwargs["ref"]).flatten() # local copy
-            ref = np.asarray(
-                    [ lref[i] for i in self.dofs ]).reshape((2, self.ndof//2))
-        else:
-            # Initialise to centroid configuration
-            ref = np.asarray(
-                    [ np.mean(q) for q in self._q] ).reshape((2, self.ndof//2))
-        self._ref = ref
-
-    def get_sigma(self):
-        # Individual centroid masses divided by the molecular mass
-        mrel = np.asarray(self._m).reshape((2,self.ndof//2))
-        mrel /= mrel.sum(axis=-1)[:,None]
-        # Reference geometry in its CoM, weighted by mrel
-        mref = mrel*self._ref
-        CoM = mref.sum(axis=-1)
-        mref[...] = self._ref-CoM[:,None]
-        mref *= mrel
-        # Displacement between centroid and reference configs
-        delqc = np.mean(np.asarray(self._q), axis=-1).reshape((2, self.ndof//2))
-        delqc -= self._ref
-        sigma = np.sum(mref[0]*delqc[1] - mref[1]*delqc[0])
-        mref /= self.nbeads
-        return sigma, np.hstack((-mref[1],mref[0]))[:,None]
-
-class EckartRotX(EckartRot):
-    """Constraint on the x-component of the Eckart "angular momentum"
-    """
-    def __init__(self, dofs, val=None):
-        """Initialise the holonomic constraint.
-
-           Args:
-               dofs(list): integers indexing *all* the degrees of freedom of the
-                           atoms subject to this Eckart constraint
-               val(float): the position at which the component is to be constrained.
-        """
-        super(EckartRotX,self).__init__(dofs, "x", val)
-
-class EckartRotY(EckartRot):
-    """Constraint on the y-component of the Eckart "angular momentum"
-    """
-    def __init__(self, dofs, val=None):
-        """Initialise the holonomic constraint.
-
-           Args:
-               dofs(list): integers indexing *all* the degrees of freedom of the
-                           atoms subject to this Eckart constraint
-               val(float): the position at which the component is to be constrained.
-        """
-        super(EckartRotY,self).__init__(dofs, "y", val)
-
-class EckartRotZ(EckartRot):
-    """Constraint on the z-component of the Eckart "angular momentum".
-    """
-    def __init__(self, dofs, val=None):
-        """Initialise the holonomic constraint.
-
-           Args:
-               dofs(list): integers indexing *all* the degrees of freedom of the
-                           atoms subject to this Eckart constraint
-               val(float): the position at which the component is to be constrained.
-        """
-        super(EckartRotZ,self).__init__(dofs, "z", val)
+        jac[...,slcA,:] = (qXA*ct-qXB)/rXA
+        jac[...,slcB,:] = (qXB*ct-qXA)/rXB
+        # Calculate mean angle
+        sigma = np.mean(np.arccos(jac[...,slcX.start+2,:]), axis=-1)
+        # Calculate sine of angle
+        ct[...] = np.sqrt(1.0-ct**2)*nbeads
+        # Complete gradient calculation
+        jac[...,slcA,:] /= ct
+        jac[...,slcB,:] /= ct
+        jac[...,slcX,:] = -(jac[...,slcA,:]+jac[...,slcB,:])
+        return sigma, jac
+#
+#class EckartTrans(HolonomicConstraint):
+#    """Constraint on one of the components of the centre of mass.
+#    """
+#
+#    # Number of DoFs determined upon initialisation
+#    _ndof = -1
+#
+#    def __init__(self, dofs, coord, val=None):
+#        """Initialise the holonomic constraint.
+#
+#           Args:
+#               dofs(list): integers indexing *all* the degrees of freedom of the
+#                           atoms subject to this Eckart constraint
+#               coord(str): 'x', 'y', 'z' -- specifies the component of the CoM
+#                           to be constrained
+#               val(float): the position at which the component is to be constrained.
+#        """
+#        q_str = coord.lower()
+#        if q_str=="x":
+#            idx = 0
+#        elif q_str=="y":
+#            idx = 1
+#        elif q_str=="z":
+#            idx = 2
+#        else:
+#            raise ValueError("Invalid coordinate specification supplied to "+
+#                             self.__class__.__name__)
+#        super(EckartTrans,self).__init__(dofs[idx::3], val)
+#
+#    def bind(self, replicas, nm, transform=None, **kwargs):
+#        """Bind the appropriate coordinates to the constraint.
+#        """
+#
+#        super(EckartTrans, self).bind(replicas, nm, transform, **kwargs)
+#        self.qtaint()
+#        if self.targetval is None:
+#            # Set to the current position of the CoM
+#            self.targetval = 0.0
+#            currentval = self.sigma
+#            self.targetval = currentval
+#
+#    def get_sigma(self):
+#        mrel = np.asarray(self._m).reshape(-1)
+#        mtot = np.sum(mrel)
+#        mrel /= mtot
+#        qc = np.mean(np.asarray(self._q),axis=-1)
+#        sigma = np.dot(mrel, qc)
+#        mrel /= self.nbeads
+#        return sigma, mrel[:,None]
+#
+#class EckartTransX(EckartTrans):
+#    """Constraint on the x-component of the CoM of a group of atoms.
+#    """
+#    def __init__(self, dofs, val=None):
+#        """Initialise the holonomic constraint.
+#
+#           Args:
+#               dofs(list): integers indexing *all* the degrees of freedom of the
+#                           atoms subject to this Eckart constraint
+#               val(float): the position at which the component is to be constrained.
+#        """
+#        super(EckartTransX,self).__init__(dofs, "x", val)
+#
+#class EckartTransY(EckartTrans):
+#    """Constraint on the y-component of the CoM of a group of atoms.
+#    """
+#    def __init__(self, dofs, val=None):
+#        """Initialise the holonomic constraint.
+#
+#           Args:
+#               dofs(list): integers indexing *all* the degrees of freedom of the
+#                           atoms subject to this Eckart constraint
+#               val(float): the position at which the component is to be constrained.
+#        """
+#        super(EckartTransY,self).__init__(dofs, "y", val)
+#
+#class EckartTransZ(EckartTrans):
+#    """Constraint on the z-component of the CoM of a group of atoms.
+#    """
+#    def __init__(self, dofs, val=None):
+#        """Initialise the holonomic constraint.
+#
+#           Args:
+#               dofs(list): integers indexing *all* the degrees of freedom of the
+#                           atoms subject to this Eckart constraint
+#               val(float): the position at which the component is to be constrained.
+#        """
+#        super(EckartTransZ,self).__init__(dofs, "z", val)
+#
+#class EckartRot(HolonomicConstraint):
+#    """One of the components of the Eckart rotational constraint.
+#
+#       NOTE: in this definition the usual sum over cross-products is divided by
+#             the total mass of the system.
+#    """
+#
+#    # Number of DoFs determined upon initialisation
+#    _ndof = -1
+#
+#    def __init__(self, dofs, coord, val=None):
+#        """Initialise the holonomic constraint.
+#
+#           Args:
+#               dofs(list): integers indexing *all* the degrees of freedom of the
+#                           atoms subject to this Eckart constraint
+#               coord(str): 'x', 'y', 'z' -- specifies the component of the
+#                           angular-momentum-like quantity to be constrained
+#               val(array-like): this argument is not used
+#        """
+#        q_str = coord.lower()
+#        if q_str=="x":
+#            idces = (1,2)
+#        elif q_str=="y":
+#            idces = (2,0)
+#        elif q_str=="z":
+#            idces = (0,1)
+#        else:
+#            raise ValueError("Invalid coordinate specification supplied to "+
+#                             self.__class__.__name__)
+#        super(EckartRot,self).__init__(dofs[idces[0]::3]+dofs[idces[1]::3], 0.0)
+#
+#    def bind(self, replicas, nm, transform=None, **kwargs):
+#        """Bind the appropriate coordinates to the constraints.
+#          Args:
+#              replicas(list): List of Replicas
+#              nm: A normal modes object used to do the normal modes transformation.
+#          **kwargs:
+#              ref(array-like): Reference configuration for the constraint; if
+#                               absent, taken to be the centroid configuration
+#
+#        """
+#
+#
+#
+#        super(EckartRot, self).bind(replicas, nm, transform, **kwargs)
+#        self.qtaint()
+#        if "ref" in kwargs:
+#            # Reference configuration is provided
+#            lref = np.asarray(kwargs["ref"]).flatten() # local copy
+#            ref = np.asarray(
+#                    [ lref[i] for i in self.dofs ]).reshape((2, self.ndof//2))
+#        else:
+#            # Initialise to centroid configuration
+#            ref = np.asarray(
+#                    [ np.mean(q) for q in self._q] ).reshape((2, self.ndof//2))
+#        self._ref = ref
+#
+#    def get_sigma(self):
+#        # Individual centroid masses divided by the molecular mass
+#        mrel = np.asarray(self._m).reshape((2,self.ndof//2))
+#        mrel /= mrel.sum(axis=-1)[:,None]
+#        # Reference geometry in its CoM, weighted by mrel
+#        mref = mrel*self._ref
+#        CoM = mref.sum(axis=-1)
+#        mref[...] = self._ref-CoM[:,None]
+#        mref *= mrel
+#        # Displacement between centroid and reference configs
+#        delqc = np.mean(np.asarray(self._q), axis=-1).reshape((2, self.ndof//2))
+#        delqc -= self._ref
+#        sigma = np.sum(mref[0]*delqc[1] - mref[1]*delqc[0])
+#        mref /= self.nbeads
+#        return sigma, np.hstack((-mref[1],mref[0]))[:,None]
+#
+#class EckartRotX(EckartRot):
+#    """Constraint on the x-component of the Eckart "angular momentum"
+#    """
+#    def __init__(self, dofs, val=None):
+#        """Initialise the holonomic constraint.
+#
+#           Args:
+#               dofs(list): integers indexing *all* the degrees of freedom of the
+#                           atoms subject to this Eckart constraint
+#               val(float): the position at which the component is to be constrained.
+#        """
+#        super(EckartRotX,self).__init__(dofs, "x", val)
+#
+#class EckartRotY(EckartRot):
+#    """Constraint on the y-component of the Eckart "angular momentum"
+#    """
+#    def __init__(self, dofs, val=None):
+#        """Initialise the holonomic constraint.
+#
+#           Args:
+#               dofs(list): integers indexing *all* the degrees of freedom of the
+#                           atoms subject to this Eckart constraint
+#               val(float): the position at which the component is to be constrained.
+#        """
+#        super(EckartRotY,self).__init__(dofs, "y", val)
+#
+#class EckartRotZ(EckartRot):
+#    """Constraint on the z-component of the Eckart "angular momentum".
+#    """
+#    def __init__(self, dofs, val=None):
+#        """Initialise the holonomic constraint.
+#
+#           Args:
+#               dofs(list): integers indexing *all* the degrees of freedom of the
+#                           atoms subject to this Eckart constraint
+#               val(float): the position at which the component is to be constrained.
+#        """
+#        super(EckartRotZ,self).__init__(dofs, "z", val)
