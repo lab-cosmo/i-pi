@@ -710,14 +710,13 @@ class QCMDWaterIntegrator(NVTIntegrator):
         # Initialise the constraints
         self.clist = [BondLength(indices=[0,1]),
                       BondLength(indices=[0,2]),
-                      BondAngle(indices=[0,1,3])]
-        # Set up arrays for storing constraint values and gradients
+                      BondAngle(indices=[0,1,2])]
+        # Set up arrays for storing constraint targets and gradients
         self.targetvals = np.empty((len(self.clist),self.beads.natoms//3))
         self.grads = np.empty( (len(self.clist),)+self._temp.shape )
-        self.new_grads = np.empty_like(self.glist)
-        self.mgrads = np.empty_like(self.glist)
+        self.mgrads = np.empty_like(self.grads)
         # Initialise the gradients
-        self._temp[...] = np.reshape(dstrip(self.beads.q).T, shape=self._temp.shape)
+        self._temp[...] = np.reshape(dstrip(self.beads.q).T, self._temp.shape)
         for c, t, g, mg in zip(self.clist, self.targetvals,
                                self.grads, self.mgrads):
             t[:], g = c(self._temp, g)
@@ -732,7 +731,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
 
         init_shape = arrin.shape
         wkspace = self.nm.transform.b2nm(
-                arrin.reshape((3*self.beads.natoms, self.beads.nbeads)).T
+                arrin.reshape((-1, self.beads.nbeads)).T
                 )
         wkspace /= dstrip(self.nm.dynm3)
         return np.reshape(self.nm.transform.nm2b(wkspace).T, init_shape)
@@ -743,55 +742,49 @@ class QCMDWaterIntegrator(NVTIntegrator):
         Args:
            dt: integration time-step for SHAKE/RATTLE
         """
-        #!! TODO: carry on from here
-        # Store copies of the current gradients
-        glist = []
-        mglist = []
-        for c in self.clist:
-            glist.append(c.jac.copy())
-            mglist.append(c.mjac.copy())
-        # Copy the current ring-polymer configuration into replica list
-        temp = dstrip(self.beads.q).copy()
-        for idof in range(3*self.beads.natoms):
-            self.replica_list[idof].q[:] = temp[:,idof]
-        # Taint the constraints
-        for c in self.clist:
-            c.qtaint()
+
+        # Copy the current ring-polymer configuration into workspace array
+        self._temp[...] = np.reshape(dstrip(self.beads.q).T,self._temp.shape)
+        # Initialise the Lagrange multipliers
+        lambdas = np.zeros_like(self.targetvals)
+        # Initialise the current values of constraint fxns and grads
+        sigmas = np.empty_like(self.targetvals)
+        grads = np.empty_like(self.grads)
+        # Initialise arrays flagging convergences
+        nc = np.ones(len(self._temp), dtype=np.bool) # "not converged"
+        ns = np.ones_like(self.targetvals, dtype=np.bool) # "not satisfied"
         # Cycle over constraints until convergence
         ncycle = 1
-        # Initialise the Lagrange multipliers
-        lambdas = np.zeros(len(self.clist))
         while True:
             if (ncycle > self._maxcycle):
                 raise ValueError("Maximum number of iterations exceeded in SHAKE.")
-            converged = True
-            for i,(c,mg) in enumerate(zip(self.clist,mglist)):
-                if abs(c.sigma) < self._tol:
-                    continue
-                # If any of the constraints are above tolerance
-                # the cycle is not yet finished
-                converged = False
-                dlambda = -c.sigma / np.sum(c.jac*mg)
-                lambdas[i] += dlambda
-                for idof,mgvec in zip(c.dofs,mg):
-                    self.replica_list[idof].q[:] += dlambda*mgvec
-                # Now taint all the affected constraints
-                for cc in self._c2c[i]:
-                    cc.qtaint()
-            if converged:
+            for i in range(len(self.clist)):
+                sigmas[i,nc], grads[i,nc,:,:] = \
+                    self.clist[i](self._temp[nc,:,:], grads[i,nc,:,:])
+                sigmas[i,nc] -= self.targetvals[i,nc]
+                ns[i,:] = np.abs(sigmas[i]) > self._tol
+                dlambda = -sigmas[i,ns[i]] / np.sum(
+                        grads[i,ns[i],:,:]*self.mgrads[i,ns[i],:,:],
+                        axis=(-1,-2))
+                lambdas[i,ns[i]] += dlambda
+                self._temp[ns[i],:,:] += dlambda[:,None,None] * \
+                                         self.mgrads[i,ns[i],:,:]
+            # Update the convergence status
+            nc[:] = np.any(ns, axis=0) # not converged if any not satisfied
+            if np.all(np.logical_not(nc)):
+                # If all converged end cycle
                 break
             ncycle += 1
-        # Update the momenta
-        for l,c,g in zip(lambdas, self.clist, glist):
-            for idof,gvec in zip(c.dofs,g):
-                self.replica_list[idof].p[:] += l*gvec/dt
         # Copy the coordinates back into beads
-        for idof in range(3*self.beads.natoms):
-            temp[:,idof] = self.replica_list[idof].q
-        self.beads.q[...] = temp
-        for idof in range(3*self.beads.natoms):
-            temp[:,idof] = self.replica_list[idof].p
-        self.beads.p[...] = temp
+        self.beads.q[...] = self._temp.reshape((-1,self.beads.nbeads)).T
+        # Update the momenta
+        self._temp[...] = np.reshape(dstrip(self.beads.p).T,self._temp.shape)
+        self._temp += np.sum(lambdas[:,:,None,None]*self.grads,axis=0)/dt
+        self.beads.p[...] = self._temp.reshape((-1,self.beads.nbeads)).T
+        # Update the constraint gradients
+        self.grads[...] = grads
+        for g, mg in zip(self.grads, self.mgrads):
+            mg[...] = self._minv(g)
 
     def pconstraints(self):
         """This applies RATTLE to the momenta and returns the change in the
@@ -810,48 +803,45 @@ class QCMDWaterIntegrator(NVTIntegrator):
             #raise ValueError("Cannot explicitly fix CoM in a constrained simulation")
         if len(self.fixatoms) > 0:
             raise ValueError("Cannot explicitly fix atoms in a constrained simulation")
-        # Copy the current ring-polymer momenta into replica list
-        temp = dstrip(self.beads.p).copy()
-        for idof in range(3*self.beads.natoms):
-            self.replica_list[idof].p[:] = temp[:,idof]
-        # Calculate the diagonal elements of the Jacobian matrix and taint
-        # all the constraints
-        gmglist = []
-        for c in self.clist:
-            gmglist.append(np.sum(c.jac*c.mjac))
-            c.ptaint()
+        # Copy the current ring-polymer momenta into workspace array
+        self._temp[...] = np.reshape(dstrip(self.beads.p).T,self._temp.shape)
+        # Calculate the diagonal elements of the Jacobian matrix
+        gmg = np.sum(self.grads*self.mgrads, axis=(-1,-2))
+        # Initialise the Lagrange multipliers
+        mus = np.zeros_like(self.targetvals)
+        # Initialise the constraint time-derivatives
+        sdots = np.empty_like(mus)
+        init_sdots = np.empty_like(mus)
+        # Initialise arrays flagging convergences
+        nc = np.ones(len(self._temp), dtype=np.bool) # "not converged"
+        ns = np.ones_like(self.targetvals, dtype=np.bool) # "not satisfied"
         # Cycle over constraints until convergence
         ncycle = 1
-        mus = np.zeros(len(self.clist))
-        sdots = np.zeros_like(mus)
         while True:
             if (ncycle > self._maxcycle):
                 raise ValueError("Maximum number of iterations exceeded in RATTLE.")
-            converged = True
-            for i,(c,gmg) in enumerate(zip(self.clist,gmglist)):
+            for i in range(len(self.clist)):
+                sdots[i,nc] = np.sum(self._temp[nc,:,:]*self.mgrads[i,nc,:,:],
+                                      axis=(-1,-2))
                 if ncycle == 1:
-                    # Record the initial value of D[sigma, t]
-                    sdots[i] = c.sigmadot
-                if abs(c.sigmadot) < self._tol:
-                    continue
-                converged = False
-                dmu = -c.sigmadot/gmg
-                mus[i] += dmu
-                for idof,gvec in zip(c.dofs,c.jac):
-                    self.replica_list[idof].p[:] += dmu*gvec
-                # Now taint all the affected constraints
-                for cc in self._c2c[i]:
-                    cc.ptaint()
-            if converged:
+                    # Record the initial values of the constraint t-derivatives
+                    init_sdots[i,:] = sdots[i,:]
+                ns[i,:] = np.abs(sdots[i,:]) > self._tol
+                dmu = -sdots[i,ns[i]] / gmg[i,ns[i]]
+                mus[i,ns[i]] += dmu
+                self._temp[ns[i],:,:] += dmu[:,None,None] * \
+                                         self.grads[i,ns[i],:,:]
+            # Update the convergence status
+            nc[:] = np.any(ns, axis=0) # not converged if any not satisfied
+            if np.all(np.logical_not(nc)):
+                # If all converged end cycle
                 break
             ncycle += 1
         # Copy the coordinates back into beads
-        for idof in range(3*self.beads.natoms):
-            temp[:,idof] = self.replica_list[idof].p
-        self.beads.p[...] = temp
+        self.beads.p[...] = self._temp.reshape((-1,self.beads.nbeads)).T
         # Return the value to be added to the ensemble energy when
         # monitoring the conserved quantity
-        return -np.dot(mus,sdots)/2
+        return -np.sum(mus*init_sdots)/2
 
     def free_p(self):
         """Velocity Verlet momentum propagator with ring-polymer spring forces,
@@ -909,4 +899,5 @@ class QCMDWaterIntegrator(NVTIntegrator):
         """
         super(QCMDWaterIntegrator,self).tstep()
         dens = self.pconstraints()
-        self.ensemble.eens += dens
+        # !!TODO: this still needs to be sorted
+        #self.ensemble.eens += dens
