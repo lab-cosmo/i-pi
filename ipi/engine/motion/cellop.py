@@ -21,8 +21,7 @@ from ipi.utils.depend import dstrip, dobject
 from ipi.utils.softexit import softexit
 from ipi.utils.mintools import min_brent, BFGS, BFGSTRM, L_BFGS
 from ipi.utils.messages import verbosity, info
-#from ipi.engine.cell import scaled_pos
-#from ipi.engine.cell import Cell
+from ipi.utils.mathtools import *
 
 
 __all__ = ['CellopMotion']
@@ -147,7 +146,7 @@ class GradientMapper(object):
               reference cell matrix is set equal to this. Must be an upper
               triangular 3*3 matrix. Defaults to a 3*3 zeroes matrix.
         """
-        print("INIT")
+
         pass
 
     def bind(self, dumop):
@@ -159,15 +158,16 @@ class GradientMapper(object):
         self.ih0 = dstrip(self.dcell.ih).copy()
         self.strain = (np.dot(dstrip(self.dcell.h),self.ih0) - np.eye(3)).flatten()
         sp = self.dcell.positions_abs_to_scaled(self.dbeads.q)
+        print(sp.shape)
         ap = self.dcell.positions_scaled_to_abs(sp)
         # stores a reference to the atoms and cell we are computing forces for
 
 
     def __call__(self, x):
         """computes energy and gradient for optimization step"""
-        print("CALL")
+
         self.fcount += 1
-        self.dbeads.q = x[:,9:]
+        self.dbeads.q = self.dcell.positions_scaled_to_abs(x[:,9:]) #dbeads.q should be equal to scaled_to_abs positions because x[:,9:] contains scaled pos
         self.h0 ###should be passed from input.xml
 
         self.pext = 0.0 #  for zero external pressure
@@ -183,14 +183,13 @@ class GradientMapper(object):
         pV = self.pext * self.dcell.V
         p=0
         e = e + pV #assume p = 0
-        self.strain= self.strain.reshape((3,3))
+        #self.strain= np.zeros((3,3))#self.strain.reshape((3,3))
 
         # Defines the effective gradient
         g = np.zeros(nat*3 + 9)
-          # Gradient contains 3N + 9 components
-        g[0:9] = - np.dot((self.dforces.vir + np.eye(3) * pV), np.eye(3) + (self.strain).T).flatten()
+        # Gradient contains 3N + 9 components
+        #g[0:9] = - np.dot((self.dforces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + (self.strain).T)).flatten()
         g[9:] = np.dot(self.metric, sf.T).T.flatten()
-
         #print(self.dforces.pot / self.dbeads.nbeads, np.trace((self.dforces.vir) / (3.0 * self.dcell.V)),self.tensor2vec((self.dforces.vir) / self.dcell.V))
         return e, g
 
@@ -246,7 +245,7 @@ class DummyOptimizer(dobject):
         # The resize action must be done before the bind
         if geop.old_x.size != self.beads.q.size+9: #check
             if geop.old_x.size == 0:
-                print("Here")
+
                 geop.old_x = np.zeros((self.beads.nbeads, 3 * self.beads.natoms+9), float)
             else:
                 raise ValueError("Conjugate gradient force size does not match system size")
@@ -295,8 +294,8 @@ class DummyOptimizer(dobject):
         info("   Position displacement      %e  Tolerance %e" % (x, self.tolerances["position"]), verbosity.medium)
         info("   Max force component        %e  Tolerance %e" % (fmax, self.tolerances["force"]), verbosity.medium)
         info("   Energy difference per atom %e  Tolerance %e" % (e, self.tolerances["energy"]), verbosity.medium)
-
-        if (np.linalg.norm(self.forces.f.flatten() - self.old_f[:,9:].flatten()) <= 1e-20):
+        print("shape",self.old_f.shape,self.forces.f.flatten().shape)
+        if (np.linalg.norm(self.forces.f.flatten() - self.old_f[9:]) <= 1e-20):
             softexit.trigger("Something went wrong, the forces are not changing anymore."
                              " This could be due to an overly small tolerance threshold "
                              "that makes no physical sense. Please check if you are able "
@@ -341,31 +340,69 @@ class BFGSOptimizer(DummyOptimizer):
 
         if step == 0:
             info(" @GEOP: Initializing BFGS", verbosity.debug)
-            print("if step 0")
-            print(self.d.shape, self.forces.f.shape)
+
+
             ####should be rewritten properly
-            ff = np.zeros((1,105))
+            print("step = 0", self.forces.f[0])
+            nat = len(self.forces.f[0])/3
+            ar_len = nat*3+9
+            ff = np.zeros((1,ar_len))
             ff[:,9:] = dstrip(self.forces.f)
             self.d += ff / np.sqrt(np.dot(ff.flatten(), ff.flatten()))
-
+            print("d", self.d)
             if len(self.fixatoms) > 0:
                 for dqb in self.d:
                     dqb[self.fixatoms * 3] = 0.0
                     dqb[self.fixatoms * 3 + 1] = 0.0
                     dqb[self.fixatoms * 3 + 2] = 0.0
 
-        #print(self.old_x[0,0:9])
-        #print(self.beads.q)
-        #print(self.gm.strain.flatten())
-
-        #print("1")
+        print("step", step)
         #print(self.gm.strain.flatten().shape)
         #print("BFGSOptimizer step shape",self.old_x.shape)
-        self.old_x[0,0:9] = np.zeros(9) #self.gm.strain.flatten()
-        self.old_x[:,9:] = self.beads.q #old_x[0:9] = strain.flatten()
-        self.old_u[:] = self.forces.pot #+pV = 0
-        self.old_f[:,0:9] = np.zeros(9)
-        self.old_f[:,9:] = self.forces.f #as in _call_ of GradientMapper
+        #!!!!!!##
+        # dforces --> forces; dcell --> cell and so on
+        # these 2 lines are the first 9 components of your X vector
+        self.ih0 = dstrip(self.cell.ih).copy()
+
+        strain = (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)).flatten() #epsilon
+        strain = strain.reshape((3,3))
+        #strain = np.zeros((3,3))
+        #This is g in article
+        metric = np.dot(self.cell.h.T, self.cell.h) #g = hTh(3,3)
+        # This is just to get n_of_atoms
+
+        f  = self.forces.f[0] #check if it refers to the 0 bead or centriod
+        nat = len(f) / 3
+        print("f", f)
+        print("self.force.f[0]", self.forces.f[0])
+        print("self.beads.q[0]",self.beads.q[0])
+        # This is for now to define pv
+        pV = 0
+        self.old_x[0,0:9] = strain.flatten()
+        #self.gm.strain.flatten() #self.gm.strain.flatten()
+        print("1 self.force.f[0]", self.forces.f[0])
+        self.old_x[:,9:] = self.cell.positions_abs_to_scaled(self.beads.q, self.forces.f[0]) #scaled positions; you can use the function of the class cell
+        print("2 self.force.f[0]", self.forces.f[0])
+        self.old_u[:] = self.forces.pot #+pV = 0 it's fine like that for now
+        # These 4 lines define the components of your self.old_f array
+        # Replace g with old_f
+        # dforces --> forces; dcell --> cell and so on
+        self.g = np.zeros(nat*3 + 9)
+        print("3 self.force.f[0]", self.forces.f[0])
+        sf=self.forces.forces_abs_to_scaled(self.forces.f[0])
+        sf = sf.reshape((nat,3))
+        #the expression for
+        #self.g[0:9] = - np.dot((self.forces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + (strain).T)).flatten()
+        #self.g[0:9] =
+        self.g[9:] = np.dot(metric,sf.T).T.flatten()
+
+        self.old_f = self.g #first 9 components are g[0:9], g[9:] is the rest
+        print("oldf_abs", )
+        print("metric", metric)
+        print("cell", self.cell.h)
+        print("forces_raw", self.forces.f[0])
+        print("forces_scaled", sf)
+        print("oldf_sc (000,metric*sf)",self.old_f)
 
         if len(self.fixatoms) > 0:
             for dqb in self.old_f:
@@ -373,22 +410,18 @@ class BFGSOptimizer(DummyOptimizer):
                 dqb[self.fixatoms * 3 + 1] = 0.0
                 dqb[self.fixatoms * 3 + 2] = 0.0
 
-        fdf0 = (self.old_u, -self.old_f)
+        fdf0 = (self.old_u, -self.old_f) #don't modify
 
         # Do one iteration of BFGS
         # The invhessian and the directions are updated inside.
         #####################e+pV, g (F on article)
-        print("Bfgs")
-        print("old_x", self.old_x)
-        print("d", self.d)
-        print("old_f", self.old_f)
-        print("fdf0", fdf0)
+
         BFGS(self.old_x, self.d, self.gm, fdf0, self.invhessian, self.big_step,
              self.ls_options["tolerance"] * self.tolerances["energy"], self.ls_options["iter"])
 
         info("   Number of force calls: %d" % (self.gm.fcount)); self.gm.fcount = 0
         # Update positions and forces
-        self.beads.q = self.gm.dbeads.q
+        self.beads.q = self.gm.dbeads.q #don't touch !
         self.forces.transfer_forces(self.gm.dforces)  # This forces the update of the forces
         print("this is cellop")
         # Exit simulation step

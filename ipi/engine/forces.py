@@ -515,10 +515,11 @@ class Forces(dobject):
         self.dbeads = None
         self.dcell = None
     def forces_abs_to_scaled(self,forcex):
-
+        print("forcex", forcex)
         fats = dstrip(forcex).copy()
         fats.shape = (forcex.shape[0] / 3, 3)
         fats = np.dot(dstrip(self.cell.h), fats.T).T
+        print("forcex", forcex)
         return fats.reshape((len(fats) * 3))
 
     def forces_scaled_to_abs(self,forcex):

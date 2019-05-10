@@ -190,9 +190,10 @@ class GradientMapper(object):
 
     def __call__(self, x):
         """computes energy and gradient for optimization step"""
-
+        print("x", x)
         self.fcount += 1
         self.dbeads.q = x
+        print("q",self.dbeads.q)
         e = self.dforces.pot   # Energy
         g = -self.dforces.f   # Gradient
 
