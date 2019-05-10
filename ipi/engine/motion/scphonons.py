@@ -28,7 +28,10 @@ from ipi.utils import units
 from ipi.utils.softexit import softexit
 from ipi.utils.messages import verbosity, warning, info
 from ipi.utils.mathtools import gaussian_inv
-from ipi.utils.sobol.sobol import i4_sobol as sobol
+try:
+    from ipi.utils.sobol.sobol import i4_sobol as sobol
+except ImportError as sobol_expection:
+    sobol = None
 
 
 class SCPhononsMover(Motion):
@@ -70,6 +73,9 @@ class SCPhononsMover(Motion):
         self.batch_weight_exponent = batch_weight_exponent
         if self.prefix == "":
             self.prefix = "phonons"
+
+        if self.random_type == "sobol" and sobol == None:
+            raise (sobol_expection)
 
     def bind(self, ens, beads, nm, cell, bforce, prng, omaker):
 

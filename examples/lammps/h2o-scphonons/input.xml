@@ -24,9 +24,8 @@
       <asr> molecule </asr>
       <max_steps> 50 </max_steps>
       <max_iter> 10 </max_iter>
-      <prefix> sobol </prefix>
       <tau> 10 </tau>
-      <random_type> sobol </random_type>
+      <random_type> pseudo </random_type>
       <displace_mode> nmik </displace_mode>
     </scp>
   </motion>
