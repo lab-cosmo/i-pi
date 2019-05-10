@@ -36,6 +36,7 @@ from scipy.interpolate import interp1d
 from scipy.interpolate import interp2d
 from scipy.interpolate import RegularGridInterpolator
 from scipy.misc import logsumexp
+from itertools import combinations
 import time
 
 
@@ -111,10 +112,7 @@ class NormalModeMover(Motion):
 
     def step(self, step=None):
         """Executes one step of phonon computation. """
-        if (step < self.calc.total_steps):
-            self.calc.step(step)
-        else:
-            self.calc.terminate()
+        self.calc.step(step)
 
     def apply_asr(self, dm):
         """
@@ -204,10 +202,6 @@ class DummyCalculator(dobject):
         """Dummy simulation time step which does nothing."""
         pass
 
-    def terminate(self):
-        """Dummy transformation step which does nothing."""
-        pass
-
 
 class IMF(DummyCalculator):
     """ Temperature scaled normal mode Born-Oppenheimer surface evaluator.
@@ -246,6 +240,7 @@ class IMF(DummyCalculator):
         # reused to evaluate free energy at different temperature.
         self.imm.nmrms = np.zeros(len(self.imm.w)) 
         self.imm.nmrms[self.imm.nz:] = np.sqrt( 0.5 / self.imm.w[self.imm.nz:])
+        self.nmrms = self.imm.nmrms
 
         # Harm vibr energy at finite temp
         # Similarly this is also not temperature dependent.
@@ -354,6 +349,9 @@ class IMF(DummyCalculator):
     def step(self, step=None):
         """Computes the Born Oppenheimer curve along a normal mode."""
 
+        if step == self.total_steps:
+            self.terminate()
+
         # Ignores (near) zero modes.
         if step < self.imm.nz:
             info(" @NM : Ignoring the zero mode.", verbosity.medium)
@@ -412,7 +410,7 @@ class IMF(DummyCalculator):
             dev = np.real(self.imm.V.T[step]) * nmd * np.sqrt(self.nprim)
  
             # After the first iteration doubles the displacement to avoid
-            # calculation of the potential at configurations already visited
+            # calculation of the potential at configurations already v_indep_listited
             # in the previous iteration.
             if (sampling_density_iter == 0):
                 delta_counter = 1
@@ -424,7 +422,7 @@ class IMF(DummyCalculator):
             # Explores configurations until the sampled energy exceeds
             # a user-defined threshold of the zero-point energy.
             while True:
-                
+    
                 # Displaces along the normal mode.
                 self.imm.dbeads.q = self.imm.beads.q + dev * counter
 
@@ -432,7 +430,7 @@ class IMF(DummyCalculator):
                 # and the force.
                 dv = dstrip(self.imm.dforces.pots).copy()[0] / self.nprim - 0.50 * self.imm.w2[step] * (nmd * counter)**2 - v0
                 df = np.dot(dstrip(self.imm.dforces.f).copy()[0], np.real(self.imm.V.T[step])) / self.nprim + self.imm.w2[step] * (nmd * counter)
-   
+ 
                 # Adds to the list.
                 # Also stores the total energetics i.e. including 
                 # the harmonic component.
@@ -538,7 +536,11 @@ class IMF(DummyCalculator):
         self.total_har_internal_energy += Ehar
 
     def terminate(self):
-        """ Does nothing """
+        """
+        Prints out the free and internal energy
+        for HAR and IMF, and triggers a soft exit.
+        """
+
         info(' @NM : Potential offset               =  %10.8e' % (self.v0,), verbosity.medium)
         info(' @NM : HAR free energy                =  %10.8e' % (np.sum((0.5 * np.sqrt(self.imm.w2[self.imm.nz:]) + self.imm.temp * np.log(1.0 - np.exp(-np.sqrt(self.imm.w2[self.imm.nz:]) / self.imm.temp)))) / self.nprim + self.v0,), verbosity.medium)
         info(' @NM : IMF free energy correction     =  %10.8e' % ((self.total_anhar_free_energy - self.total_har_free_energy) / self.nprim,), verbosity.medium)
@@ -553,100 +555,414 @@ class VSCFMapper(IMF):
     """
 
     def bind(self, imm):
-        """ Reference all the variables for simpler access."""
+        """ 
+        Reference all the variables for simpler access.
+        """
+
+
         super(VSCFMapper, self).bind(imm)
 
+        self.nz = self.imm.nz
         self.print_2b_map = self.imm.print_2b_map
         self.threebody = self.imm.threebody
+
+        print "INSIDE VSCF!"
+        
+        # Creates a list of modes with frequencies greater than 2 cm^-1.
+        info(" @NM : Identifying relevant frequency modes.", verbosity.medium) 
+        self.inms = []
+        for inm in range(self.dof):
+            
+            if self.imm.w[inm] < 9.1126705e-06:
+                info(" @NM : Ignoring normal mode no.  %8d with frequency %15.8f cm^-1." % (inm, self.imm.w[inm] * 219474,) , verbosity.medium)
+                continue
+            else:
+                self.inms.append(inm)
+
+        # Save for use in VSCFSolver.
+        np.savetxt('modes.dat', self.inms, fmt='%i', header="Indices of modes that are considered in the calculation.") # TODO_IO
+
+        # Saves the total number of steps for automatic termination.
+        ndof = len(self.inms)
+        self.total_steps = ndof + ndof * (ndof - 1) / 2
+
+        # Saves the indices of pairs of modes
+        self.pair_combinations = list(combinations(self.inms, 2))
+
+        # Variables for storing the number of sampled configurations 
+        # along the +ve and -ve displacements along normal modes and 
+        # the sampled potential energy.
+        self.npts = np.zeros(self.dof, dtype=int)
+        self.npts_neg = np.zeros(self.dof, dtype=int)
+        self.npts_pos = np.zeros(self.dof, dtype=int)
+        self.v_indep_list = []
+
+        # Filenames for storing the number of samples configurations
+        # and their potential energy.
+        self.npts_pos_prefix = 'npts_pos'
+        self.npts_neg_prefix = 'npts_neg'
+        self.v_indep_file_prefix = 'vindep'
+        self.v_indep_grid_file_prefix = 'vindep_grid'
+        self.v_coupled_file_prefix = 'vcoupled'
+        self.v_coupled_grid_file_prefix = 'vcoupled_grid'
 
     def step(self, step=None):
         """Computes the Born Oppenheimer curve along a normal mode."""
 
-        # soft exit if more than one step, because everything is calculated in one single step
-        if step > 0:
-            softexit.trigger("VSCF has finished in first (previous) step. Exiting.")
+        # Performs some basic initialization.
+        if step == 0:
+            # Initialize overall potential offset
+            self.v0 = dstrip(self.imm.forces.pots).copy()[0] / self.nprim
+            np.savetxt('potoffset.dat', [self.v0]) # TODO_IO
 
-        # Initialize overall potential offset
-        v0 = dstrip(self.imm.forces.pots).copy()[0] / self.nprim
-        np.savetxt('potoffset.dat',[v0])
+        # Maps 1D curves.
+        elif step <= len(self.inms):
 
-        ## IDENTIFY TRANSLATIONS/ROTATIONS
-        print "# INITIAL NUMBER OF MODES ",self.dof
-        inms = []
-        for inm in range(self.dof):
-            # skip mode if frequency indicates a translation/rotation
-            if np.abs(self.imm.w2[inm]) > 1e-10:
-                print "# INCLUDING NM",inm,". FREQUENCY IS LARGER THEN 2 cm^-1"
-                inms.append(inm)
-        dof = len(inms)
-        # save for use in VSCFSolver
-        np.savetxt('modes.dat',inms, fmt='%i')
+            # Selects the normal mode to map out.
+            self.inm = self.inms[step - 1]
+            self.v_indep_filename = self.v_indep_file_prefix + "." + str(self.inm) + ".dat"
+            info(" @NM : Treating normal mode no.  %8d with frequency %15.8f cm^-1." % (self.inm, self.imm.w[self.inm] * 219474) ,verbosity.medium)
 
-        ## DETERMINE SAMPLING RANGE FOR EACH NORMAL MODE AND SAVE 1D SLICES TO AVOID REDUNDANT REMAPPING IN 2D SLICES
-        npts = np.zeros(self.dof, dtype=int)
-        nptsmin = np.zeros(self.dof, dtype=int)
-        nptsmax = np.zeros(self.dof, dtype=int)
-        nptsmaxfile = 'nptsmax.dat'
-        nptsminfile = 'nptsmin.dat'
-        visfile = 'vindeps.dat'
-        vis = []
-        if os.path.exists(nptsmaxfile):
-            nptsmin = np.loadtxt(nptsminfile)
-            nptsmax = np.loadtxt(nptsmaxfile)
-            npts[inms] = nptsmin[inms] + nptsmax[inms] + 1
-            for inm in inms:
-                vi = np.loadtxt('vindeps.'+str(inm)+'.dat')
-                vis.append(vi)
+            # If the indepent modes are already calculated, just loads from file.
+            if os.path.exists(self.v_indep_filename):
 
-        # if mapping has NOT been perfomed previously, actually map full 2D surface
-        else:
-            for inm in inms:
-    
-                # determine sampling range for given normal mode
-                # eae f0 = np.dot(dstrip(self.imm.forces.f).copy()[0], np.real(self.imm.V.T[inm]))
-                nmd = self.fnmrms * self.imm.nmrms[inm]
-                dev = np.real(self.imm.V.T[inm]) * nmd * np.sqrt(self.nprim)
-                vi = []
-                vi.append(v0)
-                counter = -1
-                while True:
-                    self.imm.dbeads.q = self.imm.beads.q + dev * counter
-                    dv = dstrip(self.imm.dforces.pots).copy()[0] / self.nprim - v0
-                    vi.append(v0 + dv)
-                    if self.nevib * self.imm.nmevib[inm] < np.abs(dv):
-                        # add two extra points required later for solid spline fitting at edges
-                        self.imm.dbeads.q -= dev
-                        vi.append(dstrip(self.imm.dforces.pots).copy()[0] / self.nprim)
-                        self.imm.dbeads.q -= dev
-                        vi.append(dstrip(self.imm.dforces.pots).copy()[0] / self.nprim)
-                        break
-                    counter -= 1
-                print "# NUMBER OF FORCE EVALUATIONS ALONG THE -VE DIRECTION:", counter
-                nptsmin[inm] = -counter
-                # invert vi so it starts with the potential for the most negative displacement and ends on the equilibrium
-                vi = vi[::-1]
-                counter = 1
-                while True:
-                    self.imm.dbeads.q = self.imm.beads.q + dev * counter
-                    dv = dstrip(self.imm.dforces.pots).copy()[0] / self.nprim - v0
-                    vi.append(v0 + dv)
-                    if self.nevib * self.imm.nmevib[inm] < np.abs(dv):
-                        # add two extra points required later for solid spline fitting at edges
-                        self.imm.dbeads.q += dev
-                        vi.append(dstrip(self.imm.dforces.pots).copy()[0] / self.nprim)
-                        self.imm.dbeads.q += dev
-                        vi.append(dstrip(self.imm.dforces.pots).copy()[0] / self.nprim)
-                        break
-                    counter += 1
-                print "# NUMBER OF FORCE EVALUATIONS ALONG THE +VE DIRECTION:", counter
-                nptsmax[inm] = counter
-                npts[inm] = nptsmin[inm] + nptsmax[inm] + 1
-                # append current 1D slice to array of 1D slices for further use in mapping of 2D slices
-                vis.append(vi)
-                np.savetxt('vindeps.'+str(inm)+'.dat',vi)
-            # save for use in VSCFSolver
-            np.savetxt('nptsmin.dat',nptsmin, fmt='%i')
-            np.savetxt('nptsmax.dat',nptsmax, fmt='%i')
+                # Reads the number of sampled configurations from the header
+                # and the sampeld potential energy from the body.
+                with open(self.v_indep_filename) as f:
+                    header = [line.split() for line in f if line.startswith('#')][0]
+                    self.npts_neg[self.inm] =  int(header[2])
+                    self.npts_pos[self.inm] =  int(header[4])
+                    self.npts[self.inms] = self.npts_neg[self.inms] + self.npts_pos[self.inms] + 1
+                    self.v_indep_list.append(np.loadtxt(self.v_indep_filename).T)
+                    info(" @NM : Loading the sampled potential energy for mode  %8d from %s" % (self.inm, self.v_indep_filename), verbosity.medium)
+                    info(" @NM : Using %8d configurations along the +ve direction." % (self.npts_pos[self.inm],), verbosity.medium) 
+                    info(" @NM : Using %8d configurations along the -ve direction.\n" % (self.npts_neg[self.inm],), verbosity.medium)
+
+            # If mapping has NOT been perfomed previously, maps the 1D curves.
+            else:
+
+                self.npts_neg[self.inm], self.npts_pos[self.inm], v_indeps = self.one_dimensional_mapper(step)
+                self.npts[self.inm] = self.npts_neg[self.inm] + self.npts_pos[self.inm] + 1
+                self.v_indep_list.append(v_indeps)
+
+                info(" @NM : Using %8d configurations along the +ve direction." % (self.npts_pos[self.inm],), verbosity.medium) 
+                info(" @NM : Using %8d configurations along the -ve direction." % (self.npts_neg[self.inm],), verbosity.medium)
+                info(" @NM : Saving the sampled potential energy for mode  %8d in %s \n" % (self.inm, self.v_indep_filename), verbosity.medium)
+                np.savetxt(self.v_indep_filename, v_indeps, header=" npts_neg: %10d npts_pos: %10d" % (self.npts_neg[self.inm], self.npts_pos[self.inm]))
+
+        # Maps 2D surfaces.
+        elif step <= len(self.inms) +  len(self.inms) * (len(self.inms) - 1) / 2:
+       
+            self.inm, self.jnm = self.pair_combinations[step - len(self.inms) - 1]
+            self.inm_index, self.jnm_index = self.inm - self.nz, self.jnm - self.nz
+            info(" @NM : Treating normal modes no.  %8d  and %8d  with frequencies %15.8f cm^-1 and %15.8f cm^-1, respectively." % (self.inm, self.jnm, self.imm.w[self.inm] * 219474,  self.imm.w[self.jnm] * 219474) ,verbosity.medium)
+
+            self.v_coupled_filename = self.v_coupled_file_prefix + "." + str(self.inm) + "." + str(self.jnm) + ".dat"
+            self.v_coupled_grid_filename = self.v_coupled_grid_file_prefix + "." + str(self.inm) + "." + str(self.jnm) + ".dat"
+            if os.path.exists(self.v_coupled_filename) != True:
+
+                # Initializes the grid for interpolating the potential when 
+                # displacements are made along pairs of normal modes.
+                self.v_coupled = np.zeros((self.npts[self.inm] + 4) * (self.npts[self.jnm] + 4))
+
+                # Calculates the displacements as linear combinations of displacements along independent modes.
+                displacements_nmi = [self.fnmrms * self.nmrms[self.inm] * (-self.npts_neg[self.inm] + i - 2.0) for i in xrange(self.npts[self.inm] + 4)]
+                displacements_nmj = [self.fnmrms * self.nmrms[self.jnm] * (-self.npts_neg[self.jnm] + j - 2.0) for j in xrange(self.npts[self.jnm] + 4)]
+
+                # Calculates the potential energy at the displaced positions.
+                k = 0
+                didjv = []
+                unit_displacement_nmi = np.real(self.imm.V.T[self.inm]) * np.sqrt(self.nprim)
+                unit_displacement_nmj = np.real(self.imm.V.T[self.jnm]) * np.sqrt(self.nprim)
+                info(" @NM : Sampling a total of %8d configurations." % (len(displacements_nmi) * len(displacements_nmj),), verbosity.medium)
+
+                for i in xrange(self.npts[self.inm] + 4):
+                    for j in xrange(self.npts[self.jnm] + 4):
+
+                        # Uses on-axis potentials are available from 1D maps.
+                        if (-self.npts_neg[self.inm] + i - 2) == 0 :
+                            self.v_coupled[k] = self.v_indep_list[self.jnm_index][j]
+                        elif (-self.npts_neg[self.jnm] + j -2) == 0 :
+                            self.v_coupled[k] = self.v_indep_list[self.inm_index][i]
+                        else:
+                            self.imm.dbeads.q = dstrip(self.imm.beads.q) + displacements_nmi[i] * unit_displacement_nmi + displacements_nmj[j] * unit_displacement_nmj
+                            self.v_coupled[k] = dstrip(self.imm.dforces.pots)[0] / self.nprim
+                        didjv.append([displacements_nmi[i], displacements_nmj[j], self.v_coupled[k] - self.v0])
+                        k += 1
+
+                # Saves the displacements and the sampled potential energy.
+                info(" @NM : Saving the sampled potential energy to %s." % (self.v_coupled_filename,), verbosity.medium)
+                np.savetxt(self.v_coupled_filename, didjv)
+
+                # Interpolates the displacements on a grid and saves for VSCFSOLVER.
+                info(" @NM : Interpolating the potential energy on a %8d x %8d grid." % (self.nint,self.nint), verbosity.medium)
+                vtspl = interp2d(displacements_nmi, displacements_nmj, self.v_coupled, kind='cubic', bounds_error=False)
+                igrid = np.linspace(-self.npts_neg[self.inm] * self.fnmrms * self.nmrms[self.inm], self.npts_pos[self.inm] * self.fnmrms * self.nmrms[self.inm], self.nint)
+                jgrid = np.linspace(-self.npts_neg[self.jnm] * self.fnmrms * self.nmrms[self.jnm], self.npts_pos[self.jnm] * self.fnmrms * self.nmrms[self.jnm], self.nint)
+                vijgrid = (np.asarray( [ np.asarray( [ (vtspl(igrid[iinm],jgrid[ijnm]) - vtspl(igrid[iinm],0.0) - vtspl(0.0,jgrid[ijnm]) + vtspl(0.0,0.0)) for iinm in range(self.nint) ] ) for ijnm in range(self.nint) ] )).reshape((self.nint,self.nint))
+
+                # Save coupling correction to file for vistualisation.
+                info(" @NM : Saving the interpolated potential energy to %s\n" % (self.v_coupled_grid_filename,), verbosity.medium)
+                np.savetxt(self.v_coupled_grid_filename, vijgrid)
+            else:
+                info(" @NM : Skipping the mapping for modes %8d and %8d as %s was found.\n" % (self.inm, self.jnm, self.v_coupled_filename), verbosity.medium)
+
+
+            return  
+            ## RUN OVER MODES 
+            rinm = -1
+            for inm in self.inms:
+                rinm += 1
+
+                ## RUN OVER MODES 
+                rjnm = -1
+                for jnm in self.inms:
+                    rjnm += 1
+
+                    ## ONLY CONSIDER UNIQUE PAIRWISE COUPLINGS
+                    if jnm > inm:
+
+                        npts = self.npts
+                        npts_neg = self.npts_neg
+                        npts_pos = self.npts_pos
+
+                        # if mapping has been perfomed previously, just load the potential from file
+                        print inm, jnm, rinm, rjnm
+                        potfile = 'vcoupled.'+str(inm)+'.'+str(jnm)+'.dat'
+                        if os.path.exists(potfile)==False:
+                            vtots = np.zeros((npts[inm]+4)*(npts[jnm]+4))
+                            nmis = np.zeros(npts[inm]+4)
+                            nmjs = np.zeros(npts[jnm]+4)
+                            dnmi = self.fnmrms * self.imm.nmrms[inm]
+                            dnmj = self.fnmrms * self.imm.nmrms[jnm]
+                            v_indep_list = self.v_indep_list
+
+                            # TIMINGS
+                            TIME0 = time.time()
+
+                            for i in range(npts[inm]+4):
+                                nmi = (-npts_neg[inm]+i-2.0) * dnmi
+                                nmis[i] = nmi
+                                for j in range(npts[jnm]+4):
+                                    k = i * (npts[jnm]+4) + j
+                                    nmj = (-npts_neg[jnm]+j-2.0) * dnmj
+                                    nmjs[j] = nmj
+
+                                    # on-nm-axis potentials are available from mapping in figuring out sampling range
+                                    if (-npts_neg[inm]+i-2) == 0 :
+                                        vtots[k] = v_indep_list[rjnm][j]
+                                    elif (-npts_neg[jnm]+j-2) == 0 :
+                                        vtots[k] = v_indep_list[rinm][i]
+                                    # off-nm-axis potentials need to be evaluated
+                                    else :
+                                        self.imm.dbeads.q = dstrip(self.imm.beads.q) + np.real(self.imm.V.T[inm]) * nmis[i] * np.sqrt(self.nprim) + np.real(self.imm.V.T[jnm]) * nmjs[j] * np.sqrt(self.nprim)
+                                        vtots[k] = dstrip(self.imm.dforces.pots)[0] / self.nprim
+
+                            print "TIME TAKEN TO MAP THE POTENTIAL: ", time.time() - TIME0
+
+                            # TIMINGS
+                            TIME0 = time.time()
+
+                            # Store mapped coupling
+                            if self.print_2b_map:
+                                nmijs = np.zeros(((npts[inm]+4)*(npts[jnm]+4),3))
+                                k = -1
+                                for nmi in nmis:
+                                    for nmj in nmjs:
+                                        k += 1
+                                        nmijs[k] = [nmi,nmj,vtots[k]-v0]
+                                np.savetxt('vcoupledmap.'+str(inm)+'.'+str(jnm)+'.dat',nmijs)
+                            print "TIME TAKEN TO SAVE THE COUPLING: ", time.time() - TIME0
+
+                            # TIMINGS
+                            TIME0 = time.time()
+
+                            #print hpyobject.heap()
+
+                            # fit 1D and 2D cubic splines to sampled potentials
+                            vtspl = interp2d(nmis, nmjs, vtots, kind='cubic', bounds_error=False)\
+
+                            print "TIME TAKEN TO PERFORM INTERPOLATION: ", time.time() - TIME0
+
+                            # Save integration grid for given pair of mode
+                            igrid = np.linspace(-npts_neg[inm]*dnmi,npts_pos[inm]*dnmi,self.nint)
+                            jgrid = np.linspace(-npts_neg[jnm]*dnmj,npts_pos[jnm]*dnmj,self.nint)
+
+                            # TIMINGS
+                            TIME0 = time.time()
+
+                            # if mapping of 1D slice has been perfomed previously, skip printing grid to file
+                            potfile = 'vindep.'+str(inm)+'.dat'
+                            if os.path.exists(potfile)==False:
+                                vigrid = np.asarray([np.asscalar(vtspl(igrid[iinm],0.0) - 0.5 * self.imm.w2[inm] * igrid[iinm]**2 - vtspl(0.0,0.0)) for iinm in range(self.nint)])
+                                np.savetxt('vindep.'+str(inm)+'.dat',np.column_stack((igrid,vigrid)))
+                            potfile = 'vindep.'+str(jnm)+'.dat'
+                            if os.path.exists(potfile)==False:
+                                vigrid = np.asarray([np.asscalar(vtspl(0.0,jgrid[ijnm]) - 0.5 * self.imm.w2[jnm] * jgrid[ijnm]**2 - vtspl(0.0,0.0)) for ijnm in range(self.nint)])
+                                np.savetxt('vindep.'+str(jnm)+'.dat',np.column_stack((jgrid,vigrid)))
+
+                            print "TIME TAKEN TO SAVE THE INTERPOLATED DATA: ", time.time() - TIME0
+
+                            # Store coupling corr potentials in terms of integration grids
+                            vijgrid = np.zeros((self.nint, self.nint))
+                            vijgrid = (np.asarray( [ np.asarray( [ (vtspl(igrid[iinm],jgrid[ijnm]) - vtspl(igrid[iinm],0.0) - vtspl(0.0,jgrid[ijnm]) + vtspl(0.0,0.0)) for iinm in range(self.nint) ] ) for ijnm in range(self.nint) ] )).reshape((self.nint,self.nint))
+
+                            # Save coupling correction to file for v_indep_listualisation
+                            np.savetxt('vcoupled.'+str(inm)+'.'+str(jnm)+'.dat',vijgrid)
+
+        ### MAP OUT 3D BO SURFACES
+        #else:
+        #    print "# MAPPING OUT 3D BO SURFACES"
+        #    for inm in inms:
+        #        for jnm in inms:
+        #            ## ONLY CONSIDER UNIQUE COUPLINGS
+        #            if jnm > inm:
+        #                for knm in inms:
+        #                    ## ONLY CONSIDER UNIQUE COUPLINGS
+        #                    if knm > jnm:
+        #                        potfile = 'vtriplet.'+str(inm)+'.'+str(jnm)+'.'+str(knm)+'.dat'
+        #                        if os.path.exists(potfile)==False:
+        #                            vtots = np.zeros(((npts[inm]+4),(npts[jnm]+4),(npts[knm]+4)))
+        #                            vijgrid = np.zeros((self.nint, self.nint, self.nint))
+        #                            nmis = np.zeros(npts[inm]+4)
+        #                            nmjs = np.zeros(npts[jnm]+4)
+        #                            nmks = np.zeros(npts[knm]+4)
+        #                            dnmi = self.fnmrms * self.imm.nmrms[inm]
+        #                            dnmj = self.fnmrms * self.imm.nmrms[jnm]
+        #                            dnmk = self.fnmrms * self.imm.nmrms[knm]
+        #    
+        #                            print "# MAPPING MODES ",inm,jnm,knm
+
+        #                            for i in range(npts[inm]+4):
+        #                                nmi = (-npts_neg[inm]+i-2.0)*dnmi
+        #                                nmis[i] = nmi
+        #                                for j in range(npts[jnm]+4):
+        #                                    nmj = (-npts_neg[jnm]+j-2.0)*dnmj
+        #                                    nmjs[j] = nmj
+        #                                    for k in range(npts[knm]+4):
+        #                                        nmk = (-npts_neg[knm]+k-2.0)*dnmk
+        #                                        nmks[k] = nmk
+        #                                        l = i * (npts[jnm]+4) * (npts[knm]+4) + j * (npts[knm]+4) + k
+
+        #                                        # on-nm-plane potentials are available from mapping 2D slices
+        #                                        # off-nm-plane potentials need to be evaluated
+        #                                        self.imm.dbeads.q = dstrip(self.imm.beads.q) + np.real(self.imm.V.T[inm]) * nmis[i] * np.sqrt(self.nprim) + np.real(self.imm.V.T[jnm]) * nmjs[j] * np.sqrt(self.nprim) + np.real(self.imm.V.T[knm]) * nmks[k] * np.sqrt(self.nprim)
+        #                                        vtots[i,j,k] = dstrip(self.imm.dforces.pots)[0] / self.nprim
+
+        #                            print "# MAPPING DONE"
+
+        #                            # simple linear interpolation of sampled potentials for now
+        #                            vtspl = RegularGridInterpolator((nmis, nmjs, nmks), vtots, bounds_error=False)
+
+        #                            print "# FITTING DONE"
+
+        #                            # Save integration grid for given pair of mode
+        #                            igrid = np.linspace(-npts_neg[inm]*dnmi,npts_pos[inm]*dnmi,self.nint)
+        #                            jgrid = np.linspace(-npts_neg[jnm]*dnmj,npts_pos[jnm]*dnmj,self.nint)
+        #                            kgrid = np.linspace(-npts_neg[knm]*dnmk,npts_pos[knm]*dnmk,self.nint)
+
+        #                            # print 1D slices to file (redo because if only two-body terms have previously been accounted for the fitting was done quite differently -- using cubic splines)
+        #                            vigrid = np.asarray([np.asscalar(vtspl([igrid[iinm],0.0,0.0]) - 0.5 * self.imm.w2[inm] * igrid[iinm]**2 - vtspl([0.0,0.0,0.0])) for iinm in range(self.nint)])
+        #                            np.savetxt('vindep.'+str(inm)+'.dat',np.column_stack((igrid,vigrid)))
+        #                            vigrid = np.asarray([np.asscalar(vtspl([0.0,jgrid[ijnm],0.0]) - 0.5 * self.imm.w2[jnm] * jgrid[ijnm]**2 - vtspl([0.0,0.0,0.0])) for ijnm in range(self.nint)])
+        #                            np.savetxt('vindep.'+str(jnm)+'.dat',np.column_stack((jgrid,vigrid)))
+        #                            vigrid = np.asarray([np.asscalar(vtspl([0.0,0.0,kgrid[iknm]]) - 0.5 * self.imm.w2[knm] * kgrid[iknm]**2 - vtspl([0.0,0.0,0.0])) for iknm in range(self.nint)])
+        #                            np.savetxt('vindep.'+str(knm)+'.dat',np.column_stack((kgrid,vigrid)))
+        #
+        #                            # print 2D slices to file
+        #                            vijgrid = (np.asarray( [ np.asarray( [ (vtspl([igrid[iinm],jgrid[ijnm],0.0]) - vtspl([igrid[iinm],0.0,0.0]) - vtspl([0.0,jgrid[ijnm],0.0]) + vtspl([0.0,0.0,0.0])) for iinm in range(self.nint) ] ) for ijnm in range(self.nint) ] )).reshape((self.nint,self.nint))
+        #                            np.savetxt('vcoupled.'+str(inm)+'.'+str(jnm)+'.dat',vijgrid)
+        #                            vijgrid = (np.asarray( [ np.asarray( [ (vtspl([igrid[iinm],0.0,kgrid[iknm]]) - vtspl([igrid[iinm],0.0,0.0]) - vtspl([0.0,0.0,kgrid[iknm]]) + vtspl([0.0,0.0,0.0])) for iinm in range(self.nint) ] ) for iknm in range(self.nint) ] )).reshape((self.nint,self.nint))
+        #                            np.savetxt('vcoupled.'+str(inm)+'.'+str(knm)+'.dat',vijgrid)
+        #                            vijgrid = (np.asarray( [ np.asarray( [ (vtspl([0.0,jgrid[ijnm],kgrid[iknm]]) - vtspl([0.0,jgrid[ijnm],0.0]) - vtspl([0.0,0.0,kgrid[iknm]]) + vtspl([0.0,0.0,0.0])) for ijnm in range(self.nint) ] ) for iknm in range(self.nint) ] )).reshape((self.nint,self.nint))
+        #                            np.savetxt('vcoupled.'+str(jnm)+'.'+str(knm)+'.dat',vijgrid)
+
+        #                            # Store coupling corr potentials in terms of integration grids
+        #                            vijkgrid = np.zeros(self.nint * self.nint * self.nint)
+        #                            vijkgrid = \
+        #                                (np.asarray( [ np.asarray( [ np.asarray( [ \
+        #                                ( vtspl([igrid[iinm],jgrid[ijnm],kgrid[iknm]]) 
+        #                                - ( vtspl([igrid[iinm],jgrid[ijnm],0.0]) + vtspl([igrid[iinm],0.0,kgrid[iknm]]) + vtspl([0.0,jgrid[ijnm],kgrid[iknm]]) )
+        #                                + ( vtspl([igrid[iinm],0.0,0.0]) + vtspl([0.0,jgrid[ijnm],0.0]) + vtspl([0.0,0.0,kgrid[iknm]]) )
+        #                                - vtspl([0.0,0.0,0.0]) ) \
+        #                                for iinm in range(self.nint) ] ) \
+        #                                for ijnm in range(self.nint) ] ) \
+        #                                for iknm in range(self.nint) ] )).reshape(self.nint*self.nint*self.nint)
+        #                            ijkgrid = np.zeros((self.nint * self.nint * self.nint, 3))
+        #                            ijkgrid = \
+        #                                (np.asarray( [ np.asarray( [ np.asarray( [ \
+        #                                [igrid[iinm], jgrid[ijnm], kgrid[iknm]]
+        #                                for iinm in range(self.nint) ] ) \
+        #                                for ijnm in range(self.nint) ] ) \
+        #                                for iknm in range(self.nint) ] )).reshape((self.nint*self.nint*self.nint,3))
+
+        #                            print "# GRIDDING DONE"
+
+        #                            # Save coupling correction to file for v_indep_listualisation
+        #                            np.savetxt(potfile,np.column_stack((ijkgrid,vijkgrid)))
+
+    def one_dimensional_mapper(self, step):
+        """
+        Maps the potential energy landscape along a mode and returns
+        the number of sampled points and the sampled potential energy.
+        """
+
+        # Determines sampling range for given normal mode
+        nmd = self.fnmrms * self.imm.nmrms[self.inm]
+
+        # Determines the displacement vector in Cartesian space.
+        dev = np.real(self.imm.V.T[self.inm]) * nmd * np.sqrt(self.nprim)
+
+        # Adds the minimum configuration to the list of sampled potential.
+        v_indeps = [self.v0]
+
+        # Displaces along the negative direction.
+        counter = -1
+        while True:
+
+            self.imm.dbeads.q = self.imm.beads.q + dev * counter
+            v = dstrip(self.imm.dforces.pots).copy()[0] / self.nprim
+            v_indeps.append(v)
+
+            # Bails out if the sampled potenital energy exceeds a user defined threshold.
+            if self.v0 + self.nevib * self.imm.nmevib[self.inm] < np.absolute(v):
+
+                # Adds two extra points required later for solid spline fitting at edges.
+                self.imm.dbeads.q -= dev
+                v_indeps.append(dstrip(self.imm.dforces.pots).copy()[0] / self.nprim)
+                self.imm.dbeads.q -= dev
+                v_indeps.append(dstrip(self.imm.dforces.pots).copy()[0] / self.nprim)
+                break
+
+            counter -= 1
+
+        r_npts_neg = -counter
+
+        # invert vi so it starts with the potential for the most negative displacement and ends on the equilibrium
+        v_indeps = v_indeps[::-1]
+
+        counter = 1
+        while True:
+
+            self.imm.dbeads.q = self.imm.beads.q + dev * counter
+            v = dstrip(self.imm.dforces.pots).copy()[0] / self.nprim
+            v_indeps.append(v)
+
+            # Bails out if the sampled potenital energy exceeds a user defined threshold.
+            if self.v0 + self.nevib * self.imm.nmevib[self.inm] < np.absolute(v):
+
+                # add two extra points required later for solid spline fitting at edges
+                self.imm.dbeads.q += dev
+                v_indeps.append(dstrip(self.imm.dforces.pots).copy()[0] / self.nprim)
+                self.imm.dbeads.q += dev
+                v_indeps.append(dstrip(self.imm.dforces.pots).copy()[0] / self.nprim)
+                break
+
+            counter += 1
+
+        r_npts_pos = counter
+
+        return r_npts_neg, r_npts_pos, v_indeps
 
             # By replacing the previous paragraph with the bemedium one can enforce sampling of a regular symmetric 
             # grid of points. This almediums the output of the mapping to be fed in B. Monserrat implementation of IMF/VSCF.
@@ -669,7 +985,7 @@ class VSCFMapper(IMF):
 #                self.imm.dbeads.q -= dev
 #                vi.append(dstrip(self.imm.dforces.pots).copy()[0] / self.nprim)
 #
-#                nptsmin[inm] = -counter -1
+#                npts_neg[inm] = -counter -1
 #                vi = vi[::-1]
 #                qi = qi[::-1]
 #                counter = 1
@@ -684,211 +1000,15 @@ class VSCFMapper(IMF):
 #                self.imm.dbeads.q += dev
 #                vi.append(dstrip(self.imm.dforces.pots).copy()[0] / self.nprim)
 #
-#                nptsmax[inm] = counter -1
-#                npts[inm] = nptsmin[inm] + nptsmax[inm] + 1
-#                vis.append(vi)
+#                npts_pos[inm] = counter -1
+#                npts[inm] = npts_neg[inm] + npts_pos[inm] + 1
+#                v_indep_list.append(vi)
 #                np.savetxt('qindeps.'+str(inm)+'.dat',qi)
 #                np.savetxt('vindeps.'+str(inm)+'.dat',vi)
-#            np.savetxt('nptsmin.dat',nptsmin, fmt='%i')
-#            np.savetxt('nptsmax.dat',nptsmax, fmt='%i')
+#            np.savetxt('npts_neg.dat',nptsmin, fmt='%i')
+#            np.savetxt('npts_pos.dat',nptsmax, fmt='%i')
         # By replacing the previous paragraph with the bemedium one can enforce sampling of a regular symmetric 
         # grid of points. This almediums the output of the mapping to be fed in B. Monserrat implementation of IMF/VSCF.
-
-
-        print "# NUMBER OF POINTS"
-        print npts
-
-        ## MAP OUT 2D BO SURFACES
-        if self.threebody == False:
-            print "# MAPPING OUT 2D BO SURFACES"
-            ## RUN OVER MODES 
-            rinm = -1
-            for inm in inms:
-                rinm += 1
-    
-                ## RUN OVER MODES 
-                rjnm = -1
-                for jnm in inms:
-                    rjnm += 1
-    
-                    ## ONLY CONSIDER UNIQUE PAIRWISE COUPLINGS
-                    if jnm > inm:
-    
-                        # if mapping has been perfomed previously, just load the potential from file
-                        potfile = 'vcoupled.'+str(inm)+'.'+str(jnm)+'.dat'
-                        if os.path.exists(potfile)==False:
-                            vtots = np.zeros((npts[inm]+4)*(npts[jnm]+4))
-                            nmis = np.zeros(npts[inm]+4)
-                            nmjs = np.zeros(npts[jnm]+4)
-                            dnmi = self.fnmrms * self.imm.nmrms[inm]
-                            dnmj = self.fnmrms * self.imm.nmrms[jnm]
-                           
-                            # TIMINGS
-                            TIME0 = time.time() 
-
-                            for i in range(npts[inm]+4):
-                                nmi = (-nptsmin[inm]+i-2.0)*dnmi
-                                nmis[i] = nmi
-                                for j in range(npts[jnm]+4):
-                                    k = i * (npts[jnm]+4) + j
-                                    nmj = (-nptsmin[jnm]+j-2.0)*dnmj
-                                    nmjs[j] = nmj
-   
-                                    # on-nm-axis potentials are available from mapping in figuring out sampling range
-                                    if (-nptsmin[inm]+i-2) == 0 :
-                                        vtots[k] = vis[rjnm][j]
-                                    elif (-nptsmin[jnm]+j-2) == 0 :
-                                        vtots[k] = vis[rinm][i]
-                                    # off-nm-axis potentials need to be evaluated
-                                    else :
-                                        self.imm.dbeads.q = dstrip(self.imm.beads.q) + np.real(self.imm.V.T[inm]) * nmis[i] * np.sqrt(self.nprim) + np.real(self.imm.V.T[jnm]) * nmjs[j] * np.sqrt(self.nprim)
-                                        vtots[k] = dstrip(self.imm.dforces.pots)[0] / self.nprim
-    
-                            print "TIME TAKEN TO MAP THE POTENTIAL: ", time.time() - TIME0
-
-                            # TIMINGS
-                            TIME0 = time.time() 
-
-                            # Store mapped coupling
-                            if self.print_2b_map:
-                                nmijs = np.zeros(((npts[inm]+4)*(npts[jnm]+4),3))
-                                k = -1
-                                for nmi in nmis:
-                                    for nmj in nmjs:
-                                        k += 1
-                                        nmijs[k] = [nmi,nmj,vtots[k]-v0]
-                                np.savetxt('vcoupledmap.'+str(inm)+'.'+str(jnm)+'.dat',nmijs)
-                            print "TIME TAKEN TO SAVE THE COUPLING: ", time.time() - TIME0
-
-                            # TIMINGS
-                            TIME0 = time.time() 
-    
-                            #print hpyobject.heap()
-
-                            # fit 1D and 2D cubic splines to sampled potentials
-                            vtspl = interp2d(nmis, nmjs, vtots, kind='cubic', bounds_error=False)\
-
-                            print "TIME TAKEN TO PERFORM INTERPOLATION: ", time.time() - TIME0
-     
-                            # Save integration grid for given pair of mode
-                            igrid = np.linspace(-nptsmin[inm]*dnmi,nptsmax[inm]*dnmi,self.nint)
-                            jgrid = np.linspace(-nptsmin[jnm]*dnmj,nptsmax[jnm]*dnmj,self.nint)
-    
-                            # TIMINGS
-                            TIME0 = time.time()
- 
-                            # if mapping of 1D slice has been perfomed previously, skip printing grid to file
-                            potfile = 'vindep.'+str(inm)+'.dat'
-                            if os.path.exists(potfile)==False:
-                                vigrid = np.asarray([np.asscalar(vtspl(igrid[iinm],0.0) - 0.5 * self.imm.w2[inm] * igrid[iinm]**2 - vtspl(0.0,0.0)) for iinm in range(self.nint)])
-                                np.savetxt('vindep.'+str(inm)+'.dat',np.column_stack((igrid,vigrid)))
-                            potfile = 'vindep.'+str(jnm)+'.dat'
-                            if os.path.exists(potfile)==False:
-                                vigrid = np.asarray([np.asscalar(vtspl(0.0,jgrid[ijnm]) - 0.5 * self.imm.w2[jnm] * jgrid[ijnm]**2 - vtspl(0.0,0.0)) for ijnm in range(self.nint)])
-                                np.savetxt('vindep.'+str(jnm)+'.dat',np.column_stack((jgrid,vigrid)))
-
-                            print "TIME TAKEN TO SAVE THE INTERPOLATED DATA: ", time.time() - TIME0
-    
-                            # Store coupling corr potentials in terms of integration grids
-                            vijgrid = np.zeros((self.nint, self.nint))
-                            vijgrid = (np.asarray( [ np.asarray( [ (vtspl(igrid[iinm],jgrid[ijnm]) - vtspl(igrid[iinm],0.0) - vtspl(0.0,jgrid[ijnm]) + vtspl(0.0,0.0)) for iinm in range(self.nint) ] ) for ijnm in range(self.nint) ] )).reshape((self.nint,self.nint))
-    
-                            # Save coupling correction to file for visualisation
-                            np.savetxt('vcoupled.'+str(inm)+'.'+str(jnm)+'.dat',vijgrid)
-    
-                print "# GRIDDING DONE"
-
-        ## MAP OUT 3D BO SURFACES
-        else:
-            print "# MAPPING OUT 3D BO SURFACES"
-            for inm in inms:
-                for jnm in inms:
-                    ## ONLY CONSIDER UNIQUE COUPLINGS
-                    if jnm > inm:
-                        for knm in inms:
-                            ## ONLY CONSIDER UNIQUE COUPLINGS
-                            if knm > jnm:
-                                potfile = 'vtriplet.'+str(inm)+'.'+str(jnm)+'.'+str(knm)+'.dat'
-                                if os.path.exists(potfile)==False:
-                                    vtots = np.zeros(((npts[inm]+4),(npts[jnm]+4),(npts[knm]+4)))
-                                    vijgrid = np.zeros((self.nint, self.nint, self.nint))
-                                    nmis = np.zeros(npts[inm]+4)
-                                    nmjs = np.zeros(npts[jnm]+4)
-                                    nmks = np.zeros(npts[knm]+4)
-                                    dnmi = self.fnmrms * self.imm.nmrms[inm]
-                                    dnmj = self.fnmrms * self.imm.nmrms[jnm]
-                                    dnmk = self.fnmrms * self.imm.nmrms[knm]
-            
-                                    print "# MAPPING MODES ",inm,jnm,knm
-
-                                    for i in range(npts[inm]+4):
-                                        nmi = (-nptsmin[inm]+i-2.0)*dnmi
-                                        nmis[i] = nmi
-                                        for j in range(npts[jnm]+4):
-                                            nmj = (-nptsmin[jnm]+j-2.0)*dnmj
-                                            nmjs[j] = nmj
-                                            for k in range(npts[knm]+4):
-                                                nmk = (-nptsmin[knm]+k-2.0)*dnmk
-                                                nmks[k] = nmk
-                                                l = i * (npts[jnm]+4) * (npts[knm]+4) + j * (npts[knm]+4) + k
-
-                                                # on-nm-plane potentials are available from mapping 2D slices
-                                                # off-nm-plane potentials need to be evaluated
-                                                self.imm.dbeads.q = dstrip(self.imm.beads.q) + np.real(self.imm.V.T[inm]) * nmis[i] * np.sqrt(self.nprim) + np.real(self.imm.V.T[jnm]) * nmjs[j] * np.sqrt(self.nprim) + np.real(self.imm.V.T[knm]) * nmks[k] * np.sqrt(self.nprim)
-                                                vtots[i,j,k] = dstrip(self.imm.dforces.pots)[0] / self.nprim
-
-                                    print "# MAPPING DONE"
-
-                                    # simple linear interpolation of sampled potentials for now
-                                    vtspl = RegularGridInterpolator((nmis, nmjs, nmks), vtots, bounds_error=False)
-
-                                    print "# FITTING DONE"
-
-                                    # Save integration grid for given pair of mode
-                                    igrid = np.linspace(-nptsmin[inm]*dnmi,nptsmax[inm]*dnmi,self.nint)
-                                    jgrid = np.linspace(-nptsmin[jnm]*dnmj,nptsmax[jnm]*dnmj,self.nint)
-                                    kgrid = np.linspace(-nptsmin[knm]*dnmk,nptsmax[knm]*dnmk,self.nint)
-
-                                    # print 1D slices to file (redo because if only two-body terms have previously been accounted for the fitting was done quite differently -- using cubic splines)
-                                    vigrid = np.asarray([np.asscalar(vtspl([igrid[iinm],0.0,0.0]) - 0.5 * self.imm.w2[inm] * igrid[iinm]**2 - vtspl([0.0,0.0,0.0])) for iinm in range(self.nint)])
-                                    np.savetxt('vindep.'+str(inm)+'.dat',np.column_stack((igrid,vigrid)))
-                                    vigrid = np.asarray([np.asscalar(vtspl([0.0,jgrid[ijnm],0.0]) - 0.5 * self.imm.w2[jnm] * jgrid[ijnm]**2 - vtspl([0.0,0.0,0.0])) for ijnm in range(self.nint)])
-                                    np.savetxt('vindep.'+str(jnm)+'.dat',np.column_stack((jgrid,vigrid)))
-                                    vigrid = np.asarray([np.asscalar(vtspl([0.0,0.0,kgrid[iknm]]) - 0.5 * self.imm.w2[knm] * kgrid[iknm]**2 - vtspl([0.0,0.0,0.0])) for iknm in range(self.nint)])
-                                    np.savetxt('vindep.'+str(knm)+'.dat',np.column_stack((kgrid,vigrid)))
-        
-                                    # print 2D slices to file
-                                    vijgrid = (np.asarray( [ np.asarray( [ (vtspl([igrid[iinm],jgrid[ijnm],0.0]) - vtspl([igrid[iinm],0.0,0.0]) - vtspl([0.0,jgrid[ijnm],0.0]) + vtspl([0.0,0.0,0.0])) for iinm in range(self.nint) ] ) for ijnm in range(self.nint) ] )).reshape((self.nint,self.nint))
-                                    np.savetxt('vcoupled.'+str(inm)+'.'+str(jnm)+'.dat',vijgrid)
-                                    vijgrid = (np.asarray( [ np.asarray( [ (vtspl([igrid[iinm],0.0,kgrid[iknm]]) - vtspl([igrid[iinm],0.0,0.0]) - vtspl([0.0,0.0,kgrid[iknm]]) + vtspl([0.0,0.0,0.0])) for iinm in range(self.nint) ] ) for iknm in range(self.nint) ] )).reshape((self.nint,self.nint))
-                                    np.savetxt('vcoupled.'+str(inm)+'.'+str(knm)+'.dat',vijgrid)
-                                    vijgrid = (np.asarray( [ np.asarray( [ (vtspl([0.0,jgrid[ijnm],kgrid[iknm]]) - vtspl([0.0,jgrid[ijnm],0.0]) - vtspl([0.0,0.0,kgrid[iknm]]) + vtspl([0.0,0.0,0.0])) for ijnm in range(self.nint) ] ) for iknm in range(self.nint) ] )).reshape((self.nint,self.nint))
-                                    np.savetxt('vcoupled.'+str(jnm)+'.'+str(knm)+'.dat',vijgrid)
-
-                                    # Store coupling corr potentials in terms of integration grids
-                                    vijkgrid = np.zeros(self.nint * self.nint * self.nint)
-                                    vijkgrid = \
-                                        (np.asarray( [ np.asarray( [ np.asarray( [ \
-                                        ( vtspl([igrid[iinm],jgrid[ijnm],kgrid[iknm]]) 
-                                        - ( vtspl([igrid[iinm],jgrid[ijnm],0.0]) + vtspl([igrid[iinm],0.0,kgrid[iknm]]) + vtspl([0.0,jgrid[ijnm],kgrid[iknm]]) )
-                                        + ( vtspl([igrid[iinm],0.0,0.0]) + vtspl([0.0,jgrid[ijnm],0.0]) + vtspl([0.0,0.0,kgrid[iknm]]) )
-                                        - vtspl([0.0,0.0,0.0]) ) \
-                                        for iinm in range(self.nint) ] ) \
-                                        for ijnm in range(self.nint) ] ) \
-                                        for iknm in range(self.nint) ] )).reshape(self.nint*self.nint*self.nint)
-                                    ijkgrid = np.zeros((self.nint * self.nint * self.nint, 3))
-                                    ijkgrid = \
-                                        (np.asarray( [ np.asarray( [ np.asarray( [ \
-                                        [igrid[iinm], jgrid[ijnm], kgrid[iknm]]
-                                        for iinm in range(self.nint) ] ) \
-                                        for ijnm in range(self.nint) ] ) \
-                                        for iknm in range(self.nint) ] )).reshape((self.nint*self.nint*self.nint,3))
-
-                                    print "# GRIDDING DONE"
-
-                                    # Save coupling correction to file for visualisation
-                                    np.savetxt(potfile,np.column_stack((ijkgrid,vijkgrid)))
-
 
 
 #==========================================================================
@@ -937,14 +1057,14 @@ class VSCFSolver(IMF):
             softexit.trigger("ERROR : Indices for for vibr modes not available. Exiting.")
         # load number of sampled points along each mode
         npts = np.zeros(self.dof, dtype=int)
-        nptsmin = np.zeros(self.dof, dtype=int)
-        nptsmax = np.zeros(self.dof, dtype=int)
-        if os.path.exists('nptsmin.dat'):
-            nptsmin = np.loadtxt('nptsmin.dat')
-            nptsmax = np.loadtxt('nptsmax.dat')
+        npts_neg = np.zeros(self.dof, dtype=int)
+        npts_pos = np.zeros(self.dof, dtype=int)
+        if os.path.exists('npts_neg.dat'):
+            npts_neg = np.loadtxt('nptsmin.dat')
+            npts_pos = np.loadtxt('nptsmax.dat')
         else:
             softexit.trigger("ERROR : Indices for for vibr modes not available. Exiting.")
-        npts = nptsmin + nptsmax + 1
+        npts = npts_neg + npts_pos + 1
 
         ## READ IN POTENTIAL OFFSET
         if os.path.exists('potoffset.dat'):
@@ -1215,7 +1335,7 @@ class VSCFSolver(IMF):
                             # sum up all MFT three-body contributions
                             vmft[inm] += 0.5 * alphamix * np.sum(vijkgrid[inm][jnm][knm] * rhoijgrid[jnm,knm]) / self.nprim**2 # eae : to check whether vijkgrid needs to be transposed
 
-                # Save MFT anharmonic correction to file for visualisation
+                # Save MFT anharmonic correction to file for v_indep_listualisation
                 if self.print_mftpot:
                     if self.threebody == False:
                         np.savetxt('vmft_twobody.'+str(inm)+'.dat',np.column_stack((igrid[inm],vigrid[inm],vmft[inm])))
@@ -1286,7 +1406,7 @@ class VSCFSolver(IMF):
             jgrid = np.zeros((self.dof,self.nint))
             for jnm in inms :
                 dnmj = self.fnmrms * self.imm.nmrms[jnm]
-                jgrid[jnm] = np.linspace(-nptsmin[jnm]*dnmj,nptsmax[jnm]*dnmj,self.nint)
+                jgrid[jnm] = np.linspace(-npts_neg[jnm]*dnmj,npts_pos[jnm]*dnmj,self.nint)
     
             # START WITH GS
             devaltotcoupledmp2 = []
