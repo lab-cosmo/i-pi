@@ -91,7 +91,10 @@ class NormalModeMover(Motion):
         self.nparallel = nparallel #False
 
         if self.prefix == "":
-            self.prefix = "nm"
+            if self.mode == "imf":
+                self.prefix = "imf"
+            elif self.mode == "vscf_mapper" or self.mode == "vscf_solver":
+                self.mode = "vscf"
 
     def bind(self, ens, beads, nm, cell, bforce, prng, omaker):
 

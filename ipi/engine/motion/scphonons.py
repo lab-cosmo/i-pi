@@ -71,11 +71,12 @@ class SCPhononsMover(Motion):
         self.checkweights = checkweights
         self.nparallel = nparallel
         self.batch_weight_exponent = batch_weight_exponent
-        if self.prefix == "":
-            self.prefix = "phonons"
 
         if self.random_type == "sobol" and sobol == None:
             raise (sobol_expection)
+
+        if self.prefix == "":
+            self.prefix = "scphonons"
 
     def bind(self, ens, beads, nm, cell, bforce, prng, omaker):
 
@@ -220,6 +221,7 @@ class SCPhononator(DummyPhononator):
         self.wthreshold = self.dm.wthreshold
         self.precheck = self.dm.precheck
         self.checkweights = self.dm.checkweights
+        
 
     def reset(self):
         """

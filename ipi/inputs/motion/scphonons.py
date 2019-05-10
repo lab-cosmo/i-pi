@@ -45,7 +45,7 @@ class InputSCPhonons(InputDictionary):
                                          "options": ["qn", "cl"]})}
     #!TODO give more informative help strings. When there are multiple options, the meaning of the options should be explained
     fields = {
-        "prefix": (InputValue, {"dtype": str, "default": "scphonons",
+        "prefix": (InputValue, {"dtype": str, "default": "",
                                 "help": "Prefix of the output files."
                                 }),
         "asr": (InputValue, {"dtype": str, "default": "none",

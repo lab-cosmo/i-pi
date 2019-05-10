@@ -22,7 +22,6 @@
     <motion mode='normalmodes'>
       <normalmodes mode='imf'>
         <dynmat mode='file'> dynmat.data </dynmat>
-        <prefix> simulation </prefix>
         <asr> poly </asr>
         <nbasis> 10 </nbasis>
         <nevib> 16 </nevib>
