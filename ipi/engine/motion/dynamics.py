@@ -18,7 +18,7 @@ import numpy as np
 from ipi.engine.motion import Motion
 from ipi.utils import nmtransform
 from ipi.utils.depend import *
-from ipi.engine.constraints import Replicas, BondLength, BondAngle#, \
+from ipi.engine.constraints import BondLength, BondAngle#, \
 #        EckartTransX, EckartTransY, EckartTransZ, \
 #        EckartRotX, EckartRotY, EckartRotZ
 from ipi.engine.thermostats import Thermostat
@@ -704,46 +704,38 @@ class QCMDWaterIntegrator(NVTIntegrator):
             raise ValueError("QCMDWaterIntegrator received a total "+
                              "of {:d} atoms. ".format(self.beads.natoms)+
                              "This is inconsistent with a set of triatomics.")
-        # Create a local copy of bead coordinates and momenta that stores
-        # beads grouped by degrees of freedom in one-dimensional arrays
-        self.replica_list = []
-        for i in range(3*self.beads.natoms):
-            self.replica_list.append(Replicas(self.beads.nbeads, self.beads, i))
-        # Generate a list of constraints to fix the quasi-centroids
-        self.clist = []
-        # Store references to the constraints that involve a given DoF
-        idx2c = [ [] for i in range(0,self.beads.natoms*3) ]
-        O_idx = [0,1,2]
-        H1_idx = [3,4,5]
-        H2_idx = [6,7,8]
-        for i in range(0,self.beads.natoms,3):
-            for cls,idxlst in zip(2*[BondLength]+[BondAngle],
-#                               EckartTransX, EckartTransY, EckartTransZ,
-#                               EckartRotX, EckartRotY, EckartRotZ],
-                               [O_idx+H1_idx, O_idx+H2_idx]+
-                               [O_idx+H1_idx+H2_idx]):
-                self.clist.append(cls(idxlst))
-                for idx in idxlst:
-                    idx2c[idx].append(self.clist[-1])
-            for lst in [O_idx, H1_idx, H2_idx]:
-                for j in range(len(lst)):
-                    lst[j] += 9
-        # Create local normal mode transform
-        self._nmtrans = nmtransform.nm_trans(self.beads.nbeads)
-        for c in self.clist:
-            c.bind(self.replica_list, self.nm, transform=self._nmtrans)
-        # Generate a list of references to constraints that have to be
-        # tainted if coordinates reference by self.clist[i] are modified
-        self._c2c = []
-        for c in self.clist:
-            c2c_elem = []
-            for dof in c.dofs:
-                # Cycle over constraints that depend on this DoF
-                for cc in idx2c[dof]:
-                    # Append to list if not already there
-                    if cc not in c2c_elem:
-                        c2c_elem.append(cc)
-            self._c2c.append(c2c_elem)
+        # Create a workspace array with continuous storage of replicas corresponding
+        # to the same degree of freedom
+        self._temp = np.empty((self.beads.natoms//3,9,self.beads.nbeads))
+        # Initialise the constraints
+        self.clist = [BondLength(indices=[0,1]),
+                      BondLength(indices=[0,2]),
+                      BondAngle(indices=[0,1,3])]
+        # Set up arrays for storing constraint values and gradients
+        self.targetvals = np.empty((len(self.clist),self.beads.natoms//3))
+        self.grads = np.empty( (len(self.clist),)+self._temp.shape )
+        self.new_grads = np.empty_like(self.glist)
+        self.mgrads = np.empty_like(self.glist)
+        # Initialise the gradients
+        self._temp[...] = np.reshape(dstrip(self.beads.q).T, shape=self._temp.shape)
+        for c, t, g, mg in zip(self.clist, self.targetvals,
+                               self.grads, self.mgrads):
+            t[:], g = c(self._temp, g)
+            mg[...] = self._minv(g)
+
+    def _minv(self, arrin):
+        """ Multiply an array by the inverse of the mass tensor.
+
+        Args:
+            arrin .............. input 2d array, same size as beads.q
+        """
+
+        init_shape = arrin.shape
+        wkspace = self.nm.transform.b2nm(
+                arrin.reshape((3*self.beads.natoms, self.beads.nbeads)).T
+                )
+        wkspace /= dstrip(self.nm.dynm3)
+        return np.reshape(self.nm.transform.nm2b(wkspace).T, init_shape)
 
     def qconstraints(self, dt):
         """This applies SHAKE to the positions and momenta.
@@ -751,6 +743,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
         Args:
            dt: integration time-step for SHAKE/RATTLE
         """
+        #!! TODO: carry on from here
         # Store copies of the current gradients
         glist = []
         mglist = []
