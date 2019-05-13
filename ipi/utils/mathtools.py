@@ -1,7 +1,7 @@
 """Mathematical tools used in various parts of the code."""
 
 # This file is part of i-PI.
-# i-PI Copyright (C) 2014-2015 i-PI developers
+# i-PI Copyright (C) 2014-2019 i-PI developers
 # See the "licenses" directory for full license information.
 
 
@@ -365,3 +365,86 @@ def root_herm(A):
         warning("Checking decomposition after negative eigenvalue: \n" + str(A - np.dot(rv, rv.T)), verbosity.low)
 
     return rv
+
+def qua2mat(qua):
+    """
+    Convert a rotation quaternion to a rotation matrix.
+    Args:
+        qua (ndarray): an array of quaternions with final dimension of
+                       size 4.
+    Output:
+        rotmat (ndarray): an array of rotation matrices, final two
+                          dimensions are (3,3).
+    """
+
+    # Normalise the quaternion
+    nqua = np.asarray(qua, dtype=float).copy()
+    if nqua.shape[-1] != 4:
+        raise ValueError("qua2mat expects input with last dim = 4")
+    nqua /= np.sqrt(np.sum(nqua**2, axis=-1))[...,None]
+    nqua_sq = nqua**2
+    metric = np.array([1, -1, -1, -1])
+    # diag[4*(1-2(x^2 + y^2 + z^2),)]
+    rotmat = np.eye(3)*np.sum(
+            metric*nqua_sq, axis=-1)[...,None,None]
+    # Outer product of vector quaternion components
+    cross_mat = 2*(nqua[...,1:,None]*nqua[...,None,1:])
+    rotmat += cross_mat
+    # Cross-product matrix of vector quaternion components
+    cross_mat[...,0,0] = 0
+    cross_mat[...,1,1] = 0
+    cross_mat[...,2,2] = 0
+    cross_mat[...,0,1] = nqua[...,3]
+    cross_mat[...,1,0] = -nqua[...,3]
+    cross_mat[...,0,2] = -nqua[...,2]
+    cross_mat[...,2,0] = nqua[...,2]
+    cross_mat[...,1,2] = nqua[...,1]
+    cross_mat[...,2,1] = -nqua[...,1]
+    cross_mat *= 2*nqua[...,0,None,None]
+    rotmat += cross_mat
+    return rotmat
+
+def eckrot(q, m, ref):
+    """
+    Construct the rotation matrix that rotates the input configuration
+    into the Eckart frame.
+
+    Input:
+        q (ndarray): array of ndim >= 2, where the final dimension has
+                     size 3 and corresponds to x, y, z components, and
+                     the penultimate dimension runs along the atoms of
+                     a molecule
+        ref (ndarray): a conforming array giving the reference
+                       configuration(s)
+        m (ndarray): a conforming array of atomic masses
+
+    NOTE:
+        All coordinates are expected to be given relative to the
+        respective centres-of-mass.
+
+    Result:
+       q (modified in-place): the original cofiguration rotated into
+                              the Eckart frame
+    """
+
+    # Construct the C-matrix (see DOI: 10.1063/1.4870936)
+    r_sum = (ref + q)*np.sqrt(m)
+    r_diff = (ref - q)*np.sqrt(m)
+    outer_prod = r_diff[...,None]*r_diff[...,None,:]
+    cmat = np.zeros(ref.shape[:-2]+(4,4))
+    cmat[...,1:,1:] += outer_prod.sum(axis=-3)
+    cmat[...,0,0] =  np.einsum('...ii', outer_prod).sum(axis=-1)
+
+    outer_prod[...] = r_sum[...,None]*r_sum[...,None,:]
+    cmat[...,1:,1:] -= outer_prod.sum(axis=-3)
+    cmat[...,1:,1:] += np.eye(3)*np.einsum(
+            '...ii',outer_prod).sum(axis=-1)[...,None,None]
+    cmat[...,0,1:] = np.cross(r_sum, r_diff, axis=-1).sum(axis=-2)
+    cmat[...,1:,0] = cmat[...,0,1:]
+    # Diagonalise to find the lowest eigenvalue-eigenvector pair
+    w, qua = np.linalg.eigh(cmat)
+    # Generate the rotation matrix from lowest eigenvector
+    rotmat = qua2mat(qua[...,0])
+    q[...] = np.einsum('...ij,...kj->...ki', rotmat, q)
+
+    return q
