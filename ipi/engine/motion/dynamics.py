@@ -838,11 +838,8 @@ class QCMDWaterIntegrator(NVTIntegrator):
         # Initialise arrays flagging convergences
         nc = np.ones(len(self._temp), dtype=np.bool) # "not converged"
         ns = np.ones((len(self.clist)+1, len(self._temp)), dtype=np.bool) # "not satisfied"
-        # Initialise the Lagrange multipliers
-        mus = np.zeros_like(ns, dtype=np.float)
         # Initialise the constraint time-derivatives
-        sdots = np.empty_like(mus)
-        init_sdots = np.empty_like(mus)
+        sdots = np.empty_like(ns, dtype=np.float)
         pc_init = np.empty_like(self.eckart.qref)
         pc_fin = np.empty_like(pc_init)
         L = np.empty((len(pc_init),3))
@@ -859,12 +856,8 @@ class QCMDWaterIntegrator(NVTIntegrator):
             for i in range(len(self.clist)):
                 sdots[i,nc] = np.sum(self._temp[nc,:,:]*self.mgrads[i,nc,:,:],
                                       axis=(-1,-2))
-                if ncycle == 1:
-                    # Record the initial values of the constraint t-derivatives
-                    init_sdots[i,:] = sdots[i,:]
                 ns[i,:] = np.abs(sdots[i,:]) > self._tol
                 dmu = -sdots[i,ns[i]] / gmg[i,ns[i]]
-                mus[i,ns[i]] += dmu
                 self._temp[ns[i],:,:] += dmu[:,None,None] * \
                                          self.grads[i,ns[i],:,:]
             # Get centroid momenta
@@ -900,9 +893,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
             ncycle += 1
         # Copy the coordinates back into beads
         self.beads.p[...] = self._temp.reshape((-1,self.beads.nbeads)).T
-        # Return the value to be added to the ensemble energy when
-        # monitoring the conserved quantity
-        return #-np.sum(mus*init_sdots)/2
+        return
 
     def free_p(self):
         """Velocity Verlet momentum propagator with ring-polymer spring forces,
@@ -958,8 +949,16 @@ class QCMDWaterIntegrator(NVTIntegrator):
         and modifies the contribution to the constrained quantity due to this
         subtraction
         """
+
         super(QCMDWaterIntegrator,self).tstep()
+        # Override the calculation of the thermostat energy
+        # to account for the constraints
+        p = dstrip(self.nm.pnm)
+        m = dstrip(self.nm.dynm3)
+        kin_init = 0.5*np.sum(p**2/m, axis=-1)
         self.pconstraints()
-        # !!TODO: this still needs to be sorted
-        #dens = self.pconstraints()
-        #self.ensemble.eens += dens
+        p = dstrip(self.nm.pnm)
+        kin_fin = 0.5*np.sum(p**2/m, axis=-1)
+        kin_fin -= kin_init
+        for i,t in enumerate(self.thermostat._thermos):
+            t.ethermo = t.ethermo - kin_fin[i]
