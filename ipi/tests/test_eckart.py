@@ -10,9 +10,19 @@ import pytest
 from ipi.utils import mathtools
 
 
+def eckgen():
+    """Returns a reference configuration and a perturbed geometry
+       for testing functions related to the Eckart conditions.
 
-def test_eckrot():
+       Output:
+           qref: the reference geometry
+           qshift: a perturbed configuration
+           qans: qshift rotated into the Eckart frame
+           m: particle masses
 
+       NOTE: all configurations are expressed in their respective
+             centre-of-mass frames.
+    """
     # Equilibrium configuration
     qref = np.zeros((3,3))
     qref[0,2] = 0.06615931  # Oz
@@ -45,13 +55,38 @@ def test_eckrot():
     qans[2,1] = -0.78658654
     qans[2,2] = -0.55040211
 
+    return qref, qshift, qans, m
+
+def test_eckrot():
+
+    qref, qshift, qans, m = eckgen()
     q = qshift.copy()
     q = mathtools.eckrot(q, m, qref)
-    assert np.allclose(q,qans)
+    assert q == pytest.approx(qans, rel=1.0e-05, abs=1.0e-08)
 
     # Stack of configurations
     n = 5
     qstack = np.stack([qshift.copy() for i in range(n)])
     refstack = np.stack([qref.copy() for i in range(n)])
     qstack = mathtools.eckrot(qstack, m[None,...], refstack)
-    assert np.allclose(qstack,qans)
+    assert qstack == pytest.approx(
+            np.stack([qans for i in range(n)]), rel=1.0e-05, abs=1.0e-08)
+
+def test_eckspin():
+
+    qref, qshift, qans, m = eckgen()
+    p = np.random.normal(size=qref.shape)
+    p = mathtools.eckspin(p, qans, m, qref)
+    eckprod = np.cross(qref, p, axis=-1).sum(axis=-2)
+    assert eckprod == pytest.approx(np.zeros_like(eckprod))
+
+    # Stack of configurations
+    n = 5
+    pstack = np.random.normal(size=(n,)+qref.shape)
+    pstack = mathtools.eckspin(pstack, qans[None,...],
+                               m[None,...], qref[None,...])
+    eckprod = np.cross(qref, pstack, axis=-1).sum(axis=-2)
+    assert eckprod == pytest.approx(np.zeros_like(eckprod))
+
+
+

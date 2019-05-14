@@ -406,8 +406,7 @@ def qua2mat(qua):
 
 def eckrot(q, m, ref):
     """
-    Construct the rotation matrix that rotates the input configuration
-    into the Eckart frame.
+    Rotate the input configuration into the Eckart frame.
 
     Input:
         q (ndarray): array of ndim >= 2, where the final dimension has
@@ -419,7 +418,7 @@ def eckrot(q, m, ref):
         m (ndarray): a conforming array of atomic masses
 
     NOTE:
-        All coordinates are expected to be given relative to the
+        All coordinates are expected to be given relative to their
         respective centres-of-mass.
 
     Result:
@@ -448,3 +447,41 @@ def eckrot(q, m, ref):
     q[...] = np.einsum('...ij,...kj->...ki', rotmat, q)
 
     return q
+
+def eckspin(p, q, m, ref):
+    """
+    Shift the total angular velocity of a set of particles so
+    that the time-derivate of the rotational Eckart conditions
+    becomes zero.
+
+    Input:
+        p (ndarray): particle momenta in an array of ndim >= 2 where
+                     the final dimension has size 3 and corresponds
+                     to x, y, z components, and the penultimate dimension
+                     runs along the atoms of a molecule
+        q (ndarray): conforming array of positions
+        m (ndarray): conforming array of masses
+        ref (ndarray): conforming array of reference configurations
+
+    NOTE:
+        All configurations are expected to be given relative to their
+        respective centres-of-mass.
+
+    Result:
+        p modified in place.
+    """
+
+    # Construct the inertia-tensor-like matrix
+    outer_prod = q[...,:,None]*ref[...,None,:]*m[...,:,None]
+    A = -outer_prod.sum(axis=-3)
+    A += np.eye(3)*np.einsum(
+            '...ii',outer_prod).sum(axis=-1)[...,None,None]
+    # Calculate the original angular-momentum-like vector
+    L = np.cross(ref, p, axis=-1).sum(axis=-2)
+    # Calculate the necessary change in angular momentum
+    ww = np.linalg.solve(A, L)
+    # Modify the linear momenta accordingly
+    p -= m*np.cross(ww[...,None,:], q, axis=-1)
+    return p
+
+
