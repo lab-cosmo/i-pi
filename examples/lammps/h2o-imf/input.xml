@@ -27,6 +27,7 @@
         <nevib> 16 </nevib>
         <athresh> 1e-6 </athresh>
         <nint> 501 </nint>
+        <print_1b_map> True </print_1b_map>
       </normalmodes>
     </motion>
   </system>

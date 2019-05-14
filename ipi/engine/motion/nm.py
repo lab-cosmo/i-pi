@@ -44,7 +44,7 @@ class NormalModeMover(Motion):
     """Normal Mode analysis.
     """
 
-    def __init__(self, fixcom=False, fixatoms=None, mode="imf", dynmat=np.zeros(0, float),  prefix="", asr="none", nprim="1", fnmrms="1.0", nevib="25.0", nint="101", nbasis="10", athresh="1e-2", ethresh="1e-2", nkbt="4.0", nexc="5", mptwo=False, print_mftpot=False, print_2b_map=False, threebody=False, print_vib_density=False, nparallel=1):
+    def __init__(self, fixcom=False, fixatoms=None, mode="imf", dynmat=np.zeros(0, float),  prefix="", asr="none", nprim="1", fnmrms="1.0", nevib="25.0", nint="101", nbasis="10", athresh="1e-2", ethresh="1e-2", nkbt="4.0", nexc="5", mptwo=False, print_mftpot=False, print_1b_map=False, print_2b_map=False, threebody=False, print_vib_density=False, nparallel=1):
         """Initialises NormalModeMover.
         Args:
         fixcom	: An optional boolean which decides whether the centre of mass
@@ -85,6 +85,7 @@ class NormalModeMover(Motion):
         self.nexc = nexc #5
         self.mptwo = mptwo #False
         self.print_mftpot = print_mftpot #False
+        self.print_1b_map = print_1b_map #False
         self.print_2b_map = print_2b_map #False
         self.threebody = threebody #False
         self.print_vib_density = print_vib_density #False
@@ -368,126 +369,21 @@ class IMF(DummyCalculator):
         else:
             info(" @NM : Treating normal mode no.  %8d with frequency %15.8f cm^-1." % (step, self.imm.w[step] * 219474) ,verbosity.medium) 
 
-        # initializes the list containing sampled displacements,
-        # forces and energies.
-        vlist = []
-        flist = []
-        qlist = []
+        self.v_indep_filename = self.imm.output_maker.prefix + '.' + self.imm.prefix + '.' + str(step) + '.qvf'
+        if os.path.exists(self.v_indep_filename):
 
-        # Adds to the list of "sampled configuration" the one that
-        # corresponds to the minimum.
-        q0 = 0.0
-        v0 = dstrip(self.imm.forces.pots).copy()[0] / self.nprim
-        f0 = np.dot(dstrip(self.imm.forces.f).copy()[0], np.real(self.imm.V.T[step])) / self.nprim
+            # Loads the displacemnts, the potential energy and the forces. 
+            qlist, vlist, flist = np.loadtxt(self.v_indep_filename).T
 
-        self.v0 = v0 # TODO CHECK IF NECESSARY
-
-        vlist.append(0.0)
-        flist.append(f0)
-        qlist.append(q0)
-
-        # Converge anharmonic vibrational energies w.r.t. density of sampling points
-        Ahar = -logsumexp( [ -1.0 * np.sqrt(self.imm.w2[step]) * (0.5+i) / dstrip(self.imm.temp) for i in range(self.nbasis) ] ) * dstrip(self.imm.temp)
-        Zhar =  np.sum([np.exp(-1.0 * np.sqrt(self.imm.w2[step]) * (0.5+i) / dstrip(self.imm.temp)) for i in range(self.nbasis)])
-        Ehar =  np.sum([np.sqrt(self.imm.w2[step]) * (0.5+i) * np.exp(  -1.0 * np.sqrt(self.imm.w2[step]) * (0.5+i) / dstrip(self.imm.temp)) for i in range(self.nbasis)]) / Zhar
-        Aanh = []
-        Eanh = []
-        Adiff = []
-        Aanh.append(1e-20)
-        Adiff.append(0.0)
-        Athresh = self.athresh 
-
-        sampling_density_iter = -1
-
-        while True:
-            
-            sampling_density_iter += 1
-
-            # Doubles the grid spacing, so that an estimate of the
-            # anharmonic free energy convergence is 
-            # possible at default/input grid spacing
-            ffnmrms = self.fnmrms * 0.5**sampling_density_iter * 2.0
-
-            # Calculates the displacement in Cartesian coordinates.
-            nmd = ffnmrms * self.imm.nmrms[step]
-            dev = np.real(self.imm.V.T[step]) * nmd * np.sqrt(self.nprim)
- 
-            # After the first iteration doubles the displacement to avoid
-            # calculation of the potential at configurations already v_indep_listited
-            # in the previous iteration.
-            if (sampling_density_iter == 0):
-                delta_counter = 1
-            else:
-                delta_counter = 2
-
-            counter = 1
-
-            # Explores configurations until the sampled energy exceeds
-            # a user-defined threshold of the zero-point energy.
-            while True:
-    
-                # Displaces along the normal mode.
-                self.imm.dbeads.q = self.imm.beads.q + dev * counter
-
-                # Stores the "anharmonic" component of the potential
-                # and the force.
-                dv = dstrip(self.imm.dforces.pots).copy()[0] / self.nprim - 0.50 * self.imm.w2[step] * (nmd * counter)**2 - v0
-                df = np.dot(dstrip(self.imm.dforces.f).copy()[0], np.real(self.imm.V.T[step])) / self.nprim + self.imm.w2[step] * (nmd * counter)
- 
-                # Adds to the list.
-                # Also stores the total energetics i.e. including 
-                # the harmonic component.
-                vlist.append(dv)
-                flist.append(df)
-                qlist.append(nmd * counter)  
-    
-                # Bailout condition.
-                if self.nevib * self.imm.nmevib[step] < np.abs(0.50 * self.imm.w2[step] * (nmd * counter)**2 + dv):
-                    break
-                
-                # Increases the displacement by 1 or 2 depending on the iteration.
-                counter += delta_counter
-    
-            info(" @NM : Using %8d configurations along the +ve direction." % (counter,), verbosity.medium)
-
-            counter = -1
-
-            # Similarly displaces in the "-ve direction"
-            while True:
-
-                # Displaces along the normal mode.
-                self.imm.dbeads.q = self.imm.beads.q + dev * counter
-
-                # Stores the "anharmonic" component of the potential
-                # and the force.
-                dv = dstrip(self.imm.dforces.pots).copy()[0] / self.nprim - 0.50 * self.imm.w2[step] * (nmd * counter)**2 - v0
-                df = np.dot(dstrip(self.imm.dforces.f).copy()[0], np.real(self.imm.V.T[step])) / self.nprim + self.imm.w2[step] * (nmd * counter)
-
-                # Adds to the list.
-                # Also stores the total energetics i.e. including 
-                # the harmonic component.
-                vlist.append(dv)
-                flist.append(df)
-                qlist.append(nmd * counter)  
-    
-                # Bailout condition.
-                if self.nevib * self.imm.nmevib[step] < np.abs(0.50 * self.imm.w2[step] * (nmd * counter)**2 + dv):
-                    break
-
-                # Increases the displacement by 1 or 2 depending on the iteration.
-                counter -= delta_counter
-    
-            info(" @NM : Using %8d configurations along the -ve direction." % (-counter,), verbosity.medium)
-   
             # Fits cubic splines to data. 
-            info("@NM : Fitting cubic splines.", verbosity.high)
+            info("@NM : Fitting cubic splines.", verbosity.medium)
             vspline = interp1d(qlist, vlist, kind='cubic', bounds_error=False)
-
+             
             # Converge wrt size of SHO basis
             bs_iter = 0
             bs_Aanh = [1e-20]
             bs_Eanh = [1e-20]
-            
+
             while True:
                 nnbasis = max(1, self.nbasis - 5) + 5 * bs_iter
 
@@ -496,39 +392,177 @@ class IMF(DummyCalculator):
                 bs_Aanh.append(bs_AEanh[0])
                 bs_Eanh.append(bs_AEanh[1])
 
-                Adiff.append(Aanh-Ahar)
-                info(" @NM : CONVERGENCE : fnmrms = %10.8e   nbasis = %5d    A =  %10.8e   D(A) =  %10.8e /  %10.8e" % (ffnmrms, nnbasis, bs_Aanh[-1], np.abs(bs_Aanh[-1] - bs_Aanh[-2]) / np.abs(bs_Aanh[-2]), self.athresh), verbosity.medium)
-
+                info(" @NM : CONVERGENCE : nbasis = %5d    A =  %10.8e   D(A) =  %10.8e /  %10.8e" % (nnbasis, bs_Aanh[-1]     , np.abs(bs_Aanh[-1] - bs_Aanh[-2]) / np.abs(bs_Aanh[-2]), self.athresh), verbosity.medium)
+ 
                 # Check whether anharmonic frequency is converged
                 if (np.abs(bs_Aanh[-1] - bs_Aanh[-2]) / np.abs(bs_Aanh[-2])) < self.athresh:
                     break
-
+ 
                 bs_iter += 1
+            Aanh = [bs_Aanh[-1]]
+            Eanh = [bs_Eanh[-1]]
 
-            Aanh.append(bs_Aanh[-1])
-            Eanh.append(bs_Eanh[-1])
-            #if sampling_density_iter > 0:
-                #info("@ NM : Converging the free energy w.r.t. sampling density size", verbosity.medium)
-                #info("fnmrms = %10.8e     A =  %10.8e     D(A) =  %10.8e /  %10.8e" % (ffnmrms, Aanh[-1], np.abs(Aanh[-1] - Aanh[-2]) / np.abs(Aanh[-2]), self.athresh), verbosity.medium)
+        else:
+            # initializes the list containing sampled displacements,
+            # forces and energies.
+            vlist = []
+            flist = []
+            qlist = []
 
-            # Check whether anharmonic frequency is converged
-            if (np.abs(Aanh[-1] - Aanh[-2]) / np.abs(Aanh[-2])) < self.athresh:
-                break
+            # Adds to the list of "sampled configuration" the one that
+            # corresponds to the minimum.
+            q0 = 0.0
+            v0 = dstrip(self.imm.forces.pots).copy()[0] / self.nprim
+            f0 = np.dot(dstrip(self.imm.forces.f).copy()[0], np.real(self.imm.V.T[step])) / self.nprim
 
-        # Prints the normal mode displacement, the potential and the force.
-        outfile = self.imm.output_maker.get_output(self.imm.prefix + '.' + str(step) + '.qvf')
-        np.savetxt(outfile,  np.c_[qlist, vlist, flist], header="Frequency = %10.8f" % self.imm.w[step])
-        outfile.close()
+            self.v0 = v0 # TODO CHECK IF NECESSARY
+
+            vlist.append(0.0)
+            flist.append(f0)
+            qlist.append(q0)
+
+            # Converge anharmonic vibrational energies w.r.t. density of sampling points
+            Aanh = []
+            Eanh = []
+            Aanh.append(1e-20)
+            Athresh = self.athresh 
+
+            sampling_density_iter = -1
+
+            while True:
+                
+                sampling_density_iter += 1
+
+                # Doubles the grid spacing, so that an estimate of the
+                # anharmonic free energy convergence is 
+                # possible at default/input grid spacing
+                ffnmrms = self.fnmrms * 0.5**sampling_density_iter * 2.0
+
+                # Calculates the displacement in Cartesian coordinates.
+                nmd = ffnmrms * self.imm.nmrms[step]
+                dev = np.real(self.imm.V.T[step]) * nmd * np.sqrt(self.nprim)
+     
+                # After the first iteration doubles the displacement to avoid
+                # calculation of the potential at configurations already v_indep_listited
+                # in the previous iteration.
+                if (sampling_density_iter == 0):
+                    delta_counter = 1
+                else:
+                    delta_counter = 2
+
+                counter = 1
+
+                # Explores configurations until the sampled energy exceeds
+                # a user-defined threshold of the zero-point energy.
+                while True:
+        
+                    # Displaces along the normal mode.
+                    self.imm.dbeads.q = self.imm.beads.q + dev * counter
+
+                    # Stores the "anharmonic" component of the potential
+                    # and the force.
+                    dv = dstrip(self.imm.dforces.pots).copy()[0] / self.nprim - 0.50 * self.imm.w2[step] * (nmd * counter)**2 - v0
+                    df = np.dot(dstrip(self.imm.dforces.f).copy()[0], np.real(self.imm.V.T[step])) / self.nprim + self.imm.w2[step] * (nmd * counter)
+     
+                    # Adds to the list.
+                    # Also stores the total energetics i.e. including 
+                    # the harmonic component.
+                    vlist.append(dv)
+                    flist.append(df)
+                    qlist.append(nmd * counter)  
+        
+                    # Bailout condition.
+                    if self.nevib * self.imm.nmevib[step] < np.abs(0.50 * self.imm.w2[step] * (nmd * counter)**2 + dv):
+                        break
+                    
+                    # Increases the displacement by 1 or 2 depending on the iteration.
+                    counter += delta_counter
+        
+                info(" @NM : Using %8d configurations along the +ve direction." % (counter,), verbosity.medium)
+
+                counter = -1
+
+                # Similarly displaces in the "-ve direction"
+                while True:
+
+                    # Displaces along the normal mode.
+                    self.imm.dbeads.q = self.imm.beads.q + dev * counter
+
+                    # Stores the "anharmonic" component of the potential
+                    # and the force.
+                    dv = dstrip(self.imm.dforces.pots).copy()[0] / self.nprim - 0.50 * self.imm.w2[step] * (nmd * counter)**2 - v0
+                    df = np.dot(dstrip(self.imm.dforces.f).copy()[0], np.real(self.imm.V.T[step])) / self.nprim + self.imm.w2[step] * (nmd * counter)
+
+                    # Adds to the list.
+                    # Also stores the total energetics i.e. including 
+                    # the harmonic component.
+                    vlist.append(dv)
+                    flist.append(df)
+                    qlist.append(nmd * counter)  
+        
+                    # Bailout condition.
+                    if self.nevib * self.imm.nmevib[step] < np.abs(0.50 * self.imm.w2[step] * (nmd * counter)**2 + dv):
+                        break
+
+                    # Increases the displacement by 1 or 2 depending on the iteration.
+                    counter -= delta_counter
+        
+                info(" @NM : Using %8d configurations along the -ve direction." % (-counter,), verbosity.medium)
+       
+                # Fits cubic splines to data. 
+                info("@NM : Fitting cubic splines.", verbosity.medium)
+                vspline = interp1d(qlist, vlist, kind='cubic', bounds_error=False)
+
+                # Converge wrt size of SHO basis
+                bs_iter = 0
+                bs_Aanh = [1e-20]
+                bs_Eanh = [1e-20]
+                
+                while True:
+                    nnbasis = max(1, self.nbasis - 5) + 5 * bs_iter
+
+                    # Solves the Schroedinger's Equation.
+                    bs_AEanh = self.solve_schroedingers_equation(self.imm.w[step], nnbasis, qlist, vspline)
+                    bs_Aanh.append(bs_AEanh[0])
+                    bs_Eanh.append(bs_AEanh[1])
+
+                    info(" @NM : CONVERGENCE : fnmrms = %10.8e   nbasis = %5d    A =  %10.8e   D(A) =  %10.8e /  %10.8e" % (ffnmrms, nnbasis, bs_Aanh[-1], np.abs(bs_Aanh[-1] - bs_Aanh[-2]) / np.abs(bs_Aanh[-2]), self.athresh), verbosity.medium)
+
+                    # Check whether anharmonic frequency is converged
+                    if (np.abs(bs_Aanh[-1] - bs_Aanh[-2]) / np.abs(bs_Aanh[-2])) < self.athresh:
+                        break
+
+                    bs_iter += 1
+
+                Aanh.append(bs_Aanh[-1])
+                Eanh.append(bs_Eanh[-1])
+                #if sampling_density_iter > 0:
+                    #info("@ NM : Converging the free energy w.r.t. sampling density size", verbosity.medium)
+                    #info("fnmrms = %10.8e     A =  %10.8e     D(A) =  %10.8e /  %10.8e" % (ffnmrms, Aanh[-1], np.abs(Aanh[-1] - Aanh[-2]) / np.abs(Aanh[-2]), self.athresh), verbosity.medium)
+
+                # Check whether anharmonic frequency is converged
+                if (np.abs(Aanh[-1] - Aanh[-2]) / np.abs(Aanh[-2])) < self.athresh:
+                    break
+
+            # Prints the normal mode displacement, the potential and the force.
+            outfile = self.imm.output_maker.get_output(self.imm.prefix + '.' + str(step) + '.qvf')
+            np.savetxt(outfile,  np.c_[qlist, vlist, flist], header="Frequency = %10.8f" % self.imm.w[step])
+            outfile.close()
 
         # prints the mapped potential.
-        output_grid = np.linspace(np.min(qlist), np.max(qlist), 100)
-        outfile = self.imm.output_maker.get_output(self.imm.prefix + '.' + str(step) + '.vfit')
-        np.savetxt(outfile,  np.c_[output_grid, vspline(output_grid)], header="Frequency = %10.8f" % self.imm.w[step])
-        outfile.close()
+        if self.imm.print_1b_map == True:
+          output_grid = np.linspace(np.min(qlist), np.max(qlist), 100)
+          outfile = self.imm.output_maker.get_output(self.imm.prefix + '.' + str(step) + '.vfit')
+          np.savetxt(outfile,  np.c_[output_grid, vspline(output_grid)], header="Frequency = %10.8f" % self.imm.w[step])
+          info(" @NM : Prints the mapped potential energy to %s" % (self.imm.prefix + '.' + str(step) + '.vfit'), verbosity.medium)
+          outfile.close()
 
-        # Done converging wrt size of SHO basis
+        # Done converging wrt size of SHO basis.
+        # Calculates the harmonic free and internal energy.
+        Ahar = -logsumexp( [ -1.0 * np.sqrt(self.imm.w2[step]) * (0.5+i) / dstrip(self.imm.temp) for i in range(nnbasis) ] ) * dstrip(self.imm.temp)
+        Zhar =  np.sum([np.exp(-1.0 * np.sqrt(self.imm.w2[step]) * (0.5+i) / dstrip(self.imm.temp)) for i in range(nnbasis)])
+        Ehar =  np.sum([np.sqrt(self.imm.w2[step]) * (0.5+i) * np.exp(  -1.0 * np.sqrt(self.imm.w2[step]) * (0.5+i) / dstrip(self.imm.temp)) for i in range(nnbasis)]) / Zhar
 
-        info(' @NM : HAR rmsd          =  %10.8e' % (nmd,), verbosity.medium)
         info(' @NM : HAR frequency     =  %10.8e' % (self.imm.w[step],), verbosity.medium)
         info(' @NM : HAR free energy   =  %10.8e' % (Ahar,), verbosity.medium)
         info(' @NM : IMF free energy   =  %10.8e' % (Aanh[-1],), verbosity.medium)

@@ -86,9 +86,12 @@ class InputNormalMode(InputDictionary):
                 "print_mftpot": (InputValue, {"dtype": bool,
                                         "default": False,
                                         "help": "Flag determining whether MFT potentials are printed to file."}),
+                "print_1b_map": (InputValue, {"dtype": bool,
+                                        "default": False,
+                                        "help": "Flag determining whether the independent mode potentials are printed to file."}),
                 "print_2b_map": (InputValue, {"dtype": bool,
                                         "default": False,
-                                        "help": "Flag determining whether mapped coupling potentials are printed to file."}),
+                                        "help": "Flag determining whether the two body mapped coupling potentials are printed to file."}),
                 "print_vib_density": (InputValue, {"dtype": bool,
                                         "default": False,
                                         "help": "Flag determining whether the vibrational density (|psi|^2) are printed to file."}),
@@ -122,6 +125,7 @@ class InputNormalMode(InputDictionary):
         self.nexc.store(nm.nexc) #"5"
         self.mptwo.store(nm.mptwo) #False
         self.print_mftpot.store(nm.print_mftpot) #False
+        self.print_1b_map.store(nm.print_1b_map) #False
         self.print_2b_map.store(nm.print_2b_map) #False
         self.print_vib_density.store(nm.print_vib_density) #False
         self.threebody.store(nm.threebody) #False
