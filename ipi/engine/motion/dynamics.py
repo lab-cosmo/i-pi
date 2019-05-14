@@ -723,6 +723,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
                                self.grads, self.mgrads):
             t[:], g = c(self._temp, g)
             mg[...] = self._minv(g)
+        self._ethermo = False
 
     def _minv(self, arrin):
         """ Multiply an array by the inverse of the mass tensor.
@@ -832,6 +833,10 @@ class QCMDWaterIntegrator(NVTIntegrator):
         if len(self.fixatoms) > 0:
             raise ValueError("Cannot explicitly fix atoms in a constrained simulation")
         # Copy the current ring-polymer momenta into workspace array
+        if self._ethermo:
+            p = dstrip(self.nm.pnm)
+            m = dstrip(self.nm.dynm3)
+            kin_init = 0.5*np.sum(p**2/m, axis=-1)
         self._temp[...] = np.reshape(dstrip(self.beads.p).T,self._temp.shape)
         # Calculate the diagonal elements of the Jacobian matrix
         gmg = np.sum(self.grads*self.mgrads, axis=(-1,-2))
@@ -893,25 +898,33 @@ class QCMDWaterIntegrator(NVTIntegrator):
             ncycle += 1
         # Copy the coordinates back into beads
         self.beads.p[...] = self._temp.reshape((-1,self.beads.nbeads)).T
+        if self._ethermo:
+            p = dstrip(self.nm.pnm)
+            kin_fin = 0.5*np.sum(p**2/m, axis=-1)
+            kin_fin -= kin_init
+            for i,t in enumerate(self.thermostat._thermos):
+                t.ethermo -= kin_fin[i]
+            self._ethermo = False
         return
 
     def free_p(self):
         """Velocity Verlet momentum propagator with ring-polymer spring forces,
            followed by RATTLE.
         """
+        dt = self.qdt/(self._nfree)
         self.nm.pnm[1:,:] -= (
                 dstrip(self.nm.qnm)[1:,:] *
                 dstrip(self.nm.dynm3)[1:,:] *
-                dstrip(self.nm.omegak2)[1:,None])*(self.qdt/(2*self._nfree))
+                dstrip(self.nm.dynomegak)[1:,None]**2)*dt
         self.pconstraints() # RATTLE
 
     def free_q(self):
         """Velocity Verlet position propagator with ring-polymer spring forces,
            followed by SHAKE.
         """
-        self.nm.qnm += (dstrip(self.nm.pnm) /
-                        dstrip(self.nm.dynm3))*(self.qdt/(2*self._nfree))
-        self.qconstraints(self.qdt/(2*self._nfree)) # SHAKE
+        dt = self.qdt/(self._nfree)
+        self.nm.qnm += dstrip(self.nm.pnm)/dstrip(self.nm.dynm3)*dt
+        self.qconstraints(dt) # SHAKE
         self.pconstraints() #RATTLE
 
     def free_qstep_ba(self):
@@ -950,15 +963,5 @@ class QCMDWaterIntegrator(NVTIntegrator):
         subtraction
         """
 
+        self._ethermo = True
         super(QCMDWaterIntegrator,self).tstep()
-        # Override the calculation of the thermostat energy
-        # to account for the constraints
-        p = dstrip(self.nm.pnm)
-        m = dstrip(self.nm.dynm3)
-        kin_init = 0.5*np.sum(p**2/m, axis=-1)
-        self.pconstraints()
-        p = dstrip(self.nm.pnm)
-        kin_fin = 0.5*np.sum(p**2/m, axis=-1)
-        kin_fin -= kin_init
-        for i,t in enumerate(self.thermostat._thermos):
-            t.ethermo = t.ethermo - kin_fin[i]
