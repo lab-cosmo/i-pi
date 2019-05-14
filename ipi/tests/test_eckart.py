@@ -76,15 +76,17 @@ def test_eckspin():
 
     qref, qshift, qans, m = eckgen()
     p = np.random.normal(size=qref.shape)
-    p = mathtools.eckspin(p, qans, m, qref)
+    L = np.cross(qref, p, axis=-1).sum(axis=-2)
+    p = mathtools.eckspin(p, qans, m, qref, L)
     eckprod = np.cross(qref, p, axis=-1).sum(axis=-2)
     assert eckprod == pytest.approx(np.zeros_like(eckprod))
 
     # Stack of configurations
     n = 5
     pstack = np.random.normal(size=(n,)+qref.shape)
+    L = np.cross(qref[None,...], pstack, axis=-1).sum(axis=-2)
     pstack = mathtools.eckspin(pstack, qans[None,...],
-                               m[None,...], qref[None,...])
+                               m[None,...], qref[None,...], L)
     eckprod = np.cross(qref, pstack, axis=-1).sum(axis=-2)
     assert eckprod == pytest.approx(np.zeros_like(eckprod))
 

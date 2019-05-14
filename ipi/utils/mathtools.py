@@ -448,7 +448,7 @@ def eckrot(q, m, ref):
 
     return q
 
-def eckspin(p, q, m, ref):
+def eckspin(p, q, m, ref, L):
     """
     Shift the total angular velocity of a set of particles so
     that the time-derivate of the rotational Eckart conditions
@@ -462,6 +462,7 @@ def eckspin(p, q, m, ref):
         q (ndarray): conforming array of positions
         m (ndarray): conforming array of masses
         ref (ndarray): conforming array of reference configurations
+        L (ndarray): array of time-derivatives of the Eckart conditions
 
     NOTE:
         All configurations are expected to be given relative to their
@@ -476,8 +477,6 @@ def eckspin(p, q, m, ref):
     A = -outer_prod.sum(axis=-3)
     A += np.eye(3)*np.einsum(
             '...ii',outer_prod).sum(axis=-1)[...,None,None]
-    # Calculate the original angular-momentum-like vector
-    L = np.cross(ref, p, axis=-1).sum(axis=-2)
     # Calculate the necessary change in angular momentum
     ww = np.linalg.solve(A, L)
     # Modify the linear momenta accordingly

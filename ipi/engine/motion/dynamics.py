@@ -16,11 +16,10 @@ import time
 import numpy as np
 
 from ipi.engine.motion import Motion
+from ipi.utils import mathtools
 from ipi.utils import nmtransform
 from ipi.utils.depend import *
-from ipi.engine.constraints import BondLength, BondAngle#, \
-#        EckartTransX, EckartTransY, EckartTransZ, \
-#        EckartRotX, EckartRotY, EckartRotZ
+from ipi.engine.constraints import BondLength, BondAngle, Eckart
 from ipi.engine.thermostats import Thermostat
 from ipi.engine.barostats import Barostat
 
@@ -711,6 +710,9 @@ class QCMDWaterIntegrator(NVTIntegrator):
         self.clist = [BondLength(indices=[0,1]),
                       BondLength(indices=[0,2]),
                       BondAngle(indices=[0,1,2])]
+        qc = dstrip(self.beads.qc[:]).reshape(self._temp.shape[:-1])
+        mc = dstrip(self.beads.m3[0]).reshape(qc.shape)
+        self.eckart = Eckart([], qref = qc, mref = mc)
         # Set up arrays for storing constraint targets and gradients
         self.targetvals = np.empty((len(self.clist),self.beads.natoms//3))
         self.grads = np.empty( (len(self.clist),)+self._temp.shape )
@@ -747,12 +749,16 @@ class QCMDWaterIntegrator(NVTIntegrator):
         self._temp[...] = np.reshape(dstrip(self.beads.q).T,self._temp.shape)
         # Initialise the Lagrange multipliers
         lambdas = np.zeros_like(self.targetvals)
-        # Initialise the current values of constraint fxns and grads
-        sigmas = np.empty_like(self.targetvals)
-        grads = np.empty_like(self.grads)
         # Initialise arrays flagging convergences
         nc = np.ones(len(self._temp), dtype=np.bool) # "not converged"
-        ns = np.ones_like(self.targetvals, dtype=np.bool) # "not satisfied"
+        ns = np.ones((len(self.clist)+1, len(self._temp)), dtype=np.bool) # "not satisfied"
+        # Initialise the current values of constraint fxns and grads
+        sigmas = np.empty_like(ns, dtype=np.float)
+        grads = np.empty_like(self.grads)
+        ngp, ncart, nbeads = self._temp.shape
+        qc_init = np.empty_like(self.eckart.qref)
+        qc_fin = np.empty_like(qc_init)
+        mtot = np.sum(self.eckart.mref[...,0:1], axis=-2)
         # Cycle over constraints until convergence
         ncycle = 1
         while True:
@@ -769,6 +775,28 @@ class QCMDWaterIntegrator(NVTIntegrator):
                 lambdas[i,ns[i]] += dlambda
                 self._temp[ns[i],:,:] += dlambda[:,None,None] * \
                                          self.mgrads[i,ns[i],:,:]
+            # Get the centoids
+            qc_init[nc] = self._temp[nc].mean(axis=-1).reshape(qc_init[nc].shape)
+            CoM = np.sum(
+                    self.eckart.mref[nc] * qc_init[nc], axis=-2
+                    )/mtot[nc]
+            # Shift to CoM
+            qc_fin[nc] = qc_init[nc]-CoM[:,None,:]
+            # Calculate the Eckart product
+            sigmas[-1,nc] = self.eckart(qc_fin, nc)
+            ns[-1,:] = np.abs(sigmas[-1]) > self._tol
+            # Rotate to Eckart frame
+            qc_fin[ns[-1]] = mathtools.eckrot(
+                    qc_fin[ns[-1]],
+                    self.eckart.mref[ns[-1]],
+                    self.eckart.qref_rel[ns[-1]]
+                  )
+            # Shift to CoM of reference
+            qc_fin[nc] += self.eckart.qref_com[nc,None,:]
+            # Calculate the change
+            qc_fin[nc] -= qc_init[nc]
+            self._temp[nc,:,:] += np.reshape(qc_fin,
+                      (len(self._temp),-1))[nc,:,None]
             # Update the convergence status
             nc[:] = np.any(ns, axis=0) # not converged if any not satisfied
             if np.all(np.logical_not(nc)):
@@ -807,14 +835,22 @@ class QCMDWaterIntegrator(NVTIntegrator):
         self._temp[...] = np.reshape(dstrip(self.beads.p).T,self._temp.shape)
         # Calculate the diagonal elements of the Jacobian matrix
         gmg = np.sum(self.grads*self.mgrads, axis=(-1,-2))
+        # Initialise arrays flagging convergences
+        nc = np.ones(len(self._temp), dtype=np.bool) # "not converged"
+        ns = np.ones((len(self.clist)+1, len(self._temp)), dtype=np.bool) # "not satisfied"
         # Initialise the Lagrange multipliers
-        mus = np.zeros_like(self.targetvals)
+        mus = np.zeros_like(ns, dtype=np.float)
         # Initialise the constraint time-derivatives
         sdots = np.empty_like(mus)
         init_sdots = np.empty_like(mus)
-        # Initialise arrays flagging convergences
-        nc = np.ones(len(self._temp), dtype=np.bool) # "not converged"
-        ns = np.ones_like(self.targetvals, dtype=np.bool) # "not satisfied"
+        pc_init = np.empty_like(self.eckart.qref)
+        pc_fin = np.empty_like(pc_init)
+        L = np.empty((len(pc_init),3))
+        v = np.empty_like(L)
+        mtot = np.sum(self.eckart.mref[...,0:1], axis=-2)
+        qc = dstrip(self.beads.qc[:]).reshape(self.eckart.qref.shape)
+        CoM = np.sum(self.eckart.mref * qc, axis=-2)/mtot
+        qc = qc - CoM[:,None,:]
         # Cycle over constraints until convergence
         ncycle = 1
         while True:
@@ -831,6 +867,31 @@ class QCMDWaterIntegrator(NVTIntegrator):
                 mus[i,ns[i]] += dmu
                 self._temp[ns[i],:,:] += dmu[:,None,None] * \
                                          self.grads[i,ns[i],:,:]
+            # Get centroid momenta
+            pc_init[nc] = self._temp[nc].mean(axis=-1).reshape(pc_init[nc].shape)
+            # Set CoM momentum to zero
+            v[nc] = np.sum(pc_init[nc], axis=-2)/mtot[nc] # CoM velocity
+            pc_fin[nc] = pc_init[nc] - self.eckart.mref[nc]*v[nc,None,:]
+            # Calculate time-derivative or the rotational constraint
+            L[nc,:] = np.cross(
+                    self.eckart.qref_rel[nc],
+                    pc_fin[nc],
+                    axis=-1).sum(axis=-2)
+            sdots[-1,nc] = np.sqrt(
+                    np.sum(L[nc]**2, axis=-1)
+                    )/mtot.reshape((-1,))[nc]
+            ns[-1,:] = np.abs(sdots[-1,:]) > self._tol
+            # Enforce the rotational constraint where not satisfied
+            pc_fin[ns[-1]] = mathtools.eckspin(
+                    pc_fin[ns[-1]], qc[ns[-1]],
+                    self.eckart.mref[ns[-1]],
+                    self.eckart.qref_rel[ns[-1]],
+                    L[ns[-1]]
+                    )
+            # Calculate change in bead momenta
+            pc_fin[nc] -= pc_init[nc]
+            self._temp[nc,:,:] += np.reshape(pc_fin,
+                      (len(self._temp),-1))[nc,:,None]
             # Update the convergence status
             nc[:] = np.any(ns, axis=0) # not converged if any not satisfied
             if np.all(np.logical_not(nc)):
@@ -841,7 +902,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
         self.beads.p[...] = self._temp.reshape((-1,self.beads.nbeads)).T
         # Return the value to be added to the ensemble energy when
         # monitoring the conserved quantity
-        return -np.sum(mus*init_sdots)/2
+        return #-np.sum(mus*init_sdots)/2
 
     def free_p(self):
         """Velocity Verlet momentum propagator with ring-polymer spring forces,
@@ -898,6 +959,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
         subtraction
         """
         super(QCMDWaterIntegrator,self).tstep()
-        dens = self.pconstraints()
+        self.pconstraints()
         # !!TODO: this still needs to be sorted
+        #dens = self.pconstraints()
         #self.ensemble.eens += dens

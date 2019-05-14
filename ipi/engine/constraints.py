@@ -10,85 +10,8 @@ functions.
 
 import numpy as np
 
-from ipi.utils.depend import dstrip
-#from ipi.utils import nmtransform
+__all__ = ['HolonomicConstraint','BondLength','BondAngle','Eckart']
 
-__all__ = ['Replicas','HolonomicConstraint','BondLength','BondAngle',]
-#           'EckartTransX', 'EckartTransY', 'EckartTransZ',
-#           'EckartRotX', 'EckartRotY', 'EckartRotZ',]
-
-class Replicas(object):
-
-    """Storage of ring-polymer replica positions, masses and momenta
-       for a single degree of freedom.
-
-    Positions and momenta are stored as nbeads-sized contiguous arrays,
-    and mass is stored as a scalar.
-
-    Attributes:
-       nbeads: The number of beads.
-
-    Depend objects:
-       p: An array that holds the momenta of all the replicas of this DoF.
-       q: An array that holds the positions of all the replicas of this DoF.
-       m: The mass associated with this DoF
-    """
-
-    def __init__(self, nbeads, beads=None, idof=None):
-        """Initialises Replicas.
-
-        Args:
-           nbeads: An integer giving the number of beads.
-           beads: An instance of Beads from which to copy the initial values
-                  of the positions, momenta and masses
-           idof: An integer index of the degree of freedom from which to copy
-                  these values.
-        """
-        self.nbeads = nbeads
-#        dself = dd(self)
-        if beads is None:
-            qtemp = np.zeros(nbeads, float)
-            ptemp = np.zeros(nbeads, float)
-            mtemp = np.zeros(1,float)
-        else:
-            if idof is None:
-                raise ValueError("The index of the degree of freedom must be "+
-                                 "specified when initialising Replicas from "+
-                                 "beads.")
-            qtemp = dstrip(beads.q)[:,idof].copy()
-            ptemp = dstrip(beads.p)[:,idof].copy()
-            mtemp = dstrip(beads.m3)[0:1,idof].copy()
-        self.q = qtemp
-        self.p = ptemp
-        self.m = mtemp
-
-#        dself.q = depend_array(name="q", value=qtemp)
-#        dself.p = depend_array(name="p", value=ptemp)
-#        dself.m = depend_value(name="m", value=mtemp)
-
-    def __len__(self):
-        """Length function.
-
-        This is called whenever the standard function len(replicas) is used.
-
-        Returns:
-           The number of beads.
-        """
-
-        return self.nbeads
-
-    def copy(self):
-        """Creates a new Replicas object.
-
-        Returns:
-           A Replicas object with the same q, p, and m as the original.
-        """
-
-        newrep = Replicas(self.nbeads)
-        newrep.q[:] = self.q
-        newrep.p[:] = self.p
-        newrep.m[:] = self.m
-        return newrep
 
 class HolonomicConstraint(object):
     """Base holonomic constraints class.
@@ -210,205 +133,82 @@ class BondAngle(HolonomicConstraint):
         jac[...,slcB,:] /= ct
         jac[...,slcX,:] = -(jac[...,slcA,:]+jac[...,slcB,:])
         return sigma, jac
-#
-#class EckartTrans(HolonomicConstraint):
-#    """Constraint on one of the components of the centre of mass.
-#    """
-#
-#    # Number of DoFs determined upon initialisation
-#    _ndof = -1
-#
-#    def __init__(self, dofs, coord, val=None):
-#        """Initialise the holonomic constraint.
-#
-#           Args:
-#               dofs(list): integers indexing *all* the degrees of freedom of the
-#                           atoms subject to this Eckart constraint
-#               coord(str): 'x', 'y', 'z' -- specifies the component of the CoM
-#                           to be constrained
-#               val(float): the position at which the component is to be constrained.
-#        """
-#        q_str = coord.lower()
-#        if q_str=="x":
-#            idx = 0
-#        elif q_str=="y":
-#            idx = 1
-#        elif q_str=="z":
-#            idx = 2
-#        else:
-#            raise ValueError("Invalid coordinate specification supplied to "+
-#                             self.__class__.__name__)
-#        super(EckartTrans,self).__init__(dofs[idx::3], val)
-#
-#    def bind(self, replicas, nm, transform=None, **kwargs):
-#        """Bind the appropriate coordinates to the constraint.
-#        """
-#
-#        super(EckartTrans, self).bind(replicas, nm, transform, **kwargs)
-#        self.qtaint()
-#        if self.targetval is None:
-#            # Set to the current position of the CoM
-#            self.targetval = 0.0
-#            currentval = self.sigma
-#            self.targetval = currentval
-#
-#    def get_sigma(self):
-#        mrel = np.asarray(self._m).reshape(-1)
-#        mtot = np.sum(mrel)
-#        mrel /= mtot
-#        qc = np.mean(np.asarray(self._q),axis=-1)
-#        sigma = np.dot(mrel, qc)
-#        mrel /= self.nbeads
-#        return sigma, mrel[:,None]
-#
-#class EckartTransX(EckartTrans):
-#    """Constraint on the x-component of the CoM of a group of atoms.
-#    """
-#    def __init__(self, dofs, val=None):
-#        """Initialise the holonomic constraint.
-#
-#           Args:
-#               dofs(list): integers indexing *all* the degrees of freedom of the
-#                           atoms subject to this Eckart constraint
-#               val(float): the position at which the component is to be constrained.
-#        """
-#        super(EckartTransX,self).__init__(dofs, "x", val)
-#
-#class EckartTransY(EckartTrans):
-#    """Constraint on the y-component of the CoM of a group of atoms.
-#    """
-#    def __init__(self, dofs, val=None):
-#        """Initialise the holonomic constraint.
-#
-#           Args:
-#               dofs(list): integers indexing *all* the degrees of freedom of the
-#                           atoms subject to this Eckart constraint
-#               val(float): the position at which the component is to be constrained.
-#        """
-#        super(EckartTransY,self).__init__(dofs, "y", val)
-#
-#class EckartTransZ(EckartTrans):
-#    """Constraint on the z-component of the CoM of a group of atoms.
-#    """
-#    def __init__(self, dofs, val=None):
-#        """Initialise the holonomic constraint.
-#
-#           Args:
-#               dofs(list): integers indexing *all* the degrees of freedom of the
-#                           atoms subject to this Eckart constraint
-#               val(float): the position at which the component is to be constrained.
-#        """
-#        super(EckartTransZ,self).__init__(dofs, "z", val)
-#
-#class EckartRot(HolonomicConstraint):
-#    """One of the components of the Eckart rotational constraint.
-#
-#       NOTE: in this definition the usual sum over cross-products is divided by
-#             the total mass of the system.
-#    """
-#
-#    # Number of DoFs determined upon initialisation
-#    _ndof = -1
-#
-#    def __init__(self, dofs, coord, val=None):
-#        """Initialise the holonomic constraint.
-#
-#           Args:
-#               dofs(list): integers indexing *all* the degrees of freedom of the
-#                           atoms subject to this Eckart constraint
-#               coord(str): 'x', 'y', 'z' -- specifies the component of the
-#                           angular-momentum-like quantity to be constrained
-#               val(array-like): this argument is not used
-#        """
-#        q_str = coord.lower()
-#        if q_str=="x":
-#            idces = (1,2)
-#        elif q_str=="y":
-#            idces = (2,0)
-#        elif q_str=="z":
-#            idces = (0,1)
-#        else:
-#            raise ValueError("Invalid coordinate specification supplied to "+
-#                             self.__class__.__name__)
-#        super(EckartRot,self).__init__(dofs[idces[0]::3]+dofs[idces[1]::3], 0.0)
-#
-#    def bind(self, replicas, nm, transform=None, **kwargs):
-#        """Bind the appropriate coordinates to the constraints.
-#          Args:
-#              replicas(list): List of Replicas
-#              nm: A normal modes object used to do the normal modes transformation.
-#          **kwargs:
-#              ref(array-like): Reference configuration for the constraint; if
-#                               absent, taken to be the centroid configuration
-#
-#        """
-#
-#
-#
-#        super(EckartRot, self).bind(replicas, nm, transform, **kwargs)
-#        self.qtaint()
-#        if "ref" in kwargs:
-#            # Reference configuration is provided
-#            lref = np.asarray(kwargs["ref"]).flatten() # local copy
-#            ref = np.asarray(
-#                    [ lref[i] for i in self.dofs ]).reshape((2, self.ndof//2))
-#        else:
-#            # Initialise to centroid configuration
-#            ref = np.asarray(
-#                    [ np.mean(q) for q in self._q] ).reshape((2, self.ndof//2))
-#        self._ref = ref
-#
-#    def get_sigma(self):
-#        # Individual centroid masses divided by the molecular mass
-#        mrel = np.asarray(self._m).reshape((2,self.ndof//2))
-#        mrel /= mrel.sum(axis=-1)[:,None]
-#        # Reference geometry in its CoM, weighted by mrel
-#        mref = mrel*self._ref
-#        CoM = mref.sum(axis=-1)
-#        mref[...] = self._ref-CoM[:,None]
-#        mref *= mrel
-#        # Displacement between centroid and reference configs
-#        delqc = np.mean(np.asarray(self._q), axis=-1).reshape((2, self.ndof//2))
-#        delqc -= self._ref
-#        sigma = np.sum(mref[0]*delqc[1] - mref[1]*delqc[0])
-#        mref /= self.nbeads
-#        return sigma, np.hstack((-mref[1],mref[0]))[:,None]
-#
-#class EckartRotX(EckartRot):
-#    """Constraint on the x-component of the Eckart "angular momentum"
-#    """
-#    def __init__(self, dofs, val=None):
-#        """Initialise the holonomic constraint.
-#
-#           Args:
-#               dofs(list): integers indexing *all* the degrees of freedom of the
-#                           atoms subject to this Eckart constraint
-#               val(float): the position at which the component is to be constrained.
-#        """
-#        super(EckartRotX,self).__init__(dofs, "x", val)
-#
-#class EckartRotY(EckartRot):
-#    """Constraint on the y-component of the Eckart "angular momentum"
-#    """
-#    def __init__(self, dofs, val=None):
-#        """Initialise the holonomic constraint.
-#
-#           Args:
-#               dofs(list): integers indexing *all* the degrees of freedom of the
-#                           atoms subject to this Eckart constraint
-#               val(float): the position at which the component is to be constrained.
-#        """
-#        super(EckartRotY,self).__init__(dofs, "y", val)
-#
-#class EckartRotZ(EckartRot):
-#    """Constraint on the z-component of the Eckart "angular momentum".
-#    """
-#    def __init__(self, dofs, val=None):
-#        """Initialise the holonomic constraint.
-#
-#           Args:
-#               dofs(list): integers indexing *all* the degrees of freedom of the
-#                           atoms subject to this Eckart constraint
-#               val(float): the position at which the component is to be constrained.
-#        """
-#        super(EckartRotZ,self).__init__(dofs, "z", val)
+
+class Eckart(HolonomicConstraint):
+    """Rotational Eckart constraint.
+
+       NOTE: this is different to the other HolonomicConstraint objects
+       in that it does not calculate the Jacobian, and is initialised
+       with additional paramters (particle mass and reference config.)
+    """
+
+    # Number of DoFs determined upon initialisation
+    _ndof = -1
+
+    def __init__(self, indices, qref=None, mref=None):
+        """Initialise the holonomic constraint.
+           Args:
+               indices: a list of integer indices identifying the constrained atoms (this is ignored)
+               qref(ndarray): the reference configuration stored as
+                              an ngp-by-ncart array, where ngp is the
+                              number of molecules/groups of atoms
+                              individually subject to the Eckart
+                              constraint, and ncart is the number
+                              of Cartesian DoFs in each such group
+               mref(ndarray): a confirming array of atomic masses
+
+        """
+        if qref is None:
+            raise ValueError(
+                    "EckartRot must be given a reference configuratiom.")
+        if mref is None:
+            raise ValueError(
+                    "EckartRot must be given the atomic masses.")
+        self.__qref = None
+        self.mref = mref
+        self.qref = qref
+
+    @property
+    def mref(self):
+        return self.__mref
+    @mref.setter
+    def mref(self, val):
+        init_shape = val.shape
+        self.__mref = val.reshape(init_shape[:-1]+(init_shape[-1]//3, 3))
+        if self.__qref is not None:
+            self._update_config()
+    @property
+    def qref(self):
+        return self.__qref
+    @qref.setter
+    def qref(self, val):
+        init_shape = val.shape
+        self.__qref = val.reshape(init_shape[:-1]+(init_shape[-1]//3, 3))
+        self._update_config()
+
+    def _update_config(self):
+        """Re-calculate the CoM of the reference configuration
+           and its coordinates relative to the CoM
+        """
+        mtot = np.sum(self.mref[...,0:1], axis=-2)
+        # CoM of reference
+        self.qref_com = np.sum(
+                self.qref*self.mref, axis=-2
+                )/mtot
+        # Reference coords relative to CoM
+        self.qref_rel = self.qref-self.qref_com[...,None,:]
+        # The above, mass-weighted
+        self.mqref_rel = self.qref_rel*self.mref/mtot[...,None,:]
+
+    def __call__(self, q, nc):
+        """Return the norm of the sum of cross-products
+               SUM[m_a*qref_a x (q_a - qref_a), a] / mtot
+            Args:
+                q(ndarray): an ngp-by-ncart array of atomic configurations
+                nc(ndarray): an array of booleans indicating which rows of
+                             q are to be used for calculation.
+        """
+        qarr = q.reshape(self.qref_rel.shape)[nc]
+        ans = np.cross(self.mqref_rel[nc], (qarr-self.qref_rel[nc]),
+                       axis=-1).sum(axis=-2)
+        return np.sqrt(np.sum(ans**2, axis=-1))
