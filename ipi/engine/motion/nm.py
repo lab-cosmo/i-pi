@@ -603,8 +603,6 @@ class VSCFMapper(IMF):
         self.print_2b_map = self.imm.print_2b_map
         self.threebody = self.imm.threebody
 
-        print "INSIDE VSCF!"
-        
         # Creates a list of modes with frequencies greater than 2 cm^-1.
         info(" @NM : Identifying relevant frequency modes.", verbosity.medium) 
         self.inms = []
