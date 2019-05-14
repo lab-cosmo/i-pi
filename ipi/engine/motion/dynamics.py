@@ -912,10 +912,11 @@ class QCMDWaterIntegrator(NVTIntegrator):
            followed by RATTLE.
         """
         dt = self.qdt/(self._nfree)
+        # Note: m3*omegak**2 = dynm3*dynomegak**2
         self.nm.pnm[1:,:] -= (
                 dstrip(self.nm.qnm)[1:,:] *
-                dstrip(self.nm.dynm3)[1:,:] *
-                dstrip(self.nm.dynomegak)[1:,None]**2)*dt
+                dstrip(self.beads.m3)[1:,:] *
+                dstrip(self.nm.omegak2)[1:,None])*dt
         self.pconstraints() # RATTLE
 
     def free_q(self):
