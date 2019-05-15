@@ -742,109 +742,8 @@ class VSCFMapper(IMF):
             else:
                 info(" @NM : Skipping the mapping for modes %8d and %8d as %s was found.\n" % (self.inm, self.jnm, self.v_coupled_filename), verbosity.medium)
 
-
-            return  
-            ## RUN OVER MODES 
-            rinm = -1
-            for inm in self.inms:
-                rinm += 1
-
-                ## RUN OVER MODES 
-                rjnm = -1
-                for jnm in self.inms:
-                    rjnm += 1
-
-                    ## ONLY CONSIDER UNIQUE PAIRWISE COUPLINGS
-                    if jnm > inm:
-
-                        npts = self.npts
-                        npts_neg = self.npts_neg
-                        npts_pos = self.npts_pos
-
-                        # if mapping has been perfomed previously, just load the potential from file
-                        print inm, jnm, rinm, rjnm
-                        potfile = 'vcoupled.'+str(inm)+'.'+str(jnm)+'.dat'
-                        if os.path.exists(potfile)==False:
-                            vtots = np.zeros((npts[inm]+4)*(npts[jnm]+4))
-                            nmis = np.zeros(npts[inm]+4)
-                            nmjs = np.zeros(npts[jnm]+4)
-                            dnmi = self.fnmrms * self.imm.nmrms[inm]
-                            dnmj = self.fnmrms * self.imm.nmrms[jnm]
-                            v_indep_list = self.v_indep_list
-
-                            # TIMINGS
-                            TIME0 = time.time()
-
-                            for i in range(npts[inm]+4):
-                                nmi = (-npts_neg[inm]+i-2.0) * dnmi
-                                nmis[i] = nmi
-                                for j in range(npts[jnm]+4):
-                                    k = i * (npts[jnm]+4) + j
-                                    nmj = (-npts_neg[jnm]+j-2.0) * dnmj
-                                    nmjs[j] = nmj
-
-                                    # on-nm-axis potentials are available from mapping in figuring out sampling range
-                                    if (-npts_neg[inm]+i-2) == 0 :
-                                        vtots[k] = v_indep_list[rjnm][j]
-                                    elif (-npts_neg[jnm]+j-2) == 0 :
-                                        vtots[k] = v_indep_list[rinm][i]
-                                    # off-nm-axis potentials need to be evaluated
-                                    else :
-                                        self.imm.dbeads.q = dstrip(self.imm.beads.q) + np.real(self.imm.V.T[inm]) * nmis[i] * np.sqrt(self.nprim) + np.real(self.imm.V.T[jnm]) * nmjs[j] * np.sqrt(self.nprim)
-                                        vtots[k] = dstrip(self.imm.dforces.pots)[0] / self.nprim
-
-                            print "TIME TAKEN TO MAP THE POTENTIAL: ", time.time() - TIME0
-
-                            # TIMINGS
-                            TIME0 = time.time()
-
-                            # Store mapped coupling
-                            if self.print_2b_map:
-                                nmijs = np.zeros(((npts[inm]+4)*(npts[jnm]+4),3))
-                                k = -1
-                                for nmi in nmis:
-                                    for nmj in nmjs:
-                                        k += 1
-                                        nmijs[k] = [nmi,nmj,vtots[k]-v0]
-                                np.savetxt('vcoupledmap.'+str(inm)+'.'+str(jnm)+'.dat',nmijs)
-                            print "TIME TAKEN TO SAVE THE COUPLING: ", time.time() - TIME0
-
-                            # TIMINGS
-                            TIME0 = time.time()
-
-                            #print hpyobject.heap()
-
-                            # fit 1D and 2D cubic splines to sampled potentials
-                            vtspl = interp2d(nmis, nmjs, vtots, kind='cubic', bounds_error=False)\
-
-                            print "TIME TAKEN TO PERFORM INTERPOLATION: ", time.time() - TIME0
-
-                            # Save integration grid for given pair of mode
-                            igrid = np.linspace(-npts_neg[inm]*dnmi,npts_pos[inm]*dnmi,self.nint)
-                            jgrid = np.linspace(-npts_neg[jnm]*dnmj,npts_pos[jnm]*dnmj,self.nint)
-
-                            # TIMINGS
-                            TIME0 = time.time()
-
-                            # if mapping of 1D slice has been perfomed previously, skip printing grid to file
-                            potfile = 'vindep.'+str(inm)+'.dat'
-                            if os.path.exists(potfile)==False:
-                                vigrid = np.asarray([np.asscalar(vtspl(igrid[iinm],0.0) - 0.5 * self.imm.w2[inm] * igrid[iinm]**2 - vtspl(0.0,0.0)) for iinm in range(self.nint)])
-                                np.savetxt('vindep.'+str(inm)+'.dat',np.column_stack((igrid,vigrid)))
-                            potfile = 'vindep.'+str(jnm)+'.dat'
-                            if os.path.exists(potfile)==False:
-                                vigrid = np.asarray([np.asscalar(vtspl(0.0,jgrid[ijnm]) - 0.5 * self.imm.w2[jnm] * jgrid[ijnm]**2 - vtspl(0.0,0.0)) for ijnm in range(self.nint)])
-                                np.savetxt('vindep.'+str(jnm)+'.dat',np.column_stack((jgrid,vigrid)))
-
-                            print "TIME TAKEN TO SAVE THE INTERPOLATED DATA: ", time.time() - TIME0
-
-                            # Store coupling corr potentials in terms of integration grids
-                            vijgrid = np.zeros((self.nint, self.nint))
-                            vijgrid = (np.asarray( [ np.asarray( [ (vtspl(igrid[iinm],jgrid[ijnm]) - vtspl(igrid[iinm],0.0) - vtspl(0.0,jgrid[ijnm]) + vtspl(0.0,0.0)) for iinm in range(self.nint) ] ) for ijnm in range(self.nint) ] )).reshape((self.nint,self.nint))
-
-                            # Save coupling correction to file for v_indep_listualisation
-                            np.savetxt('vcoupled.'+str(inm)+'.'+str(jnm)+'.dat',vijgrid)
-
+        else:
+            self.terminate()
         ### MAP OUT 3D BO SURFACES
         #else:
         #    print "# MAPPING OUT 3D BO SURFACES"
@@ -998,6 +897,13 @@ class VSCFMapper(IMF):
         r_npts_pos = counter
 
         return r_npts_neg, r_npts_pos, v_indeps
+
+    def terminate(self):
+        """
+        Triggers a soft exit.
+        """
+
+        softexit.trigger(" @NM : The VSCF calculation has terminated.")
 
             # By replacing the previous paragraph with the bemedium one can enforce sampling of a regular symmetric 
             # grid of points. This almediums the output of the mapping to be fed in B. Monserrat implementation of IMF/VSCF.
