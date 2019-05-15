@@ -536,9 +536,6 @@ class IMF(DummyCalculator):
 
                 Aanh.append(bs_Aanh[-1])
                 Eanh.append(bs_Eanh[-1])
-                #if sampling_density_iter > 0:
-                    #info("@ NM : Converging the free energy w.r.t. sampling density size", verbosity.medium)
-                    #info("fnmrms = %10.8e     A =  %10.8e     D(A) =  %10.8e /  %10.8e" % (ffnmrms, Aanh[-1], np.abs(Aanh[-1] - Aanh[-2]) / np.abs(Aanh[-2]), self.athresh), verbosity.medium)
 
                 # Check whether anharmonic frequency is converged
                 if (np.abs(Aanh[-1] - Aanh[-2]) / np.abs(Aanh[-2])) < self.athresh:
@@ -665,7 +662,8 @@ class VSCFMapper(IMF):
             # Selects the normal mode to map out.
             self.inm = self.inms[step - 1]
             self.v_indep_filename = self.v_indep_file_prefix + "." + str(self.inm) + ".dat"
-            info(" @NM : Treating normal mode no.  %8d with frequency %15.8f cm^-1." % (self.inm, self.imm.w[self.inm] * 219474) ,verbosity.medium)
+            self.v_indep_grid_filename = self.v_indep_grid_file_prefix + "." + str(self.inm) + ".dat"
+            info("\n @NM : Treating normal mode no.  %8d with frequency %15.8f cm^-1." % (self.inm, self.imm.w[self.inm] * 219474) ,verbosity.medium)
 
             # If the indepent modes are already calculated, just loads from file.
             if os.path.exists(self.imm.output_maker.prefix + '.' + self.v_indep_filename):
@@ -691,10 +689,22 @@ class VSCFMapper(IMF):
 
                 info(" @NM : Using %8d configurations along the +ve direction." % (self.npts_pos[self.inm],), verbosity.medium) 
                 info(" @NM : Using %8d configurations along the -ve direction." % (self.npts_neg[self.inm],), verbosity.medium)
-                info(" @NM : Saving the sampled potential energy for mode  %8d in %s \n" % (self.inm, self.v_indep_filename), verbosity.medium)
+                info(" @NM : Saving the sampled potential energy for mode  %8d in %s" % (self.inm, self.v_indep_filename), verbosity.medium)
                 outfile = self.imm.output_maker.get_output(self.v_indep_filename)
                 np.savetxt(outfile, v_indeps, header=" npts_neg: %10d npts_pos: %10d" % (self.npts_neg[self.inm], self.npts_pos[self.inm]))
                 outfile.close()
+
+            info(" @NM : Interpolating the potential energy on a grid of %8d points." % (self.nint,), verbosity.medium)
+            displacements_nmi = [self.fnmrms * self.nmrms[self.inm] * (-self.npts_neg[self.inm] + i - 2.0) for i in xrange(self.npts[self.inm] + 4)]
+            vspline = interp1d(displacements_nmi, self.v_indep_list[-1], kind='cubic', bounds_error=False)
+            igrid = np.linspace(-self.npts_neg[self.inm] * self.fnmrms * self.nmrms[self.inm], self.npts_pos[self.inm] * self.fnmrms * self.nmrms[self.inm], self.nint)
+            vigrid = np.asarray([np.asscalar(vspline(igrid[iinm]) - 0.5 * self.imm.w2[self.inm] * igrid[iinm]**2 - self.v0) for iinm in range(self.nint)])
+
+            # Save coupling correction to file for vistualisation.
+            info(" @NM : Saving the interpolated potential energy to %s\n" % (self.v_indep_grid_filename,), verbosity.medium)
+            outfile = self.imm.output_maker.get_output(self.v_indep_grid_filename)
+            np.savetxt(outfile, vigrid)
+            outfile.close()
 
         # Maps 2D surfaces.
         elif step <= len(self.inms) +  len(self.inms) * (len(self.inms) - 1) / 2:
@@ -749,11 +759,16 @@ class VSCFMapper(IMF):
                 jgrid = np.linspace(-self.npts_neg[self.jnm] * self.fnmrms * self.nmrms[self.jnm], self.npts_pos[self.jnm] * self.fnmrms * self.nmrms[self.jnm], self.nint)
                 vijgrid = (np.asarray( [ np.asarray( [ (vtspl(igrid[iinm],jgrid[ijnm]) - vtspl(igrid[iinm],0.0) - vtspl(0.0,jgrid[ijnm]) + vtspl(0.0,0.0)) for iinm in range(self.nint) ] ) for ijnm in range(self.nint) ] )).reshape((self.nint,self.nint))
 
+                # Also saves the independent mode corrections along the modes.
+                vigrid = np.asarray([np.asscalar(vtspl(igrid[iinm], 0.0) - 0.5 * self.imm.w2[self.inm] * igrid[iinm]**2 - vtspl(0.0,0.0)) for iinm in range(self.nint)])
+                vjgrid = np.asarray([np.asscalar(vtspl(0.0, jgrid[ijnm]) - 0.5 * self.imm.w2[self.jnm] * jgrid[ijnm]**2 - vtspl(0.0,0.0)) for ijnm in range(self.nint)])
+
                 # Save coupling correction to file for vistualisation.
                 info(" @NM : Saving the interpolated potential energy to %s\n" % (self.v_coupled_grid_filename,), verbosity.medium)
                 outfile = self.imm.output_maker.get_output(self.v_coupled_grid_filename)
                 np.savetxt(outfile, vijgrid)
                 outfile.close()
+
             else:
                 info(" @NM : Skipping the mapping for modes %8d and %8d.\n" % (self.inm, self.jnm), verbosity.medium)
 
@@ -829,6 +844,11 @@ class VSCFMapper(IMF):
         """
 
         softexit.trigger(" @NM : The VSCF calculation has terminated.")
+
+    def solver(self):
+        """
+        Solves the Schroedinger's equation.
+        """
 
 
 class VSCFSolver(IMF):
