@@ -35,6 +35,7 @@ class OutputList(list):
         super(OutputList, self).__init__(olist)
         self.prefix = prefix
 
+
 class OutputMaker(dobject):
     """ Class to create floating outputs with an appropriate prefix """
 
@@ -58,6 +59,7 @@ class OutputMaker(dobject):
                 mode="a"
         rout.bind(mode)
         return rout
+
 
 class BaseOutput(object):
     """Base class for outputs. Deals with flushing upon close and little more """

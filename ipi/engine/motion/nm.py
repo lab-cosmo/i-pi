@@ -615,7 +615,9 @@ class VSCFMapper(IMF):
                 self.inms.append(inm)
 
         # Save for use in VSCFSolver.
-        np.savetxt('modes.dat', self.inms, fmt='%i', header="Indices of modes that are considered in the calculation.") # TODO_IO
+        outfile = self.imm.output_maker.get_output('modes.dat')
+        np.savetxt(outfile,  self.inms, fmt='%i', header="Indices of modes that are considered in the calculation.")
+        outfile.close()
 
         # Saves the total number of steps for automatic termination.
         ndof = len(self.inms)
@@ -634,6 +636,7 @@ class VSCFMapper(IMF):
 
         # Filenames for storing the number of samples configurations
         # and their potential energy.
+        self.v_offset_prefix = 'potoffset'
         self.npts_pos_prefix = 'npts_pos'
         self.npts_neg_prefix = 'npts_neg'
         self.v_indep_file_prefix = 'vindep'
@@ -647,8 +650,14 @@ class VSCFMapper(IMF):
         # Performs some basic initialization.
         if step == 0:
             # Initialize overall potential offset
-            self.v0 = dstrip(self.imm.forces.pots).copy()[0] / self.nprim
-            np.savetxt('potoffset.dat', [self.v0]) # TODO_IO
+            self.v_offset_filename = self.v_offset_prefix + '.dat'
+            if os.path.exists(self.imm.output_maker.prefix + '.' + self.v_offset_filename):
+                self.v0 = np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_offset_filename)
+            else:
+                self.v0 = dstrip(self.imm.forces.pots).copy()[0] / self.nprim
+                outfile = self.imm.output_maker.get_output(self.v_offset_filename)
+                np.savetxt(outfile,  [self.v0])
+                outfile.close()
 
         # Maps 1D curves.
         elif step <= len(self.inms):
@@ -659,19 +668,19 @@ class VSCFMapper(IMF):
             info(" @NM : Treating normal mode no.  %8d with frequency %15.8f cm^-1." % (self.inm, self.imm.w[self.inm] * 219474) ,verbosity.medium)
 
             # If the indepent modes are already calculated, just loads from file.
-            if os.path.exists(self.v_indep_filename):
+            if os.path.exists(self.imm.output_maker.prefix + '.' + self.v_indep_filename):
 
                 # Reads the number of sampled configurations from the header
                 # and the sampeld potential energy from the body.
-                with open(self.v_indep_filename) as f:
+                with open(self.imm.output_maker.prefix + '.' + self.v_indep_filename) as f:
                     header = [line.split() for line in f if line.startswith('#')][0]
                     self.npts_neg[self.inm] =  int(header[2])
                     self.npts_pos[self.inm] =  int(header[4])
                     self.npts[self.inms] = self.npts_neg[self.inms] + self.npts_pos[self.inms] + 1
-                    self.v_indep_list.append(np.loadtxt(self.v_indep_filename).T)
-                    info(" @NM : Loading the sampled potential energy for mode  %8d from %s" % (self.inm, self.v_indep_filename), verbosity.medium)
-                    info(" @NM : Using %8d configurations along the +ve direction." % (self.npts_pos[self.inm],), verbosity.medium) 
-                    info(" @NM : Using %8d configurations along the -ve direction.\n" % (self.npts_neg[self.inm],), verbosity.medium)
+                self.v_indep_list.append(np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_indep_filename).T)
+                info(" @NM : Loading the sampled potential energy for mode  %8d" % (self.inm,), verbosity.medium)
+                info(" @NM : Using %8d configurations along the +ve direction." % (self.npts_pos[self.inm],), verbosity.medium) 
+                info(" @NM : Using %8d configurations along the -ve direction.\n" % (self.npts_neg[self.inm],), verbosity.medium)
 
             # If mapping has NOT been perfomed previously, maps the 1D curves.
             else:
@@ -683,7 +692,9 @@ class VSCFMapper(IMF):
                 info(" @NM : Using %8d configurations along the +ve direction." % (self.npts_pos[self.inm],), verbosity.medium) 
                 info(" @NM : Using %8d configurations along the -ve direction." % (self.npts_neg[self.inm],), verbosity.medium)
                 info(" @NM : Saving the sampled potential energy for mode  %8d in %s \n" % (self.inm, self.v_indep_filename), verbosity.medium)
-                np.savetxt(self.v_indep_filename, v_indeps, header=" npts_neg: %10d npts_pos: %10d" % (self.npts_neg[self.inm], self.npts_pos[self.inm]))
+                outfile = self.imm.output_maker.get_output(self.v_indep_filename)
+                np.savetxt(outfile, v_indeps, header=" npts_neg: %10d npts_pos: %10d" % (self.npts_neg[self.inm], self.npts_pos[self.inm]))
+                outfile.close()
 
         # Maps 2D surfaces.
         elif step <= len(self.inms) +  len(self.inms) * (len(self.inms) - 1) / 2:
@@ -694,7 +705,7 @@ class VSCFMapper(IMF):
 
             self.v_coupled_filename = self.v_coupled_file_prefix + "." + str(self.inm) + "." + str(self.jnm) + ".dat"
             self.v_coupled_grid_filename = self.v_coupled_grid_file_prefix + "." + str(self.inm) + "." + str(self.jnm) + ".dat"
-            if os.path.exists(self.v_coupled_filename) != True:
+            if os.path.exists(self.imm.output_maker.prefix + '.' + self.v_coupled_filename) != True:
 
                 # Initializes the grid for interpolating the potential when 
                 # displacements are made along pairs of normal modes.
@@ -727,7 +738,9 @@ class VSCFMapper(IMF):
 
                 # Saves the displacements and the sampled potential energy.
                 info(" @NM : Saving the sampled potential energy to %s." % (self.v_coupled_filename,), verbosity.medium)
-                np.savetxt(self.v_coupled_filename, didjv)
+                outfile = self.imm.output_maker.get_output(self.v_coupled_filename)
+                np.savetxt(outfile, didjv)
+                outfile.close()
 
                 # Interpolates the displacements on a grid and saves for VSCFSOLVER.
                 info(" @NM : Interpolating the potential energy on a %8d x %8d grid." % (self.nint,self.nint), verbosity.medium)
@@ -738,9 +751,11 @@ class VSCFMapper(IMF):
 
                 # Save coupling correction to file for vistualisation.
                 info(" @NM : Saving the interpolated potential energy to %s\n" % (self.v_coupled_grid_filename,), verbosity.medium)
-                np.savetxt(self.v_coupled_grid_filename, vijgrid)
+                outfile = self.imm.output_maker.get_output(self.v_coupled_grid_filename)
+                np.savetxt(outfile, vijgrid)
+                outfile.close()
             else:
-                info(" @NM : Skipping the mapping for modes %8d and %8d as %s was found.\n" % (self.inm, self.jnm, self.v_coupled_filename), verbosity.medium)
+                info(" @NM : Skipping the mapping for modes %8d and %8d.\n" % (self.inm, self.jnm), verbosity.medium)
 
         else:
             self.terminate()
