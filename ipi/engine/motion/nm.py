@@ -688,7 +688,6 @@ class VSCF(IMF):
         elif step <= len(self.inms):
 
             # Selects the normal mode to map out.
-            vigrid = None
             self.inm = self.inms[step - 1]
 
             # Defines the names of the files that store the sampled 
@@ -727,25 +726,26 @@ class VSCF(IMF):
                 np.savetxt(outfile, v_indeps, header=" npts_neg: %10d npts_pos: %10d" % (self.npts_neg[self.inm], self.npts_pos[self.inm]))
                 outfile.close()
 
-                info(" @NM : Interpolating the potential energy on a grid of %8d points." % (self.nint,), verbosity.medium)
-                displacements_nmi = [self.fnmrms * self.nmrms[self.inm] * (-self.npts_neg[self.inm] + i - 2.0) for i in xrange(self.npts[self.inm] + 4)]
-                vspline = interp1d(displacements_nmi, self.v_indep_list[-1], kind='cubic', bounds_error=False)
-                igrid = np.linspace(-self.npts_neg[self.inm] * self.fnmrms * self.nmrms[self.inm], self.npts_pos[self.inm] * self.fnmrms * self.nmrms[self.inm], self.nint)
-                vigrid = np.asarray([np.asscalar(vspline(igrid[iinm]) - 0.5 * self.imm.w2[self.inm] * igrid[iinm]**2 - self.v0) for iinm in range(self.nint)])
-
-                # Save coupling correction to file for vistualisation.
-                info(" @NM : Saving the interpolated potential energy to %s\n" % (self.v_indep_grid_filename,), verbosity.medium)
-                outfile = self.imm.output_maker.get_output(self.v_indep_grid_filename)
-                np.savetxt(outfile, np.c_[igrid, vigrid])
-                outfile.close()
 
             # We need the independent mode correction on a grid.
             # Checks if the potential exists otherwise loads from file.
             if self.solve:
 
-                if vigrid is None:
+                if os.path.exists(self.imm.output_maker.prefix + '.' + self.v_indep_grid_filename):
                     igrid, vigrid = np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_indep_grid_filename).T
-                
+                else:
+                    info(" @NM : Interpolating the potential energy on a grid of %8d points." % (self.nint,), verbosity.medium)
+                    displacements_nmi = [self.fnmrms * self.nmrms[self.inm] * (-self.npts_neg[self.inm] + i - 2.0) for i in xrange(self.npts[self.inm] + 4)]
+                    vspline = interp1d(displacements_nmi, self.v_indep_list[-1], kind='cubic', bounds_error=False)
+                    igrid = np.linspace(-self.npts_neg[self.inm] * self.fnmrms * self.nmrms[self.inm], self.npts_pos[self.inm] * self.fnmrms * self.nmrms[self.inm], self.nint)
+                    vigrid = np.asarray([np.asscalar(vspline(igrid[iinm]) - 0.5 * self.imm.w2[self.inm] * igrid[iinm]**2 - self.v0) for iinm in range(self.nint)])
+
+                    # Save coupling correction to file for vistualisation.
+                    info(" @NM : Saving the interpolated potential energy to %s\n" % (self.v_indep_grid_filename,), verbosity.medium)
+                    outfile = self.imm.output_maker.get_output(self.v_indep_grid_filename)
+                    np.savetxt(outfile, np.c_[igrid, vigrid])
+                    outfile.close()
+
                 # Stores the interpolated potential in memory.
                 self.q_grids[self.inm][:] = igrid
                 self.v_indep_grids[self.inm][:] = vigrid
@@ -802,32 +802,37 @@ class VSCF(IMF):
                 np.savetxt(outfile, didjv)
                 outfile.close()
 
-                # Interpolates the displacements on a grid and saves for VSCFSOLVER.
-                info(" @NM : Interpolating the potential energy on a %8d x %8d grid." % (self.nint,self.nint), verbosity.medium)
-                vtspl = interp2d(displacements_nmi, displacements_nmj, self.v_coupled, kind='cubic', bounds_error=False)
-                igrid = np.linspace(-self.npts_neg[self.inm] * self.fnmrms * self.nmrms[self.inm], self.npts_pos[self.inm] * self.fnmrms * self.nmrms[self.inm], self.nint)
-                jgrid = np.linspace(-self.npts_neg[self.jnm] * self.fnmrms * self.nmrms[self.jnm], self.npts_pos[self.jnm] * self.fnmrms * self.nmrms[self.jnm], self.nint)
-                vijgrid = (np.asarray( [ np.asarray( [ (vtspl(igrid[iinm],jgrid[ijnm]) - vtspl(igrid[iinm],0.0) - vtspl(0.0,jgrid[ijnm]) + vtspl(0.0,0.0)) for iinm in range(self.nint) ] ) for ijnm in range(self.nint) ] )).reshape((self.nint,self.nint))
-
-                # Also saves the independent mode corrections along the modes.
-                vigrid = np.asarray([np.asscalar(vtspl(igrid[iinm], 0.0) - 0.5 * self.imm.w2[self.inm] * igrid[iinm]**2 - vtspl(0.0,0.0)) for iinm in range(self.nint)])
-                vjgrid = np.asarray([np.asscalar(vtspl(0.0, jgrid[ijnm]) - 0.5 * self.imm.w2[self.jnm] * jgrid[ijnm]**2 - vtspl(0.0,0.0)) for ijnm in range(self.nint)])
-
-                # Save coupling correction to file for vistualisation.
-                info(" @NM : Saving the interpolated potential energy to %s\n" % (self.v_coupled_grid_filename,), verbosity.medium)
-                outfile = self.imm.output_maker.get_output(self.v_coupled_grid_filename)
-                np.savetxt(outfile, vijgrid)
-                outfile.close()
-
             else:
                 info(" @NM : Skipping the mapping for modes %8d and %8d.\n" % (self.inm, self.jnm), verbosity.medium)
+                    displacements_nmi, displacements_nmj, self.v_coupled = np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_coupled_filename).T
+                    self.v_coupled += self.v0
 
             # We need the pair-wise coupling correction on a grid.
             # Checks if the correction exists otherwise loads from file.
             if self.solve:
-                if vijgrid is None:
+
+                if os.path.exists(self.imm.output_maker.prefix + '.' + self.v_coupled_grid_filename):
                     vijgrid = np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_coupled_grid_filename)
 
+                else:
+
+                    # Interpolates the displacements on a grid and saves for VSCFSOLVER.
+                    info(" @NM : Interpolating the potential energy on a %8d x %8d grid." % (self.nint,self.nint), verbosity.medium)
+                    vtspl = interp2d(displacements_nmi, displacements_nmj, self.v_coupled, kind='cubic', bounds_error=False)
+                    igrid = np.linspace(-self.npts_neg[self.inm] * self.fnmrms * self.nmrms[self.inm], self.npts_pos[self.inm] * self.fnmrms * self.nmrms[self.inm], self.nint)
+                    jgrid = np.linspace(-self.npts_neg[self.jnm] * self.fnmrms * self.nmrms[self.jnm], self.npts_pos[self.jnm] * self.fnmrms * self.nmrms[self.jnm], self.nint)
+                    vijgrid = (np.asarray( [ np.asarray( [ (vtspl(igrid[iinm],jgrid[ijnm]) - vtspl(igrid[iinm],0.0) - vtspl(0.0,jgrid[ijnm]) + vtspl(0.0,0.0)) for iinm in range(self.nint) ] ) for ijnm in range(self.nint) ] )).reshape((self.nint,self.nint))
+
+                    # Also saves the independent mode corrections along the modes.
+                    vigrid = np.asarray([np.asscalar(vtspl(igrid[iinm], 0.0) - 0.5 * self.imm.w2[self.inm] * igrid[iinm]**2 - vtspl(0.0,0.0)) for iinm in range(self.nint)])
+                    vjgrid = np.asarray([np.asscalar(vtspl(0.0, jgrid[ijnm]) - 0.5 * self.imm.w2[self.jnm] * jgrid[ijnm]**2 - vtspl(0.0,0.0)) for ijnm in range(self.nint)])
+
+                    # Save coupling correction to file for vistualisation.
+                    info(" @NM : Saving the interpolated potential energy to %s\n" % (self.v_coupled_grid_filename,), verbosity.medium)
+                    outfile = self.imm.output_maker.get_output(self.v_coupled_grid_filename)
+                    np.savetxt(outfile, vijgrid)
+                    outfile.close()
+                
                 # Saves the interpolated potential in memory.
                 self.v_coupled_grids[self.inm, self.jnm][:] = vijgrid
                 self.v_coupled_grids[self.jnm, self.inm][:] = vijgrid.T
