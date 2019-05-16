@@ -19,7 +19,7 @@
       <temperature units='kelvin'> 100 </temperature>
     </ensemble>
     <motion mode='normalmodes'>
-      <normalmodes mode='vscfmapper'>
+      <normalmodes mode='vscf'>
         <dynmat mode='file'> dynmat.data </dynmat>
         <asr> poly </asr>
         <nbasis> 10 </nbasis>

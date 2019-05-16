@@ -42,7 +42,7 @@ class InputNormalMode(InputDictionary):
 
     attribs = {"mode": (InputAttribute, {"dtype": str, "default": "imf",
                                          "help": "The algorithm to be used: independent mode framework (imf) and vibrational self consistent field (vscf).",
-                                         "options": ["imf", "vscfmapper", "vscfsolver" ]})}
+                                         "options": ["imf", "vscf"]})}
     fields = {
                 "prefix": (InputValue, {"dtype": str, "default": "",
                                         "help": "Prefix of the output files."
