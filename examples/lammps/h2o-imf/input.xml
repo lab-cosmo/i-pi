@@ -1,6 +1,5 @@
 <simulation mode='static' verbosity='medium'>
   <output prefix='simulation'>
-    <properties stride='10' filename='out'>  [ step, potential ] </properties>
   </output>
   <total_steps> 5000 </total_steps>
   <prng>
@@ -23,8 +22,9 @@
       <normalmodes mode='imf'>
         <dynmat mode='file'> dynmat.data </dynmat>
         <asr> poly </asr>
-        <nbasis> 10 </nbasis>
-        <nevib> 16 </nevib>
+        <fnmrms> 0.10 </fnmrms>
+        <nbasis> 30 </nbasis>
+        <nevib> 25 </nevib>
         <athresh> 1e-6 </athresh>
         <nint> 501 </nint>
         <print_1b_map> True </print_1b_map>

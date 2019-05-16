@@ -1,13 +1,12 @@
-<simulation mode='static' verbosity='medium'>
+<simulation mode='static' verbosity='medium' threading='false'>
   <output prefix='simulation'>
-    <properties stride='10' filename='out'>  [ step, potential ] </properties>
   </output>
   <total_steps> 5000 </total_steps>
   <prng>
     <seed> 32342 </seed>
   </prng>
   <ffsocket name='lmp' mode='unix' pbc='true'>
-    <address> h2o-imf </address>
+    <address> h2o-vscf </address>
   </ffsocket>
   <system>
     <initialize nbeads='1'>
@@ -25,9 +24,9 @@
         <asr> poly </asr>
         <nbasis> 10 </nbasis>
         <nevib> 16 </nevib>
-        <athresh> 1e-6 </athresh>
+        <athresh> 1e-22 </athresh>
         <nint> 101 </nint>
-        <print_2b_map> True </print_2b_map>
+        <solve> True </solve>
       </normalmodes>
     </motion>
   </system>

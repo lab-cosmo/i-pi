@@ -74,6 +74,9 @@ class InputNormalMode(InputDictionary):
                 "ethresh": (InputValue, {"dtype": float,
                                         "default": 1e-2,
                                         "help": "Convergence thresh for fractional error in vibr free energy."}),
+                "alpha": (InputValue, {"dtype": float,
+                                        "default": 1.0,
+                                        "help": "The fraction of mean field potential to mix with the result of the previous SCF iteration."}),
                 "nkbt": (InputValue, {"dtype": float,
                                         "default": 4.0,
                                         "help": "Threshold for (e - e_gs)/(kB T) of vibr state to be incl in the VSCF and partition function."}),
@@ -83,6 +86,9 @@ class InputNormalMode(InputDictionary):
                 "mptwo": (InputValue, {"dtype": bool,
                                         "default": False,
                                         "help": "Flag determining whether MP2 correction is calculated."}),
+                "solve": (InputValue, {"dtype": bool,
+                                        "default": False,
+                                        "help": "Flag determining whether the VSCF mean field Schroedinger's equation is solved."}),
                 "print_mftpot": (InputValue, {"dtype": bool,
                                         "default": False,
                                         "help": "Flag determining whether MFT potentials are printed to file."}),
@@ -118,11 +124,13 @@ class InputNormalMode(InputDictionary):
         self.fnmrms.store(nm.fnmrms) #"1.0"
         self.nevib.store(nm.nevib) #"25.0"
         self.nint.store(nm.nint) #"101"
+        self.alpha.store(nm.alpha) #"101"
         self.nbasis.store(nm.nbasis) #"10"
         self.athresh.store(nm.athresh) #"1e-2"
         self.ethresh.store(nm.ethresh) #"1e-2"
         self.nkbt.store(nm.nkbt) #"4.0"
         self.nexc.store(nm.nexc) #"5"
+        self.solve.store(nm.solve) #False
         self.mptwo.store(nm.mptwo) #False
         self.print_mftpot.store(nm.print_mftpot) #False
         self.print_1b_map.store(nm.print_1b_map) #False
