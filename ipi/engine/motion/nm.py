@@ -804,6 +804,7 @@ class VSCF(IMF):
 
             else:
                 info(" @NM : Skipping the mapping for modes %8d and %8d.\n" % (self.inm, self.jnm), verbosity.medium)
+                if self.solve:
                     displacements_nmi, displacements_nmj, self.v_coupled = np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_coupled_filename).T
                     self.v_coupled += self.v0
 
