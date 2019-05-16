@@ -33,6 +33,11 @@
            <pile_lambda> 0.5 </pile_lambda>
     	</thermostat>
 	   <timestep units="femtosecond"> 0.25</timestep>
+        <constraints>
+                <tol> 1.0e-06</tol>
+                <nfree> 3 </nfree>
+                <maxcycle> 100 </maxcycle>
+        </constraints>
      </dynamics>
     </motion>
   </motion>

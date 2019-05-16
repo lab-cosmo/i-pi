@@ -10,6 +10,7 @@ import ipi.engine.barostats
 from ipi.utils.inputvalue import InputDictionary, InputAttribute, InputValue, InputArray, input_default
 from ipi.inputs.barostats import InputBaro
 from ipi.inputs.thermostats import InputThermo
+from ipi.inputs.constraints import InputConst
 
 
 __all__ = ['InputDynamics']
@@ -51,6 +52,9 @@ class InputDynamics(InputDictionary):
                                      "help": "The thermostat for the atoms, keeps the atom velocity distribution at the correct temperature."}),
         "barostat": (InputBaro, {"default": input_default(factory=ipi.engine.barostats.Barostat),
                                  "help": InputBaro.default_help}),
+        "constraints": (InputConst, {
+                "default": input_default(factory=ipi.engine.constraints.Constraints),
+                "help": InputConst.default_help}),
         "timestep": (InputValue, {"dtype": float,
                                   "default": 1.0,
                                   "help": "The time step.",
@@ -79,6 +83,7 @@ class InputDynamics(InputDictionary):
         self.timestep.store(dyn.dt)
         self.thermostat.store(dyn.thermostat)
         self.barostat.store(dyn.barostat)
+        self.constraints.store(dyn.constraints)
         self.nmts.store(dyn.nmts)
         self.splitting.store(dyn.splitting)
 

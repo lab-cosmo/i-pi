@@ -9,8 +9,29 @@ functions.
 # See the "licenses" directory for full license information.
 
 import numpy as np
+from ipi.utils.depend import depend_value, dd, dobject
 
 __all__ = ['HolonomicConstraint','BondLength','BondAngle','Eckart']
+
+class Constraints(dobject):
+
+    """
+    Holds parameters used in cosnstrained propagation.
+
+    Attributes:
+       tol: Tolerance threshold for RATTLE
+       maxcycle: Maximum number of cycles in RATTLE
+       nfree: Number of steps into which ring-polymer propagation
+              under spring forces is split at the inner-most mts level.
+
+    """
+
+    def __init__(self, tol=1.0e-06, maxcycle=100, nfree=1):
+
+        dself = dd(self)
+        dself.tol = depend_value(name='tol', value=tol)
+        dself.maxcycle = depend_value(name='maxcycle', value=maxcycle)
+        dself.nfree = depend_value(name='nfree', value=nfree)
 
 
 class HolonomicConstraint(object):

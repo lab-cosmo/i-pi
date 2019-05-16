@@ -19,7 +19,7 @@ from ipi.engine.motion import Motion
 from ipi.utils import mathtools
 from ipi.utils import nmtransform
 from ipi.utils.depend import *
-from ipi.engine.constraints import BondLength, BondAngle, Eckart
+from ipi.engine.constraints import BondLength, BondAngle, Eckart, Constraints
 from ipi.engine.thermostats import Thermostat
 from ipi.engine.barostats import Barostat
 
@@ -52,7 +52,9 @@ class Dynamics(Motion):
             effective classical temperature.
     """
 
-    def __init__(self, timestep, mode="nve", splitting="obabo", thermostat=None, barostat=None, fixcom=False, fixatoms=None, nmts=None):
+    def __init__(self, timestep, mode="nve", splitting="obabo",
+                 thermostat=None, barostat=None, constraints=None,
+                 fixcom=False, fixatoms=None, nmts=None):
         """Initialises a "dynamics" motion object.
 
         Args:
@@ -71,6 +73,11 @@ class Dynamics(Motion):
             self.thermostat = Thermostat()
         else:
             self.thermostat = thermostat
+
+        if constraints is None:
+            self.constraints = Constraints()
+        else:
+            self.constraints = constraints
 
         if nmts is None or len(nmts) == 0:
             dd(self).nmts = depend_array(name="nmts", value=np.asarray([1], int))
@@ -177,7 +184,8 @@ class Dynamics(Motion):
         self.integrator.pconstraints()
 
         #!TODO THOROUGH CLEAN-UP AND CHECK
-        if self.enstype == "nvt" or self.enstype == "npt" or self.enstype == "nst":
+        if (self.enstype == "nvt" or self.enstype == "npt" or
+            self.enstype == "nst" or self.enstype == "qcmd"):
             if self.ensemble.temp < 0:
                 raise ValueError("Negative or unspecified temperature for a constant-T integrator")
             if self.enstype == "npt":
@@ -188,6 +196,15 @@ class Dynamics(Motion):
             elif self.enstype == "nst":
                 if np.trace(self.ensemble.stressext) < 0:
                     raise ValueError("Negative or unspecified stress for a constant-s integrator")
+
+            elif self.enstype == "qcmd":
+                if self.constraints.maxcycle < 1:
+                    raise ValueError("Negative or zero value of maximum number of iterations in RATTLE.")
+                if self.constraints.tol < 0:
+                    raise ValueError("Negative RATTLE convergence threshold.")
+
+                if self.constraints.nfree < 1:
+                    raise ValueError("Negative or zero value for splitting free constrained RP propagation")
 
     def get_ntemp(self):
         """Returns the PI simulation temperature (P times the physical T)."""
@@ -236,6 +253,7 @@ class DummyIntegrator(dobject):
         self.nm = motion.nm
         self.thermostat = motion.thermostat
         self.barostat = motion.barostat
+        self.constraints = motion.constraints
         self.fixcom = motion.fixcom
         self.fixatoms = motion.fixatoms
         self.enstype = motion.enstype
@@ -684,10 +702,13 @@ class QCMDWaterIntegrator(NVTIntegrator):
            clist: list of HolonomicConstraint objects
 
     """
-
-    _nfree = 3 # Number of free ring-polymer time-steps (hard-coded for now)
-    _maxcycle = 100 # Maximum number of cycles over constraints in SHAKE/RATTLE
-    _tol = 1.0e-6 # Tolerance threshold for converging the constraints
+#    def get_tdt(self):
+#        if self.splitting == "obabo":
+#            return self.dt * 0.5
+#        elif self.splitting == "baoab":
+#            return self.dt / (self.inmts * self.constraints.nfree)
+#        else:
+#            raise ValueError("Invalid splitting requested. Only OBABO and BAOAB are supported.")
 
     def bind(self, motion):
         """ Reference all the variables for simpler access and initialise
@@ -763,13 +784,13 @@ class QCMDWaterIntegrator(NVTIntegrator):
         # Cycle over constraints until convergence
         ncycle = 1
         while True:
-            if (ncycle > self._maxcycle):
+            if (ncycle > self.constraints.maxcycle):
                 raise ValueError("Maximum number of iterations exceeded in SHAKE.")
             for i in range(len(self.clist)):
                 sigmas[i,nc], grads[i,nc,:,:] = \
                     self.clist[i](self._temp[nc,:,:], grads[i,nc,:,:])
                 sigmas[i,nc] -= self.targetvals[i,nc]
-                ns[i,:] = np.abs(sigmas[i]) > self._tol
+                ns[i,:] = np.abs(sigmas[i]) > self.constraints.tol
                 dlambda = -sigmas[i,ns[i]] / np.sum(
                         grads[i,ns[i],:,:]*self.mgrads[i,ns[i],:,:],
                         axis=(-1,-2))
@@ -785,7 +806,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
             qc_fin[nc] = qc_init[nc]-CoM[:,None,:]
             # Calculate the Eckart product
             sigmas[-1,nc] = self.eckart(qc_fin, nc)
-            ns[-1,:] = np.abs(sigmas[-1]) > self._tol
+            ns[-1,:] = np.abs(sigmas[-1]) > self.constraints.tol
             # Rotate to Eckart frame
             qc_fin[ns[-1]] = mathtools.eckrot(
                     qc_fin[ns[-1]],
@@ -856,12 +877,12 @@ class QCMDWaterIntegrator(NVTIntegrator):
         # Cycle over constraints until convergence
         ncycle = 1
         while True:
-            if (ncycle > self._maxcycle):
+            if (ncycle > self.constraints.maxcycle):
                 raise ValueError("Maximum number of iterations exceeded in RATTLE.")
             for i in range(len(self.clist)):
                 sdots[i,nc] = np.sum(self._temp[nc,:,:]*self.mgrads[i,nc,:,:],
                                       axis=(-1,-2))
-                ns[i,:] = np.abs(sdots[i,:]) > self._tol
+                ns[i,:] = np.abs(sdots[i,:]) > self.constraints.tol
                 dmu = -sdots[i,ns[i]] / gmg[i,ns[i]]
                 self._temp[ns[i],:,:] += dmu[:,None,None] * \
                                          self.grads[i,ns[i],:,:]
@@ -878,7 +899,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
             sdots[-1,nc] = np.sqrt(
                     np.sum(L[nc]**2, axis=-1)
                     )/mtot.reshape((-1,))[nc]
-            ns[-1,:] = np.abs(sdots[-1,:]) > self._tol
+            ns[-1,:] = np.abs(sdots[-1,:]) > self.constraints.tol
             # Enforce the rotational constraint where not satisfied
             pc_fin[ns[-1]] = mathtools.eckspin(
                     pc_fin[ns[-1]], qc[ns[-1]],
@@ -911,7 +932,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
         """Velocity Verlet momentum propagator with ring-polymer spring forces,
            followed by RATTLE.
         """
-        dt = self.qdt/(self._nfree)
+        dt = self.qdt/(self.constraints.nfree)
         # Note: m3*omegak**2 = dynm3*dynomegak**2
         self.nm.pnm[1:,:] -= (
                 dstrip(self.nm.qnm)[1:,:] *
@@ -923,7 +944,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
         """Velocity Verlet position propagator with ring-polymer spring forces,
            followed by SHAKE.
         """
-        dt = self.qdt/(self._nfree)
+        dt = self.qdt/(self.constraints.nfree)
         self.nm.qnm += dstrip(self.nm.pnm)/dstrip(self.nm.dynm3)*dt
         self.qconstraints(dt) # SHAKE
         self.pconstraints() #RATTLE
@@ -932,13 +953,16 @@ class QCMDWaterIntegrator(NVTIntegrator):
         """Override the exact normal mode propagator for the free ring-polymer
            with a sequence of RATTLE/SHAKE steps.
         """
-        for i in range(self._nfree//2):
+        for i in range(self.constraints.nfree//2):
             self.free_p()
             self.free_q()
+#            if self.splitting == "baoab":
+#                self.tstep()
+#                self.pconstraints()
             self.free_q()
             self.free_p()
 
-        if (self._nfree%2 == 1):
+        if (self.constraints.nfree%2 == 1):
             self.free_p()
             self.free_q()
 
@@ -947,13 +971,16 @@ class QCMDWaterIntegrator(NVTIntegrator):
            with a sequence of RATTLE/SHAKE steps.
         """
 
-        if (self._nfree%2 == 1):
+        if (self.constraints.nfree%2 == 1):
             self.free_q()
             self.free_p()
 
-        for i in range(self._nfree//2):
+        for i in range(self.constraints.nfree//2):
             self.free_p()
             self.free_q()
+#            if self.splitting == "baoab":
+#                self.tstep()
+#                self.pconstraints()
             self.free_q()
             self.free_p()
 
