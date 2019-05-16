@@ -154,6 +154,7 @@ class NormalModeMover(Motion):
             # Computes the centre of mass.
             com = np.dot(np.transpose(self.beads.q.reshape((self.beads.natoms, 3))), self.m) / self.m.sum()
             qminuscom = self.beads.q.reshape((self.beads.natoms, 3)) - com
+
             # Computes the moment of inertia tensor.
             moi = np.zeros((3, 3), float)
             for k in range(self.beads.natoms):
@@ -710,7 +711,7 @@ class VSCF(IMF):
                 self.v_indep_list.append(np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_indep_filename).T)
                 info(" @NM : Loading the sampled potential energy for mode  %8d" % (self.inm,), verbosity.medium)
                 info(" @NM : Using %8d configurations along the +ve direction." % (self.npts_pos[self.inm],), verbosity.medium)
-                info(" @NM : Using %8d configurations along the -ve direction.\n" % (self.npts_neg[self.inm],), verbosity.medium)
+                info(" @NM : Using %8d configurations along the -ve direction." % (self.npts_neg[self.inm],), verbosity.medium)
 
             # If mapping has NOT been perfomed previously, maps the 1D curves.
             else:
@@ -741,7 +742,7 @@ class VSCF(IMF):
                     vigrid = np.asarray([np.asscalar(vspline(igrid[iinm]) - 0.5 * self.imm.w2[self.inm] * igrid[iinm]**2 - self.v0) for iinm in range(self.nint)])
 
                     # Save coupling correction to file for vistualisation.
-                    info(" @NM : Saving the interpolated potential energy to %s\n" % (self.v_indep_grid_filename,), verbosity.medium)
+                    info(" @NM : Saving the interpolated potential energy to %s" % (self.v_indep_grid_filename,), verbosity.medium)
                     outfile = self.imm.output_maker.get_output(self.v_indep_grid_filename)
                     np.savetxt(outfile, np.c_[igrid, vigrid])
                     outfile.close()
@@ -763,7 +764,7 @@ class VSCF(IMF):
             self.v_coupled_filename = self.v_coupled_file_prefix + "." + str(self.inm) + "." + str(self.jnm) + ".dat"
             self.v_coupled_grid_filename = self.v_coupled_grid_file_prefix + "." + str(self.inm) + "." + str(self.jnm) + ".dat"
 
-            info(" @NM : Treating normal modes no.  %8d  and %8d  with frequencies %15.8f cm^-1 and %15.8f cm^-1, respectively." % (self.inm, self.jnm, self.imm.w[self.inm] * 219474,  self.imm.w[self.jnm] * 219474) ,verbosity.medium)
+            info("\n @NM : Treating normal modes no.  %8d  and %8d  with frequencies %15.8f cm^-1 and %15.8f cm^-1, respectively." % (self.inm, self.jnm, self.imm.w[self.inm] * 219474,  self.imm.w[self.jnm] * 219474) ,verbosity.medium)
 
             if os.path.exists(self.imm.output_maker.prefix + '.' + self.v_coupled_filename) != True:
 
@@ -803,7 +804,7 @@ class VSCF(IMF):
                 outfile.close()
 
             else:
-                info(" @NM : Skipping the mapping for modes %8d and %8d.\n" % (self.inm, self.jnm), verbosity.medium)
+                info(" @NM : Skipping the mapping for modes %8d and %8d." % (self.inm, self.jnm), verbosity.medium)
                 if self.solve:
                     displacements_nmi, displacements_nmj, self.v_coupled = np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_coupled_filename).T
                     self.v_coupled += self.v0
@@ -829,7 +830,7 @@ class VSCF(IMF):
                     vjgrid = np.asarray([np.asscalar(vtspl(0.0, jgrid[ijnm]) - 0.5 * self.imm.w2[self.jnm] * jgrid[ijnm]**2 - vtspl(0.0,0.0)) for ijnm in range(self.nint)])
 
                     # Save coupling correction to file for vistualisation.
-                    info(" @NM : Saving the interpolated potential energy to %s\n" % (self.v_coupled_grid_filename,), verbosity.medium)
+                    info(" @NM : Saving the interpolated potential energy to %s" % (self.v_coupled_grid_filename,), verbosity.medium)
                     outfile = self.imm.output_maker.get_output(self.v_coupled_grid_filename)
                     np.savetxt(outfile, vijgrid)
                     outfile.close()
@@ -854,6 +855,7 @@ class VSCF(IMF):
         ai, ei = np.zeros(self.dof), np.zeros(self.dof)
         self.v_mft_grids = self.v_indep_grids.copy()
 
+        info('\n', verbosity.medium)
         # Initializes the wavefunctions for all the normal modes.
         for inm in self.inms:
 

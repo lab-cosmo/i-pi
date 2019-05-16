@@ -25,7 +25,7 @@
         <nbasis> 10 </nbasis>
         <nevib> 16 </nevib>
         <athresh> 1e-22 </athresh>
-        <nint> 101 </nint>
+        <nint> 201 </nint>
         <solve> True </solve>
       </normalmodes>
     </motion>
