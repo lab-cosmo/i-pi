@@ -65,6 +65,9 @@ class InputNormalMode(InputDictionary):
                 "nint": (InputValue, {"dtype": int,
                                         "default": 101,
                                         "help": "Integration points for Hamiltonian matrix elements."}),
+                "pair_range": (InputArray, {"dtype": int,
+                                        "default": np.zeros(0, float),
+                                        "help": "The range of pair combinations of normal modes to be considered."}),
                 "nbasis": (InputValue, {"dtype": int,
                                         "default": 10,
                                         "help": "Number of SHO states used as basis for anharmonic wvfn."}),
@@ -119,6 +122,7 @@ class InputNormalMode(InputDictionary):
         self.mode.store(nm.mode)
         self.prefix.store(nm.prefix)
         self.asr.store(nm.asr)
+        self.pair_range.store(nm.pair_range)
         self.dynmat.store(nm.dynmatrix)
         self.nprim.store(nm.nprim)
         self.fnmrms.store(nm.fnmrms) #"1.0"

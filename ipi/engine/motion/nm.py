@@ -44,7 +44,7 @@ class NormalModeMover(Motion):
     """Normal Mode analysis.
     """
 
-    def __init__(self, fixcom=False, fixatoms=None, mode="imf", dynmat=np.zeros(0, float),  prefix="", asr="none", nprim="1", fnmrms="1.0", nevib="25.0", nint="101", nbasis="10", athresh="1e-2", ethresh="1e-2", nkbt="4.0", nexc="5", solve=False, mptwo=False, print_mftpot=False, print_1b_map=False, print_2b_map=False, threebody=False, print_vib_density=False, nparallel=1, alpha=1.0):
+    def __init__(self, fixcom=False, fixatoms=None, mode="imf", dynmat=np.zeros(0, float),  prefix="", asr="none", nprim="1", fnmrms="1.0", nevib="25.0", nint="101", nbasis="10", athresh="1e-2", ethresh="1e-2", nkbt="4.0", nexc="5", solve=False, mptwo=False, print_mftpot=False, print_1b_map=False, print_2b_map=False, threebody=False, print_vib_density=False, nparallel=1, alpha=1.0, pair_range=np.zeros(0, int)):
         """Initialises NormalModeMover.
         Args:
         fixcom	: An optional boolean which decides whether the centre of mass
@@ -88,6 +88,7 @@ class NormalModeMover(Motion):
         self.threebody = threebody #False
         self.print_vib_density = print_vib_density #False
         self.nparallel = nparallel #False
+        self.pair_range = pair_range
 
         if self.prefix == "":
                 self.prefix = self.mode
@@ -607,6 +608,8 @@ class VSCF(IMF):
         #self.threebody = self.imm.threebody
         self.solve = self.imm.solve
         self.alpha = self.imm.alpha
+        self.pair_range = self.imm.pair_range
+
 
         # Filenames for storing the number of samples configurations
         # and their potential energy.
@@ -646,6 +649,12 @@ class VSCF(IMF):
 
         # Saves the indices of pairs of modes
         self.pair_combinations = list(combinations(self.inms, 2))
+
+        # Selects the range of pair of modes to be calculated.
+        if self.pair_range.size == 0:
+            self.pair_range = np.asarray([0, len(self.pair_combinations)])
+
+        print self.pair_range
 
         # Variables for storing the number of sampled configurations 
         # along the +ve and -ve displacements along normal modes and 
@@ -751,9 +760,13 @@ class VSCF(IMF):
                 self.q_grids[self.inm][:] = igrid
                 self.v_indep_grids[self.inm][:] = vigrid
 
-        # Maps 2D surfaces.
+        # Maps 2D surfaces if the index of the pair lies in range.
         elif step <= len(self.inms) +  len(self.inms) * (len(self.inms) - 1) / 2:
-       
+
+            # Checks if the index lies in range.
+            if not self.pair_range[0] <= step - len(self.inms) - 1 < self.pair_range[1]:
+                return
+ 
             # Selects the normal mode pair to map out.
             vijgrid = None
             self.inm, self.jnm = self.pair_combinations[step - len(self.inms) - 1]
@@ -938,7 +951,7 @@ class VSCF(IMF):
             v_indeps.append(v)
 
             # Bails out if the sampled potenital energy exceeds a user defined threshold.
-            if self.v0 + self.nevib * self.imm.nmevib[self.inm] < np.absolute(v):
+            if self.nevib * self.imm.nmevib[self.inm] < np.absolute(v - self.v0):
 
                 # Adds two extra points required later for solid spline fitting at edges.
                 self.imm.dbeads.q -= dev
@@ -962,7 +975,7 @@ class VSCF(IMF):
             v_indeps.append(v)
 
             # Bails out if the sampled potenital energy exceeds a user defined threshold.
-            if self.v0 + self.nevib * self.imm.nmevib[self.inm] < np.absolute(v):
+            if self.nevib * self.imm.nmevib[self.inm] < np.absolute(v - self.v0) :
 
                 # add two extra points required later for solid spline fitting at edges
                 self.imm.dbeads.q += dev
