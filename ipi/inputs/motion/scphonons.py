@@ -43,7 +43,6 @@ class InputSCPhonons(InputDictionary):
     attribs = {"mode": (InputAttribute, {"dtype": str, "default": "qn",
                                          "help": "The algorithm to be used",
                                          "options": ["qn", "cl"]})}
-    #!TODO give more informative help strings. When there are multiple options, the meaning of the options should be explained
     fields = {
         "prefix": (InputValue, {"dtype": str, "default": "",
                                 "help": "Prefix of the output files."
@@ -101,7 +100,7 @@ class InputSCPhonons(InputDictionary):
     dynamic = {}
 
     default_help = "Fill in."
-    default_label = "PHONONS"
+    default_label = "SCPHONONS"
 
     def store(self, phonons):
         if phonons == {}:
