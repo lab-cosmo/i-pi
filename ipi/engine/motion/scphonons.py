@@ -233,36 +233,39 @@ class SCPhononator(DummyPhononator):
         self.dm.oldK = self.dm.K
         self.dm.imc = 1
 
+        info("\n @SCP : Beginning SCP step no. %8d" % (self.dm.isc,), verbosity.medium)
+
         # prints the force constant matrix.
         outfile = self.dm.output_maker.get_output(self.dm.prefix + ".K." + str(self.dm.isc))
         np.savetxt(outfile,  self.dm.K)
         outfile.close()
-
-        # prints the displacement correlation matrix.
-        outfile = self.dm.output_maker.get_output(self.dm.prefix + ".D." + str(self.dm.isc))
-        np.savetxt(outfile,  self.dm.D)
-        outfile.close()
+        info(" @SCP : Saving the force constant matrix.", verbosity.medium)
 
         # prints the inverse displacement correlation matrix.
         outfile = self.dm.output_maker.get_output(self.dm.prefix + ".iD." + str(self.dm.isc))
         np.savetxt(outfile,  self.dm.iD)
         outfile.close()
+        info(" @SCP : Saving the inverse displacement correlation matrix.", verbosity.medium)
 
         # prints the mean position.
         outfile = self.dm.output_maker.get_output(self.dm.prefix + ".q." + str(self.dm.isc))
         np.savetxt(outfile,  self.dm.beads.q)
         outfile.close()
+        info(" @SCP : Saving the mean position.", verbosity.medium)
 
         # prints the frequencies. 
         outfile = self.dm.output_maker.get_output(self.dm.prefix + ".w." + str(self.dm.isc))
         np.savetxt(outfile,  self.dm.w)
         outfile.close()
+        info(" @SCP : Saving the frequencies.", verbosity.medium)
 
         # prints the potential energy at the mean position. 
         outfile = self.dm.output_maker.get_output(self.dm.prefix + ".V0." + str(self.dm.isc))
         np.savetxt(outfile,  self.dm.forces.pots)
         outfile.close()
+        info(" @SCP : Saving the minimum potential.", verbosity.medium)
 
+        info(" @SCP : Generating %8d new confiurations to be sampled." % (self.dm.max_steps,), verbosity.medium)
         # Creates a list of configurations that are to be sampled.
         while self.dm.imc <= self.dm.max_steps:
 
@@ -286,6 +289,7 @@ class SCPhononator(DummyPhononator):
 
         # Resets the number of MC steps to 1.
         self.dm.imc = 1
+        info(" @SCP : Performing %8d new force evaluations." % (self.dm.max_steps,), verbosity.medium)
 
     def step(self, step=None):
         """
@@ -311,23 +315,26 @@ class SCPhononator(DummyPhononator):
         Prints the energetics of the sampled configurations.
         """
 
-        # prints the potential energy of the sampled configurations.
-        outfile = self.dm.output_maker.get_output(self.dm.prefix + ".v." +
-                   str(self.dm.isc))
-        np.savetxt(outfile,  self.v[self.dm.isc])
-        outfile.close()
-
         # prints the sampled configurations.
         outfile = self.dm.output_maker.get_output(self.dm.prefix + ".x." +
                    str(self.dm.isc))
         np.savetxt(outfile,  self.x[self.dm.isc])
         outfile.close()
+        info(" @SCP : Saving the sampled confiugrations.", verbosity.medium)
+
+        # prints the potential energy of the sampled configurations.
+        outfile = self.dm.output_maker.get_output(self.dm.prefix + ".v." +
+                   str(self.dm.isc))
+        np.savetxt(outfile,  self.v[self.dm.isc])
+        outfile.close()
+        info(" @SCP : Saving the potential energy of the sampled configurations.", verbosity.medium)
 
         # prints the sampled configurations.
         outfile = self.dm.output_maker.get_output(self.dm.prefix + ".f." +
                    str(self.dm.isc))
         np.savetxt(outfile,  self.f[self.dm.isc])
         outfile.close()
+        info(" @SCP : Saving the forces of the sampled configurations.", verbosity.medium)
 
         self.dm.isc += 1
         self.dm.imc = 0
@@ -434,19 +441,12 @@ class SCPhononator(DummyPhononator):
             self.apply_hpf()
             self.get_KnD()
 
-            # Calculates the force along norma moces.
+            # Calculates the force along normal moces.
             # Zeros the forces along the known "zero modes".
             # Estimates the error.
             fnm = np.dot(self.dm.V.T, f)
             fnm[self.z] = 0.0
             fnm_err = np.sqrt(np.dot(self.dm.V.T**2, f_err**2))
-
-            # *SEEM TO BE REDUNDANT*
-            # Bails out if all forces are statistically insignificant.
-            #if np.all(np.abs(fnm) < fnm_err):
-            #    return
-            #if self.checkweights and np.max(batch_w) < self.wthreshold:
-            #    return
 
             # Zeros the displacement along "insignificant" normal modes.
             iKfnm = self.dm.iw2 * fnm
@@ -470,12 +470,12 @@ class SCPhononator(DummyPhononator):
             while True:
 
                 # Inner Optimization Loop
-
                 w = 1.0
 
                 while True:
 
-                    # Calculates the reweighted force.
+                    # Calculates the force, the error and the
+                    # batch weights.
                     f, f_err, batch_w = self.weighted_force()
 
                     # Saves the change in the weight associated with
@@ -484,65 +484,66 @@ class SCPhononator(DummyPhononator):
                     w = batch_w[-1]
                     if np.absolute(w - w_old) < 1e-4:
                         scale_forces *= 1.1
-                        print "Increasing displacement by 10 %."
+                        #info(" @SCP: Increasing displacement by 10 %.")
+                    elif np.absolute(w - w_old) > 5e-2:
+                        scale_forces /= 1.1
 
-                    # Computes the force along the normal modes.
-                    fnm = np.dot(self.dm.V.T, f)
-                    fnm[self.z] = 0.0
-                    fnm_err = np.sqrt(np.dot(self.dm.V.T**2, f_err**2))
-
-                    if self.precheck and np.all(np.abs(fnm) < fnm_err):
-                        print "All forces components are statistically insignificant."
-                        break
-
-                    if self.checkweights and np.max(batch_w) < self.wthreshold:
-                        print "MAX batch weight, batch weight threshold", np.max(
-                            batch_w), self.wthreshold
-                        print "Finished the optimization of the mean position." 
-                        print "Modifying the force constant matrix."
-                        break
-
-                    # Calculates the displacement along the normal modes.
-                    # Moves only if forces are statistically insignificant.
-                    # Does not move along zero modes.
-                    dqnm = self.dm.iw2 * fnm * scale_forces / self.dm.dof
-                    dqnm[np.abs(fnm) < fnm_err] = 0.0
+                    # Zeros the displacement along "insignificant" normal modes.
+                    iKfnm = self.dm.iw2 * fnm
+                    iKfnm[np.abs(fnm) < fnm_err] = 0.0
+                    dqnm = iKfnm
                     dqnm[self.z] = 0.0
-                    
-                    # Calculates the displacement in Cartesian space.
+
+                    # Breaks out if the forces are statistically insignificant
+                    # or if the weights become large.
+                    # Breaks if all the forces are statistically insignificant.
+                    if np.all(np.abs(fnm) < fnm_err):
+                        info(" @SCP : All forces are statistically insignificant.", verbosity.medium)
+                        info(" @SCP : Exiting the inner optimization loop.", verbosity.medium)  
+                        break
+                    # or if the batch weight goes to shit.
+                    elif batch_w[-1] < self.wthreshold:
+                        info(" @SCP : Batch weight is small.", verbosity.medium)
+                        info(" @SCP : Exiting the inner optimization loop.", verbosity.medium)  
+                        break
+
                     self.dm.beads.q += np.dot(self.dm.V, dqnm)
+                    info(" @SCP : <f> =  %10.8f +/-  %10.8f: : number of batch weights > %10.8f =  %8d / %8d : largest batch weight = %10.8e" % (np.linalg.norm(f), np.linalg.norm(f_err), self.wthreshold, sum(batch_w > self.wthreshold), len(batch_w), batch_w[-1]), verbosity.medium)
 
-                    print "Moving along the force. |f| = " , np.linalg.norm(fnm)
-                    print "Batch weights %s", batch_w
-
-                # Once q0 is optimized. Sets the K to the averaged one, thus imposing the steady state condition.
-                dK = self.weighted_hessian()
+                # Calculates the hessian.
+                # Applies acoustic sum rule to project out zero modes.
+                # Applies a high pass filter to zero out low frequency modes.
+                # Calculates the displacement correction matrix.
+                k = self.weighted_hessian()
                 self.dm.dynmatrix = np.dot(
-                    self.dm.isqM, np.dot((dK + dK.T) / 2.0, self.dm.isqM))
+                    self.dm.isqM, np.dot((k + k.T) / 2.0, self.dm.isqM))
                 self.apply_asr()
                 self.apply_hpf()
                 self.get_KnD()
 
-                # Checks if the another round of optimization is possible.
+                # Stores the old forces.
                 fnm_old, fnm_err_old = fnm, fnm_err
+
+                # Recalculates the new forces in normal mode coordinates..
                 f, f_err, batch_w = self.weighted_force()
                 f_err = f_err
                 fnm = np.dot(self.dm.V.T, f)
                 fnm[self.z] = 0.0
                 fnm_err = np.sqrt(np.dot(self.dm.V.T**2, f_err**2))
 
-                # Breaks if the forces are statistically insignificant.
+                # Breaks if all the forces are statistically insignificant.
                 if np.all(np.abs(fnm) < fnm_err):
-                    print "Forces are within statistical error. Need to draw more points."
+                    info(" @SCP : All forces are statistically insignificant.", verbosity.medium)
+                    info(" @SCP : Skipping the optimization step.", verbosity.medium)  
+                    break
+                # or if the batch weights have gone to shit.
+                elif np.max(batch_w) < self.wthreshold:
+                    info(" @SCP : Batch weights are small..", verbosity.medium)
+                    info(" @SCP : Skipping the optimization step.", verbosity.medium)  
                     break
 
-                # Breaks if the batch weights have gone to shit.
-                if np.max(batch_w) < self.wthreshold:
-                    print "The batch weights are small. Need to draw more points."
-                    break
-
-                if np.linalg.norm(np.abs(fnm_old - fnm)) < np.linalg.norm(fnm_err):
-                    print "Convergece in forces reached."
+                if np.all(np.abs(fnm_old - fnm) < fnm_err):
+                    info(" @SCP : All forces are converged.", verbosity.medium)  
                     break
 
     def weighted_force(self):
@@ -559,15 +560,19 @@ class SCPhononator(DummyPhononator):
         var_f = dstrip(self.f[i]).copy()[-1] * 0.0
         norm = 0.0
         batch_w = np.zeros(self.dm.isc)
+
         for i in range(self.dm.isc):
+
+            # Calculates the harmonic force.
             f = self.f[i]
             x = self.x[i]
             fh = -1.0 * np.dot(x - qp, Kp)
-            # Calculates the weights to calculate average for the distribution for (qp, iDp)
+
+            # Calculates the weights to calculate average for the distribution for (qp, iDp).
             w, sw, rw = self.calculate_weights(i)
             batch_w[i] = sw
 
-            # Simply multiplies the forces by the weights and averages
+            # Simply multiplies the forces by the weights and averages.
             V1 = np.sum(rw)
             V2 = np.sum(rw**2)
             avg_fi = np.sum(rw * (f - fh), axis=0) / V1
@@ -575,6 +580,7 @@ class SCPhononator(DummyPhononator):
             avg_f += sw * avg_fi
             var_f += sw**2 * var_fi
             norm += sw
+
         return avg_f / norm,  np.sqrt(var_f / norm**2 / self.dm.max_steps), batch_w
 
     def weighted_hessian(self):

@@ -1,7 +1,5 @@
 <simulation mode='static' verbosity='medium' threading='false'>
   <output prefix='simulation'>
-    <properties stride='10000' filename='out'>[ step, time{picosecond}, conserved{electronvolt}, temperature{kelvin}, kinetic_cv{electronvolt}, potential{electronvolt}, pressure_cv{megapascal}]</properties>
-    <trajectory filename='pos' stride='10000'>positions{angstrom}</trajectory>
   </output>
   <total_steps>50000000</total_steps>
   <prng>
@@ -26,7 +24,7 @@
       <max_iter> 10 </max_iter>
       <tau> 10 </tau>
       <random_type> pseudo </random_type>
-      <displace_mode> nmik </displace_mode>
+      <displace_mode> rnmik </displace_mode>
     </scp>
   </motion>
   <ensemble>

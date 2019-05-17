@@ -336,8 +336,6 @@ class IMF(DummyCalculator):
         else:
             return A, E
 
-        
-
     def step(self, step=None):
         """Computes the Born Oppenheimer curve along a normal mode."""
 
