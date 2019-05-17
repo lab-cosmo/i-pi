@@ -1,0 +1,36 @@
+<simulation verbosity="high">
+  <output prefix="300K_64mol_032N_qcmd">
+      <properties stride="8" filename="out"> [time{picosecond}, conserved, temperature{kelvin}, potential, kinetic_md, spring] </properties>
+  </output>
+  <total_steps>8000</total_steps>
+  <prng>
+    <seed>87549</seed>
+  </prng>
+  <ffsocket name="driver" mode="inet" pbc="false">
+    <address>localhost</address>
+    <port> 31415 </port>
+  </ffsocket>
+  <system>
+    <initialize nbeads="32">
+      <file mode="xyz"> init.xyz </file>
+      <velocities mode="thermal" units="kelvin"> 300 </velocities>
+    </initialize>
+    <forces>
+            <force forcefield='driver'/>
+    </forces>
+    <ensemble>
+      <temperature units="kelvin">300</temperature>
+    </ensemble>
+   <motion mode="multi">
+    <motion mode="dynamics">
+      <dynamics mode='nvt' splitting="baoab">
+    	<thermostat mode="pile_l">
+           <tau units="femtosecond">100</tau>
+           <pile_lambda> 0.5 </pile_lambda>
+    	</thermostat>
+	   <timestep units="femtosecond"> 0.125</timestep>
+     </dynamics>
+    </motion>
+  </motion>
+  </system>
+</simulation>

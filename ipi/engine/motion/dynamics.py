@@ -22,6 +22,7 @@ from ipi.utils.depend import *
 from ipi.engine.constraints import BondLength, BondAngle, Eckart, Constraints
 from ipi.engine.thermostats import Thermostat
 from ipi.engine.barostats import Barostat
+from ipi.utils.softexit import softexit
 
 
 #__all__ = ['Dynamics', 'NVEIntegrator', 'NVTIntegrator', 'NPTIntegrator', 'NSTIntegrator', 'SCIntegrator`']
@@ -702,13 +703,25 @@ class QCMDWaterIntegrator(NVTIntegrator):
            clist: list of HolonomicConstraint objects
 
     """
-#    def get_tdt(self):
-#        if self.splitting == "obabo":
-#            return self.dt * 0.5
-#        elif self.splitting == "baoab":
-#            return self.dt / (self.inmts * self.constraints.nfree)
-#        else:
-#            raise ValueError("Invalid splitting requested. Only OBABO and BAOAB are supported.")
+
+    def get_fpdt(self):
+        return 0.5 * self.dt / (self.inmts * self.constraints.nfree)
+
+    def get_fqdt(self):
+        if self.splitting == "obabo":
+            return self.dt / (self.inmts * self.constraints.nfree)
+        elif self.splitting == "baoab":
+            return 0.5 * self.dt / (self.inmts * self.constraints.nfree)
+        else:
+            raise ValueError("Invalid splitting requested. Only OBABO and BAOAB are supported.")
+
+    def get_tdt(self):
+        if self.splitting == "obabo":
+            return self.dt * 0.5
+        elif self.splitting == "baoab":
+            return self.dt / (self.inmts * self.constraints.nfree)
+        else:
+            raise ValueError("Invalid splitting requested. Only OBABO and BAOAB are supported.")
 
     def bind(self, motion):
         """ Reference all the variables for simpler access and initialise
@@ -720,6 +733,16 @@ class QCMDWaterIntegrator(NVTIntegrator):
         """
 
         super(QCMDWaterIntegrator, self).bind(motion)
+        dself = dd(self)
+        dconst = dd(self.constraints)
+        # Time-step for constrained free ring-polymer propagation (positions)
+        dself.fqdt = depend_value(name="fqdt", func=self.get_fqdt,
+                                  dependencies=[dself.splitting, dself.dt,
+                                                dself.inmts, dconst.nfree])
+        dself.fpdt = depend_value(name="fpdt", func=self.get_fpdt,
+                                  dependencies=[dself.dt, dself.inmts,
+                                                dconst.nfree])
+
         if (self.beads.natoms%3 != 0):
             raise ValueError("QCMDWaterIntegrator received a total "+
                              "of {:d} atoms. ".format(self.beads.natoms)+
@@ -746,6 +769,20 @@ class QCMDWaterIntegrator(NVTIntegrator):
             mg[...] = self._minv(g)
         self._ethermo = False
 
+    def _mtensor(self, arrin):
+        """ Multiply an array by the mass tensor.
+
+        Args:
+            arrin .............. input 2d array, same size as beads.q
+        """
+
+        init_shape = arrin.shape
+        wkspace = self.nm.transform.b2nm(
+                arrin.reshape((-1, self.beads.nbeads)).T
+                )
+        wkspace *= dstrip(self.nm.dynm3)
+        return np.reshape(self.nm.transform.nm2b(wkspace).T, init_shape)
+
     def _minv(self, arrin):
         """ Multiply an array by the inverse of the mass tensor.
 
@@ -760,15 +797,17 @@ class QCMDWaterIntegrator(NVTIntegrator):
         wkspace /= dstrip(self.nm.dynm3)
         return np.reshape(self.nm.transform.nm2b(wkspace).T, init_shape)
 
-    def qconstraints(self, dt):
+    def qconstraints(self):
         """This applies SHAKE to the positions and momenta.
 
         Args:
            dt: integration time-step for SHAKE/RATTLE
         """
-
+        #!! TODO: remove this after debugging
+        np.seterr(all='raise')
         # Copy the current ring-polymer configuration into workspace array
         self._temp[...] = np.reshape(dstrip(self.beads.q).T,self._temp.shape)
+        q_init = self._temp.copy()
         # Initialise the Lagrange multipliers
         lambdas = np.zeros_like(self.targetvals)
         # Initialise arrays flagging convergences
@@ -777,7 +816,6 @@ class QCMDWaterIntegrator(NVTIntegrator):
         # Initialise the current values of constraint fxns and grads
         sigmas = np.empty_like(ns, dtype=np.float)
         grads = np.empty_like(self.grads)
-        ngp, ncart, nbeads = self._temp.shape
         qc_init = np.empty_like(self.eckart.qref)
         qc_fin = np.empty_like(qc_init)
         mtot = np.sum(self.eckart.mref[...,0:1], axis=-2)
@@ -785,16 +823,32 @@ class QCMDWaterIntegrator(NVTIntegrator):
         ncycle = 1
         while True:
             if (ncycle > self.constraints.maxcycle):
-                raise ValueError("Maximum number of iterations exceeded in SHAKE.")
+                self._msg = "Maximum number of iterations exceeded in SHAKE."
+                raise ValueError(self._msg)
             for i in range(len(self.clist)):
-                sigmas[i,nc], grads[i,nc,:,:] = \
-                    self.clist[i](self._temp[nc,:,:], grads[i,nc,:,:])
-                sigmas[i,nc] -= self.targetvals[i,nc]
-                ns[i,:] = np.abs(sigmas[i]) > self.constraints.tol
+                try:
+                    sigmas[i,nc], grads[i,nc,:,:] = \
+                        self.clist[i](self._temp[nc,:,:], grads[i,nc,:,:])
+                    sigmas[i,nc] -= self.targetvals[i,nc]
+                    ns[i,:] = np.abs(sigmas[i]) > self.constraints.tol
+                except:
+                    igp = np.argwhere(np.isnan(sigmas[i]))[0,0]
+                    self._msg = "SHAKE got invalid sigma at iter #{:d}".format(ncycle) +\
+                          " for constraint #{:d}".format(i) + \
+                          " in group #{:d}\n".format(igp) + \
+                          " with target {:.16f}\n".format(self.targetvals[i,igp]) + \
+                          " and configuration "+self._temp[igp].__repr__()
+                    raise ValueError(self._msg)
                 dlambda = -sigmas[i,ns[i]] / np.sum(
                         grads[i,ns[i],:,:]*self.mgrads[i,ns[i],:,:],
                         axis=(-1,-2))
-                lambdas[i,ns[i]] += dlambda
+                if np.any(np.isnan(dlambda)):
+                    igp = np.argwhere(np.isnan(dlambda))[0,0]
+                    self._msg = "SHAKE got invalid dlambda at iter #{:d}".format(ncycle) +\
+                          " for constraint #{:d}".format(i) + \
+                          " with target {:.16f}\n".format(self.targetvals[i,igp]) + \
+                          " and configuration "+self._temps[ns[i],...][igp].__repr__()
+                    raise ValueError(self._msg)
                 self._temp[ns[i],:,:] += dlambda[:,None,None] * \
                                          self.mgrads[i,ns[i],:,:]
             # Get the centoids
@@ -828,9 +882,9 @@ class QCMDWaterIntegrator(NVTIntegrator):
         # Copy the coordinates back into beads
         self.beads.q[...] = self._temp.reshape((-1,self.beads.nbeads)).T
         # Update the momenta
-        self._temp[...] = np.reshape(dstrip(self.beads.p).T,self._temp.shape)
-        self._temp += np.sum(lambdas[:,:,None,None]*self.grads,axis=0)/dt
-        self.beads.p[...] = self._temp.reshape((-1,self.beads.nbeads)).T
+        self._temp -= q_init # Change in positions
+        self._temp[...] = self._mtensor(self._temp)/self.fqdt
+        self.beads.p += self._temp.reshape((-1,self.beads.nbeads)).T
         # Update the constraint gradients
         self.grads[...] = grads
         for g, mg in zip(self.grads, self.mgrads):
@@ -847,10 +901,6 @@ class QCMDWaterIntegrator(NVTIntegrator):
         cell or any atoms are fixed.
         """
 
-        if self.fixcom:
-            #!! TODO: ignore for the present
-            pass
-            #raise ValueError("Cannot explicitly fix CoM in a constrained simulation")
         if len(self.fixatoms) > 0:
             raise ValueError("Cannot explicitly fix atoms in a constrained simulation")
         # Copy the current ring-polymer momenta into workspace array
@@ -878,6 +928,8 @@ class QCMDWaterIntegrator(NVTIntegrator):
         ncycle = 1
         while True:
             if (ncycle > self.constraints.maxcycle):
+                #!! TODO: this currently quits mid-step, need to think of a better
+                # way in future.
                 raise ValueError("Maximum number of iterations exceeded in RATTLE.")
             for i in range(len(self.clist)):
                 sdots[i,nc] = np.sum(self._temp[nc,:,:]*self.mgrads[i,nc,:,:],
@@ -932,57 +984,20 @@ class QCMDWaterIntegrator(NVTIntegrator):
         """Velocity Verlet momentum propagator with ring-polymer spring forces,
            followed by RATTLE.
         """
-        dt = self.qdt/(self.constraints.nfree)
         # Note: m3*omegak**2 = dynm3*dynomegak**2
         self.nm.pnm[1:,:] -= (
                 dstrip(self.nm.qnm)[1:,:] *
                 dstrip(self.beads.m3)[1:,:] *
-                dstrip(self.nm.omegak2)[1:,None])*dt
+                dstrip(self.nm.omegak2)[1:,None])*self.fpdt
         self.pconstraints() # RATTLE
 
     def free_q(self):
         """Velocity Verlet position propagator with ring-polymer spring forces,
            followed by SHAKE.
         """
-        dt = self.qdt/(self.constraints.nfree)
-        self.nm.qnm += dstrip(self.nm.pnm)/dstrip(self.nm.dynm3)*dt
-        self.qconstraints(dt) # SHAKE
+        self.nm.qnm += dstrip(self.nm.pnm)/dstrip(self.nm.dynm3)*self.fqdt
+        self.qconstraints() # SHAKE
         self.pconstraints() #RATTLE
-
-    def free_qstep_ba(self):
-        """Override the exact normal mode propagator for the free ring-polymer
-           with a sequence of RATTLE/SHAKE steps.
-        """
-        for i in range(self.constraints.nfree//2):
-            self.free_p()
-            self.free_q()
-#            if self.splitting == "baoab":
-#                self.tstep()
-#                self.pconstraints()
-            self.free_q()
-            self.free_p()
-
-        if (self.constraints.nfree%2 == 1):
-            self.free_p()
-            self.free_q()
-
-    def free_qstep_ab(self):
-        """Override the exact normal mode propagator for the free ring-polymer
-           with a sequence of RATTLE/SHAKE steps.
-        """
-
-        if (self.constraints.nfree%2 == 1):
-            self.free_q()
-            self.free_p()
-
-        for i in range(self.constraints.nfree//2):
-            self.free_p()
-            self.free_q()
-#            if self.splitting == "baoab":
-#                self.tstep()
-#                self.pconstraints()
-            self.free_q()
-            self.free_p()
 
     def tstep(self):
         """Velocity Verlet thermostat step, followed by RATTLE. This also
@@ -993,3 +1008,75 @@ class QCMDWaterIntegrator(NVTIntegrator):
 
         self._ethermo = True
         super(QCMDWaterIntegrator,self).tstep()
+
+    def free_qstep_ba(self):
+        """Override the exact normal mode propagator for the free ring-polymer
+           with a sequence of RATTLE/SHAKE steps.
+        """
+        for i in range(self.constraints.nfree//2):
+            self.free_p() # B
+            self.free_q() # A
+            if self.splitting == "baoab":
+                self.tstep() # O
+                self.pconstraints()
+                self.free_q() # A
+            self.free_p() # B
+
+        if (self.constraints.nfree%2 == 1):
+            self.free_p()
+            self.free_q()
+            if self.splitting == "baoab":
+                self.tstep()
+                self.pconstraints()
+
+    def free_qstep_ab(self):
+        """Override the exact normal mode propagator for the free ring-polymer
+           with a sequence of RATTLE/SHAKE steps.
+        """
+
+        if (self.constraints.nfree%2 == 1):
+            if self.splitting == "baoab":
+                self.free_q()
+            self.free_p()
+
+        for i in range(self.constraints.nfree//2):
+            self.free_p()
+            self.free_q()
+            if self.splitting == "baoab":
+                self.tstep()
+                self.pconstraints()
+                self.free_q()
+            self.free_p()
+
+    def step(self, step=None):
+        """Does one simulation time step."""
+
+        if self.splitting == "obabo":
+            # thermostat is applied for dt/2
+            self.tstep()
+            self.pconstraints()
+
+            # forces are integerated for dt with MTS.
+            try:
+                self.mtsprop(0)
+            except:
+                softexit.trigger(self._msg)
+                raise
+
+            # thermostat is applied for dt/2
+            self.tstep()
+            self.pconstraints()
+
+        elif self.splitting == "baoab":
+
+            try:
+                self.mtsprop_ba(0)
+            except:
+                softexit.trigger(self._msg)
+                raise
+            try:
+                self.mtsprop_ab(0)
+            except:
+                softexit.trigger(self._msg)
+                raise
+
