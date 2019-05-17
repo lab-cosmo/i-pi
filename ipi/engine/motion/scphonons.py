@@ -482,11 +482,11 @@ class SCPhononator(DummyPhononator):
                     # last batch.
                     w_old = w
                     w = batch_w[-1]
-                    #if np.absolute(w - w_old) < 1e-4:
-                    #    scale_forces *= 1.1
+                    if np.absolute(w - w_old) < 1e-4:
+                        scale_forces *= 1.1
                         #info(" @SCP: Increasing displacement by 10 %.")
-                    #elif np.absolute(w - w_old) > 5e-2:
-                    #    scale_forces /= 1.1
+                    elif np.absolute(w - w_old) > 5e-2:
+                        scale_forces /= 1.1
 
                     # Computes the force along the normal modes.
                     fnm = np.dot(self.dm.V.T, f)
