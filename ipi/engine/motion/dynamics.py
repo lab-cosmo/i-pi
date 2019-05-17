@@ -768,6 +768,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
             t[:], g = c(self._temp, g)
             mg[...] = self._minv(g)
         self._ethermo = False
+        self._msg = ""
 
     def _mtensor(self, arrin):
         """ Multiply an array by the mass tensor.
@@ -839,10 +840,13 @@ class QCMDWaterIntegrator(NVTIntegrator):
                           " with target {:.16f}\n".format(self.targetvals[i,igp]) + \
                           " and configuration "+self._temp[igp].__repr__()
                     raise ValueError(self._msg)
-                dlambda = -sigmas[i,ns[i]] / np.sum(
-                        grads[i,ns[i],:,:]*self.mgrads[i,ns[i],:,:],
-                        axis=(-1,-2))
-                if np.any(np.isnan(dlambda)):
+                try:
+                    dlambda = -sigmas[i,ns[i]] / np.sum(
+                            grads[i,ns[i],:,:]*self.mgrads[i,ns[i],:,:],
+                            axis=(-1,-2))
+                    if np.any(np.isnan(dlambda)):
+                        raise ValueError
+                except:
                     igp = np.argwhere(np.isnan(dlambda))[0,0]
                     self._msg = "SHAKE got invalid dlambda at iter #{:d}".format(ncycle) +\
                           " for constraint #{:d}".format(i) + \
