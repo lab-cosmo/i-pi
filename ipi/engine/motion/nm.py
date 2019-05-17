@@ -582,12 +582,12 @@ class IMF(DummyCalculator):
         for HAR and IMF, and triggers a soft exit.
         """
 
-        info(' @NM : Potential offset               =  %10.8e' % (self.v0,), verbosity.medium)
-        info(' @NM : HAR free energy                =  %10.8e' % (np.sum((0.5 * np.sqrt(self.imm.w2[self.imm.nz:]) + self.imm.temp * np.log(1.0 - np.exp(-np.sqrt(self.imm.w2[self.imm.nz:]) / self.imm.temp)))) / self.nprim + self.v0,), verbosity.medium)
-        info(' @NM : IMF free energy correction     =  %10.8e' % ((self.total_anhar_free_energy - self.total_har_free_energy) / self.nprim,), verbosity.medium)
-        info(' @NM : HAR internal energy            =  %10.8e' % (np.sum(np.sqrt(self.imm.w2[self.imm.nz:]) * (0.5 + 1.0 / (np.exp(np.sqrt(self.imm.w2[self.imm.nz:]) / self.imm.temp) -1))) / self.nprim + self.v0,), verbosity.medium)
-        info(' @NM : IMF internal energy correction =  %10.8e' % ((self.total_anhar_internal_energy -self.total_har_internal_energy) / self.nprim,), verbosity.medium)
-        info(' @NM : ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE) \n', verbosity.medium)
+        info(' @NM : Potential offset               =  %10.8e' % (self.v0,), verbosity.low)
+        info(' @NM : HAR free energy                =  %10.8e' % (np.sum((0.5 * np.sqrt(self.imm.w2[self.imm.nz:]) + self.imm.temp * np.log(1.0 - np.exp(-np.sqrt(self.imm.w2[self.imm.nz:]) / self.imm.temp)))) / self.nprim + self.v0,), verbosity.low)
+        info(' @NM : IMF free energy correction     =  %10.8e' % ((self.total_anhar_free_energy - self.total_har_free_energy) / self.nprim,), verbosity.low)
+        info(' @NM : HAR internal energy            =  %10.8e' % (np.sum(np.sqrt(self.imm.w2[self.imm.nz:]) * (0.5 + 1.0 / (np.exp(np.sqrt(self.imm.w2[self.imm.nz:]) / self.imm.temp) -1))) / self.nprim + self.v0,), verbosity.low)
+        info(' @NM : IMF internal energy correction =  %10.8e' % ((self.total_anhar_internal_energy -self.total_har_internal_energy) / self.nprim,), verbosity.low)
+        info(' @NM : ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE) \n', verbosity.low)
         softexit.trigger(" @NM : The IMF calculation has terminated.")
 
 
@@ -920,9 +920,9 @@ class VSCF(IMF):
             # Checks the convergence of the SCF procedure.
             if np.absolute((a_vscf - a_vscf_old) / a_vscf) < self.athresh and vscf_iter > 4:
                 info("\n @NM : Convergence reached.", verbosity.medium)
-                info(" @NM : IMF free energy             = %10.8e" % (a_imf / self.nprim), verbosity.medium) 
-                info(" @NM : VSCF free energy correction = %10.8e" % ((a_vscf - a_imf) / self.nprim), verbosity.medium) 
-                info(' @NM : ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE) \n', verbosity.medium)
+                info(" @NM : IMF free energy             = %10.8e" % (a_imf / self.nprim), verbosity.low) 
+                info(" @NM : VSCF free energy correction = %10.8e" % ((a_vscf - a_imf) / self.nprim), verbosity.low)
+                info(' @NM : ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE) \n', verbosity.low)
                 self.terminate()
 
     def one_dimensional_mapper(self, step):
