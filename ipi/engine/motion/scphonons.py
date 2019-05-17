@@ -482,30 +482,34 @@ class SCPhononator(DummyPhononator):
                     # last batch.
                     w_old = w
                     w = batch_w[-1]
-                    if np.absolute(w - w_old) < 1e-4:
-                        scale_forces *= 1.1
+                    #if np.absolute(w - w_old) < 1e-4:
+                    #    scale_forces *= 1.1
                         #info(" @SCP: Increasing displacement by 10 %.")
-                    elif np.absolute(w - w_old) > 5e-2:
-                        scale_forces /= 1.1
+                    #elif np.absolute(w - w_old) > 5e-2:
+                    #    scale_forces /= 1.1
 
-                    # Zeros the displacement along "insignificant" normal modes.
-                    iKfnm = self.dm.iw2 * fnm
-                    iKfnm[np.abs(fnm) < fnm_err] = 0.0
-                    dqnm = iKfnm
-                    dqnm[self.z] = 0.0
+                    # Computes the force along the normal modes.
+                    fnm = np.dot(self.dm.V.T, f)
+                    fnm[self.z] = 0.0
+                    fnm_err = np.sqrt(np.dot(self.dm.V.T**2, f_err**2))
 
-                    # Breaks out if the forces are statistically insignificant
-                    # or if the weights become large.
                     # Breaks if all the forces are statistically insignificant.
                     if np.all(np.abs(fnm) < fnm_err):
                         info(" @SCP : All forces are statistically insignificant.", verbosity.medium)
                         info(" @SCP : Exiting the inner optimization loop.", verbosity.medium)  
                         break
-                    # or if the batch weight goes to shit.
-                    elif batch_w[-1] < self.wthreshold:
-                        info(" @SCP : Batch weight is small.", verbosity.medium)
+                    # or if the batch weights go to shit.
+                    elif np.max(batch_w) < self.wthreshold:
+                        info(" @SCP : Batch weights are small.", verbosity.medium)
                         info(" @SCP : Exiting the inner optimization loop.", verbosity.medium)  
                         break
+
+                    # Calculates the displacement along the normal modes.
+                    # Moves only if forces are statistically insignificant.
+                    # Does not move along zero modes.
+                    dqnm = self.dm.iw2 * fnm * scale_forces / self.dm.dof
+                    dqnm[np.abs(fnm) < fnm_err] = 0.0
+                    dqnm[self.z] = 0.0
 
                     self.dm.beads.q += np.dot(self.dm.V, dqnm)
                     info(" @SCP : <f> =  %10.8f +/-  %10.8f: : number of batch weights > %10.8f =  %8d / %8d : largest batch weight = %10.8e" % (np.linalg.norm(f), np.linalg.norm(f_err), self.wthreshold, sum(batch_w > self.wthreshold), len(batch_w), batch_w[-1]), verbosity.medium)
