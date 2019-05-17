@@ -148,7 +148,7 @@
                   vstyle = 0  ! ideal gas
                ELSE
                   WRITE(*,*) " Unrecognized potential type ", trim(cmdbuffer)
-                  WRITE(*,*) " Use -m [gas|lj|sg|harm|morse|zundel|qtip4pf|lepsm1|lepsm2|qtip4pf-efield|eckart|ch4hcbe|ljpolymer] "
+                  WRITE(*,*) " Use -m [gas|lj|sg|harm|morse|zundel|qtip4pf|lepsm1|lepsm2|qtip4pf-efield|eckart|ch4hcbe|ljpolymer|pswater] "
                   STOP "ENDED"
                ENDIF
             ELSEIF (ccmd == 4) THEN
@@ -605,16 +605,18 @@
     CONTAINS
       SUBROUTINE helpmessage
          ! Help banner
-         WRITE(*,*) " SYNTAX: driver.x [-u] -h hostname -p port -m [gas|lj|sg|harm|morse|zundel|qtip4pf|pswater|lepsm1|lepsm2|qtip4p-efield|eckart|ch4hcbe] "
+         WRITE(*,*) " SYNTAX: driver.x [-u] -h hostname -p port -m "&
+           &"[gas|lj|sg|harm|morse|zundel|qtip4pf|pswater|"&
+           &"lepsm1|lepsm2|qtip4p-efield|eckart|ch4hcbe] "
          WRITE(*,*) "         -o 'comma_separated_parameters' [-v] "
          WRITE(*,*) ""
          WRITE(*,*) " For LJ potential use -o sigma,epsilon,cutoff "
          WRITE(*,*) " For SG potential use -o cutoff "
          WRITE(*,*) " For 1D harmonic oscillator use -o k "
          WRITE(*,*) " For 1D morse oscillator use -o r0,D,a"
-         WRITE(*,*) " For qtip4pf-efield use -o Ex,Ey,Ez with Ei in V/nm"         
+         WRITE(*,*) " For qtip4pf-efield use -o Ex,Ey,Ez with Ei in V/nm"
          WRITE(*,*) " For ljpolymer use -o n_monomer,sigma,epsilon,cutoff "
-         WRITE(*,*) " For the ideal gas, qtip4pf, zundel, ch4hcbe or nasa no options needed! "
+         WRITE(*,*) " For the ideal gas, qtip4pf, zundel, ch4hcbe or pswater no options needed! "
        END SUBROUTINE helpmessage
 
    END PROGRAM

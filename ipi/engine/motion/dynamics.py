@@ -797,6 +797,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
            dt: integration time-step for SHAKE/RATTLE
         """
         #!! TODO: remove this after debugging
+        err_init = np.seterr()
         np.seterr(all='raise')
         # Copy the current ring-polymer configuration into workspace array
         self._temp[...] = np.reshape(dstrip(self.beads.q).T,self._temp.shape)
@@ -843,7 +844,8 @@ class QCMDWaterIntegrator(NVTIntegrator):
                     self._msg = "SHAKE got invalid dlambda at iter #{:d}".format(ncycle) +\
                           " for constraint #{:d}".format(i) + \
                           " with target {:.16f}\n".format(self.targetvals[i,igp]) + \
-                          " and configuration "+self._temps[ns[i],...][igp].__repr__()
+                          " configuration "+self._temp[ns[i],...][igp].__repr__() + \
+                          " and gradient "+grads[i,igp,:,:].__repr__()
                     raise ValueError(self._msg)
                 self._temp[ns[i],:,:] += dlambda[:,None,None] * \
                                          self.mgrads[i,ns[i],:,:]
@@ -855,8 +857,16 @@ class QCMDWaterIntegrator(NVTIntegrator):
             # Shift to CoM
             qc_fin[nc] = qc_init[nc]-CoM[:,None,:]
             # Calculate the Eckart product
-            sigmas[-1,nc] = self.eckart(qc_fin, nc)
-            ns[-1,:] = np.abs(sigmas[-1]) > self.constraints.tol
+            try:
+                sigmas[-1,nc] = self.eckart(qc_fin, nc)
+                ns[-1,:] = np.abs(sigmas[-1]) > self.constraints.tol
+            except:
+                igp = np.argwhere(np.isnan(sigmas[-1]))[0,0]
+                self._msg = "SHAKE got invalid sigma at iter #{:d}".format(ncycle) +\
+                      " for the Eckart constraint"+ \
+                      " in group #{:d}\n".format(igp) + \
+                      " with configuration "+self._temp[igp].__repr__()
+                raise ValueError(self._msg)
             # Rotate to Eckart frame
             qc_fin[ns[-1]] = mathtools.eckrot(
                     qc_fin[ns[-1]],
@@ -885,6 +895,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
         self.grads[...] = grads
         for g, mg in zip(self.grads, self.mgrads):
             mg[...] = self._minv(g)
+        np.seterr(**err_init)
 
     def pconstraints(self):
         """This applies RATTLE to the momenta and returns the change in the

@@ -93,7 +93,7 @@ class BondLength(HolonomicConstraint):
         """Calculate the difference between the mean bond-length and the
            target value and its gradient.
         """
-        jac *= 0
+        jac[:] = 0.0
         nbeads = q.shape[-1]
         slcA, slcB = (slice(3*idx,3*idx+3) for idx in self.indices)
         # A->B displacement vector
@@ -121,7 +121,7 @@ class BondAngle(HolonomicConstraint):
         """Calculate the difference between the mean angle and the
            target value.
         """
-        jac *= 0
+        jac[:] = 0.0
         nbeads = q.shape[-1]
         slcX, slcA, slcB = (slice(3*idx,3*idx+3) for idx in self.indices)
         # X->A displacement vector
