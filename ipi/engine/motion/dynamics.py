@@ -715,14 +715,6 @@ class QCMDWaterIntegrator(NVTIntegrator):
         else:
             raise ValueError("Invalid splitting requested. Only OBABO and BAOAB are supported.")
 
-    def get_tdt(self):
-        if self.splitting == "obabo":
-            return self.dt * 0.5
-        elif self.splitting == "baoab":
-            return self.dt / (self.inmts * self.constraints.nfree)
-        else:
-            raise ValueError("Invalid splitting requested. Only OBABO and BAOAB are supported.")
-
     def bind(self, motion):
         """ Reference all the variables for simpler access and initialise
             local storage of coordinates and associated constraints.
@@ -1021,17 +1013,12 @@ class QCMDWaterIntegrator(NVTIntegrator):
             self.free_p() # B
             self.free_q() # A
             if self.splitting == "baoab":
-                self.tstep() # O
-                self.pconstraints()
                 self.free_q() # A
             self.free_p() # B
 
         if (self.constraints.nfree%2 == 1):
             self.free_p()
             self.free_q()
-            if self.splitting == "baoab":
-                self.tstep()
-                self.pconstraints()
 
     def free_qstep_ab(self):
         """Override the exact normal mode propagator for the free ring-polymer
@@ -1047,40 +1034,14 @@ class QCMDWaterIntegrator(NVTIntegrator):
             self.free_p()
             self.free_q()
             if self.splitting == "baoab":
-                self.tstep()
-                self.pconstraints()
                 self.free_q()
             self.free_p()
 
     def step(self, step=None):
         """Does one simulation time step."""
 
-        if self.splitting == "obabo":
-            # thermostat is applied for dt/2
-            self.tstep()
-            self.pconstraints()
-
-            # forces are integerated for dt with MTS.
-            try:
-                self.mtsprop(0)
-            except:
-                softexit.trigger(self._msg)
-                raise
-
-            # thermostat is applied for dt/2
-            self.tstep()
-            self.pconstraints()
-
-        elif self.splitting == "baoab":
-
-            try:
-                self.mtsprop_ba(0)
-            except:
-                softexit.trigger(self._msg)
-                raise
-            try:
-                self.mtsprop_ab(0)
-            except:
-                softexit.trigger(self._msg)
-                raise
-
+        try:
+            super(QCMDWaterIntegrator, self).step()
+        except:
+            softexit.trigger(self._msg)
+            raise
