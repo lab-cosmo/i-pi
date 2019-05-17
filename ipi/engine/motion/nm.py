@@ -759,10 +759,10 @@ class VSCF(IMF):
                 self.v_indep_grids[self.inm][:] = vigrid
 
         # Maps 2D surfaces if the index of the pair lies in range.
-        elif step <= len(self.inms) +  len(self.inms) * (len(self.inms) - 1) / 2:
+        elif step - len(self.inms) - 1 < self.pair_range[1]:
 
             # Checks if the index lies in range.
-            if not self.pair_range[0] <= step - len(self.inms) - 1 < self.pair_range[1]:
+            if not self.pair_range[0] <= step - len(self.inms) - 1:
                 return
  
             # Selects the normal mode pair to map out.
