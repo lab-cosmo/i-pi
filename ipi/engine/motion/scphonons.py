@@ -20,8 +20,9 @@ along with this program. If not, see <http.//www.gnu.org/licenses/>.
 
 __all__ = ['SCPhononsMover']
 
-import numpy as np
 import time
+import os
+import numpy as np
 from ipi.engine.motion.motion import Motion
 from ipi.utils.depend import *
 from ipi.utils import units
@@ -265,27 +266,32 @@ class SCPhononator(DummyPhononator):
         outfile.close()
         info(" @SCP : Saving the minimum potential.", verbosity.medium)
 
-        info(" @SCP : Generating %8d new confiurations to be sampled." % (self.dm.max_steps,), verbosity.medium)
-        # Creates a list of configurations that are to be sampled.
-        while self.dm.imc <= self.dm.max_steps:
 
-            irng = (self.dm.isc) * self.dm.max_steps / \
-                2 + (self.dm.imc + 1) / 2
-            x = self.dm.fginv(self.dm.random_sequence[irng])
+        if os.path.exists(self.dm.output_maker.prefix + '.' + self.dm.prefix + '.x.' + str(self.dm.isc)):
+            info(" @SCP : Loading %8d confiurations from file." % (self.dm.max_steps,), verbosity.medium)
+            self.x[self.dm.isc] = np.loadtxt(self.dm.output_maker.prefix + '.' + self.dm.prefix + '.x.' + str(self.dm.isc))
+        else:
+            info(" @SCP : Generating %8d new confiurations to be sampled." % (self.dm.max_steps,), verbosity.medium)
+            # Creates a list of configurations that are to be sampled.
+            while self.dm.imc <= self.dm.max_steps:
 
-            # picks the elements of the vector in a random order.
-            # this introduces a degree of randomness in the sobol-like PRNGs
-            x = x[self.dm.random_shuffle]
+                irng = (self.dm.isc) * self.dm.max_steps / \
+                    2 + (self.dm.imc + 1) / 2
+                x = self.dm.fginv(self.dm.random_sequence[irng])
 
-            # Transforms the "normal" random number and stores it.
-            x = np.dot(self.dm.isqM, np.dot(self.dm.sqtD, x))
-            self.x[self.dm.isc, self.dm.imc - 1] = (self.dm.beads.q + x.T)[-1]
-            self.dm.imc += 1
+                # picks the elements of the vector in a random order.
+                # this introduces a degree of randomness in the sobol-like PRNGs
+                x = x[self.dm.random_shuffle]
 
-            # Performs an inversion to the displacement and samples another configuration.
-            x = -x
-            self.x[self.dm.isc, self.dm.imc - 1] = (self.dm.beads.q + x.T)[-1]
-            self.dm.imc += 1
+                # Transforms the "normal" random number and stores it.
+                x = np.dot(self.dm.isqM, np.dot(self.dm.sqtD, x))
+                self.x[self.dm.isc, self.dm.imc - 1] = (self.dm.beads.q + x.T)[-1]
+                self.dm.imc += 1
+
+                # Performs an inversion to the displacement and samples another configuration.
+                x = -x
+                self.x[self.dm.isc, self.dm.imc - 1] = (self.dm.beads.q + x.T)[-1]
+                self.dm.imc += 1
 
         # Resets the number of MC steps to 1.
         self.dm.imc = 1
@@ -296,19 +302,25 @@ class SCPhononator(DummyPhononator):
         Executes one monte carlo step.
         """
 
-        imcmin = self.dm.imc - 1
-        imcmax = self.dm.imc - 1 + self.dm.nparallel
+        if os.path.exists(self.dm.output_maker.prefix + '.' + self.dm.prefix + '.x.' + str(self.dm.isc)):
+            info(" @SCP : Loading %8d forces from file." % (self.dm.max_steps,), verbosity.medium)
+            self.f[self.dm.isc] = np.loadtxt(self.dm.output_maker.prefix + '.' + self.dm.prefix + '.f.' + str(self.dm.isc))
+            self.v[self.dm.isc] = np.loadtxt(self.dm.output_maker.prefix + '.' + self.dm.prefix + '.v.' + str(self.dm.isc))
+            self.dm.imc += len(self.f[self.dm.isc])
+        else:
+            imcmin = self.dm.imc - 1
+            imcmax = self.dm.imc - 1 + self.dm.nparallel
 
-        x = self.x[self.dm.isc, imcmin: imcmax]
-        self.dm.dbeads.q = x
+            x = self.x[self.dm.isc, imcmin: imcmax]
+            self.dm.dbeads.q = x
 
-        v = dstrip(self.dm.dforces.pots).copy()
-        f = dstrip(self.dm.dforces.f).copy()
+            v = dstrip(self.dm.dforces.pots).copy()
+            f = dstrip(self.dm.dforces.f).copy()
 
-        self.v[self.dm.isc, imcmin : imcmax ] = v[:]
-        self.f[self.dm.isc, imcmin : imcmax ] = f[:]
+            self.v[self.dm.isc, imcmin : imcmax ] = v[:]
+            self.f[self.dm.isc, imcmin : imcmax ] = f[:]
 
-        self.dm.imc += self.dm.nparallel
+            self.dm.imc += self.dm.nparallel
 
     def print_energetics(self):
         """
