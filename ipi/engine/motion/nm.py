@@ -666,7 +666,7 @@ class VSCF(IMF):
             self.q_grids = np.zeros((self.dof, self.nint))
             self.v_indep_grids = np.zeros((self.dof, self.nint))
             self.v_mft_grids = np.zeros((self.dof, self.nint))
-            self.v_coupled_grids = np.zeros((self.dof, self.dof, self.nint, self.nint))
+            self.v_coupled_grids = np.zeros((len(self.pair_combinations), self.nint, self.nint))
 
             self.psi_i_grids = np.zeros((self.dof, self.nbasis, self.nint))
             self.rho_grids = np.zeros((self.dof, self.nint))
@@ -836,8 +836,6 @@ class VSCF(IMF):
                     vtspl = interp2d(displacements_nmi, displacements_nmj, self.v_coupled, kind='cubic', bounds_error=False)
                     igrid = np.linspace(-self.npts_neg[self.inm] * self.fnmrms * self.nmrms[self.inm], self.npts_pos[self.inm] * self.fnmrms * self.nmrms[self.inm], self.nint)
                     jgrid = np.linspace(-self.npts_neg[self.jnm] * self.fnmrms * self.nmrms[self.jnm], self.npts_pos[self.jnm] * self.fnmrms * self.nmrms[self.jnm], self.nint)
-                    #igrid = self.q_grids[self.inm]
-                    #jgrid = self.q_grids[self.jnm]
                     vijgrid = vtspl(igrid, jgrid) - vtspl(igrid, jgrid * 0.0) - vtspl(igrid * 0.0, jgrid) + vtspl(igrid * 0.0, jgrid * 0.0)
 
                     # Save coupling correction to file for vistualisation.
@@ -847,8 +845,9 @@ class VSCF(IMF):
                     outfile.close()
                 
                 # Saves the interpolated potential in memory.
-                self.v_coupled_grids[self.inm, self.jnm][:] = vijgrid
-                self.v_coupled_grids[self.jnm, self.inm][:] = vijgrid.T
+                c_index = self.pair_combinations.index((self.inm, self.jnm))
+                #self.v_coupled_grids[self.inm, self.jnm][:] = vijgrid
+                self.v_coupled_grids[c_index][:] = vijgrid
 
         # Solves the SE once the mapping is finished.
         elif self.solve == True:
@@ -911,8 +910,14 @@ class VSCF(IMF):
 
                 self.v_mft_grids[inm] = self.v_indep_grids[inm] + (1 - self.alpha) * self.v_mft_grids[inm]
                 for jnm in self.inms:
-                    # Not sure if this represents the total correction or not.
-                    self.v_mft_grids[inm] += self.alpha * np.dot(self.v_coupled_grids[inm][jnm].T, self.rho_grids[jnm]) / self.nprim
+                    if inm < jnm:
+                        c_index = self.pair_combinations.index((inm, jnm))
+                        self.v_mft_grids[inm] += self.alpha * np.dot(self.v_coupled_grids[c_index].T, self.rho_grids[jnm]) / self.nprim
+                    if inm > jnm:
+                        c_index = self.pair_combinations.index((jnm, inm))
+                        self.v_mft_grids[inm] += self.alpha * np.dot(self.v_coupled_grids[c_index], self.rho_grids[jnm]) / self.nprim
+                    else:
+                        continue
 
                 ai[inm], ei[inm], self.evals_vscf[inm], self.evecs_vscf[inm] = self.solve_schroedingers_equation(self.imm.w[inm], self.psi_i_grids[inm], self.v_mft_grids[inm], True)
 
