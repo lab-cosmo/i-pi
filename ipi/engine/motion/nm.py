@@ -608,7 +608,6 @@ class VSCF(IMF):
         self.alpha = self.imm.alpha
         self.pair_range = self.imm.pair_range
 
-
         # Filenames for storing the number of samples configurations
         # and their potential energy.
         self.modes_filename = 'modes.dat'
@@ -621,7 +620,6 @@ class VSCF(IMF):
         self.v_coupled_grid_file_prefix = 'vcoupled_grid'
 
         # Creates a list of modes with frequencies greater than 2 cm^-1.
-
         if os.path.exists(self.imm.output_maker.prefix + '.' + self.modes_filename):
             self.inms = np.loadtxt(self.imm.output_maker.prefix + '.' + self.modes_filename, dtype=int).tolist()
         else:
@@ -641,8 +639,8 @@ class VSCF(IMF):
             outfile.close()
 
         # Saves the total number of steps for automatic termination.
-        ndof = len(self.inms)
-        self.total_steps = ndof + ndof * (ndof - 1) / 2
+        dof = len(self.inms)
+        self.total_steps = dof + dof * (dof - 1) / 2
 
         # Saves the indices of pairs of modes
         self.pair_combinations = list(combinations(self.inms, 2))
@@ -651,7 +649,6 @@ class VSCF(IMF):
         if self.pair_range.size == 0:
             self.pair_range = np.asarray([0, len(self.pair_combinations)])
 
-
         # Variables for storing the number of sampled configurations 
         # along the +ve and -ve displacements along normal modes and 
         # the sampled potential energy.
@@ -659,6 +656,11 @@ class VSCF(IMF):
         self.npts_neg = np.zeros(self.dof, dtype=int)
         self.npts_pos = np.zeros(self.dof, dtype=int)
         self.v_indep_list = []
+        self.displacements_nm = [] 
+        self.displacements_nm = [] 
+
+        for x in xrange(self.dof - dof):
+            self.displacements_nm.append([0])
 
         if self.solve:
             self.q_grids = np.zeros((self.dof, self.nint))
@@ -714,6 +716,7 @@ class VSCF(IMF):
                     self.npts_pos[self.inm] =  int(header[4])
                     self.npts[self.inms] = self.npts_neg[self.inms] + self.npts_pos[self.inms] + 1
                 self.v_indep_list.append(np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_indep_filename).T)
+                self.displacements_nm.append([self.fnmrms * self.nmrms[self.inm] * (-self.npts_neg[self.inm] + i - 2.0) for i in xrange(self.npts[self.inm] + 4)])
                 info(" @NM : Loading the sampled potential energy for mode  %8d" % (self.inm,), verbosity.medium)
                 info(" @NM : Using %8d configurations along the +ve direction." % (self.npts_pos[self.inm],), verbosity.medium)
                 info(" @NM : Using %8d configurations along the -ve direction." % (self.npts_neg[self.inm],), verbosity.medium)
@@ -724,6 +727,7 @@ class VSCF(IMF):
                 self.npts_neg[self.inm], self.npts_pos[self.inm], v_indeps = self.one_dimensional_mapper(step)
                 self.npts[self.inm] = self.npts_neg[self.inm] + self.npts_pos[self.inm] + 1
                 self.v_indep_list.append(v_indeps)
+                self.displacements_nm.append([self.fnmrms * self.nmrms[self.inm] * (-self.npts_neg[self.inm] + i - 2.0) for i in xrange(self.npts[self.inm] + 4)])
 
                 info(" @NM : Using %8d configurations along the +ve direction." % (self.npts_pos[self.inm],), verbosity.medium)
                 info(" @NM : Using %8d configurations along the -ve direction." % (self.npts_neg[self.inm],), verbosity.medium)
@@ -731,7 +735,6 @@ class VSCF(IMF):
                 outfile = self.imm.output_maker.get_output(self.v_indep_filename)
                 np.savetxt(outfile, v_indeps, header=" npts_neg: %10d npts_pos: %10d" % (self.npts_neg[self.inm], self.npts_pos[self.inm]))
                 outfile.close()
-
 
             # We need the independent mode correction on a grid.
             # Checks if the potential exists otherwise loads from file.
@@ -741,8 +744,7 @@ class VSCF(IMF):
                     igrid, vigrid = np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_indep_grid_filename).T
                 else:
                     info(" @NM : Interpolating the potential energy on a grid of %8d points." % (self.nint,), verbosity.medium)
-                    displacements_nmi = [self.fnmrms * self.nmrms[self.inm] * (-self.npts_neg[self.inm] + i - 2.0) for i in xrange(self.npts[self.inm] + 4)]
-                    vspline = interp1d(displacements_nmi, self.v_indep_list[-1], kind='cubic', bounds_error=False)
+                    vspline = interp1d(self.displacements_nm[-1], self.v_indep_list[-1], kind='cubic', bounds_error=False)
                     igrid = np.linspace(-self.npts_neg[self.inm] * self.fnmrms * self.nmrms[self.inm], self.npts_pos[self.inm] * self.fnmrms * self.nmrms[self.inm], self.nint)
                     vigrid = np.asarray([np.asscalar(vspline(igrid[iinm]) - 0.5 * self.imm.w2[self.inm] * igrid[iinm]**2 - self.v0) for iinm in range(self.nint)])
 
@@ -782,8 +784,8 @@ class VSCF(IMF):
                 self.v_coupled = np.zeros((self.npts[self.inm] + 4) * (self.npts[self.jnm] + 4))
 
                 # Calculates the displacements as linear combinations of displacements along independent modes.
-                displacements_nmi = [self.fnmrms * self.nmrms[self.inm] * (-self.npts_neg[self.inm] + i - 2.0) for i in xrange(self.npts[self.inm] + 4)]
-                displacements_nmj = [self.fnmrms * self.nmrms[self.jnm] * (-self.npts_neg[self.jnm] + j - 2.0) for j in xrange(self.npts[self.jnm] + 4)]
+                displacements_nmi = self.displacements_nm[self.inm]
+                displacements_nmj = self.displacements_nm[self.jnm]
 
                 # Calculates the potential energy at the displaced positions.
                 k = 0
@@ -817,8 +819,8 @@ class VSCF(IMF):
                 if self.solve:
                     displacements_nmi, displacements_nmj, self.v_coupled = np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_coupled_filename).T
                     self.v_coupled += self.v0
-                    displacements_nmi = [self.fnmrms * self.nmrms[self.inm] * (-self.npts_neg[self.inm] + i - 2.0) for i in xrange(self.npts[self.inm] + 4)]
-                    displacements_nmj = [self.fnmrms * self.nmrms[self.jnm] * (-self.npts_neg[self.jnm] + j - 2.0) for j in xrange(self.npts[self.jnm] + 4)]
+                    displacements_nmi = self.displacements_nm[self.inm]
+                    displacements_nmj = self.displacements_nm[self.jnm]
 
             # We need the pair-wise coupling correction on a grid.
             # Checks if the correction exists otherwise loads from file.
@@ -834,11 +836,9 @@ class VSCF(IMF):
                     vtspl = interp2d(displacements_nmi, displacements_nmj, self.v_coupled, kind='cubic', bounds_error=False)
                     igrid = np.linspace(-self.npts_neg[self.inm] * self.fnmrms * self.nmrms[self.inm], self.npts_pos[self.inm] * self.fnmrms * self.nmrms[self.inm], self.nint)
                     jgrid = np.linspace(-self.npts_neg[self.jnm] * self.fnmrms * self.nmrms[self.jnm], self.npts_pos[self.jnm] * self.fnmrms * self.nmrms[self.jnm], self.nint)
-                    vijgrid = (np.asarray( [ np.asarray( [ (vtspl(igrid[iinm],jgrid[ijnm]) - vtspl(igrid[iinm],0.0) - vtspl(0.0,jgrid[ijnm]) + vtspl(0.0,0.0)) for iinm in range(self.nint) ] ) for ijnm in range(self.nint) ] )).reshape((self.nint,self.nint))
-
-                    # Also saves the independent mode corrections along the modes.
-                    vigrid = np.asarray([np.asscalar(vtspl(igrid[iinm], 0.0) - 0.5 * self.imm.w2[self.inm] * igrid[iinm]**2 - vtspl(0.0,0.0)) for iinm in range(self.nint)])
-                    vjgrid = np.asarray([np.asscalar(vtspl(0.0, jgrid[ijnm]) - 0.5 * self.imm.w2[self.jnm] * jgrid[ijnm]**2 - vtspl(0.0,0.0)) for ijnm in range(self.nint)])
+                    #igrid = self.q_grids[self.inm]
+                    #jgrid = self.q_grids[self.jnm]
+                    vijgrid = vtspl(igrid, jgrid) - vtspl(igrid, jgrid * 0.0) - vtspl(igrid * 0.0, jgrid) + vtspl(igrid * 0.0, jgrid * 0.0)
 
                     # Save coupling correction to file for vistualisation.
                     info(" @NM : Saving the interpolated potential energy to %s" % (self.v_coupled_grid_filename,), verbosity.medium)
