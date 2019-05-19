@@ -624,7 +624,6 @@ class VSCF(IMF):
 
         if os.path.exists(self.imm.output_maker.prefix + '.' + self.modes_filename):
             self.inms = np.loadtxt(self.imm.output_maker.prefix + '.' + self.modes_filename, dtype=int).tolist()
-            print self.inms
         else:
             info(" @NM : Identifying relevant frequency modes.", verbosity.medium) 
             self.inms = []
@@ -652,7 +651,6 @@ class VSCF(IMF):
         if self.pair_range.size == 0:
             self.pair_range = np.asarray([0, len(self.pair_combinations)])
 
-        print self.pair_range
 
         # Variables for storing the number of sampled configurations 
         # along the +ve and -ve displacements along normal modes and 
