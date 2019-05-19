@@ -827,7 +827,7 @@ class VSCF(IMF):
             if self.solve:
 
                 if os.path.exists(self.imm.output_maker.prefix + '.' + self.v_coupled_grid_filename):
-                    vijgrid = np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_coupled_grid_filename)
+                    vijgrid = np.load(self.imm.output_maker.prefix + '.' + self.v_coupled_grid_filename + '.npy')
 
                 else:
 
@@ -841,7 +841,7 @@ class VSCF(IMF):
                     # Save coupling correction to file for vistualisation.
                     info(" @NM : Saving the interpolated potential energy to %s" % (self.v_coupled_grid_filename,), verbosity.medium)
                     outfile = self.imm.output_maker.get_output(self.v_coupled_grid_filename)
-                    np.savetxt(outfile, vijgrid)
+                    np.save(outfile, vijgrid)
                     outfile.close()
                 
                 # Saves the interpolated potential in memory.
