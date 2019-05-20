@@ -44,7 +44,7 @@ class NormalModeMover(Motion):
     """Normal Mode analysis.
     """
 
-    def __init__(self, fixcom=False, fixatoms=None, mode="imf", dynmat=np.zeros(0, float),  prefix="", asr="none", nprim="1", fnmrms="1.0", nevib="25.0", nint="101", nbasis="10", athresh="1e-2", ethresh="1e-2", nkbt="4.0", nexc="5", solve=False, mptwo=False, print_mftpot=False, print_1b_map=False, print_2b_map=False, threebody=False, print_vib_density=False, nparallel=1, alpha=1.0, pair_range=np.zeros(0, int)):
+    def __init__(self, fixcom=False, fixatoms=None, mode="imf", dynmat=np.zeros(0, float),  prefix="", asr="none", nprim="1", fnmrms="1.0", nevib="25.0", nint="101", nbasis="10", athresh="1e-2", ethresh="1e-2", nkbt="4.0", nexc="5", solve=False, grid=True, mptwo=False, print_mftpot=False, print_1b_map=False, print_2b_map=False, threebody=False, print_vib_density=False, nparallel=1, alpha=1.0, pair_range=np.zeros(0, int)):
         """Initialises NormalModeMover.
         Args:
         fixcom	: An optional boolean which decides whether the centre of mass
@@ -81,6 +81,7 @@ class NormalModeMover(Motion):
         self.nkbt = nkbt #4.0
         self.nexc = nexc #5
         self.solve = solve #5
+        self.grid = grid #5
         self.mptwo = mptwo #False
         self.print_mftpot = print_mftpot #False
         self.print_1b_map = print_1b_map #False
@@ -605,6 +606,7 @@ class VSCF(IMF):
         #self.print_2b_map = self.imm.print_2b_map
         #self.threebody = self.imm.threebody
         self.solve = self.imm.solve
+        self.grid = self.imm.grid
         self.alpha = self.imm.alpha
         self.pair_range = self.imm.pair_range
 
@@ -662,11 +664,11 @@ class VSCF(IMF):
         for x in xrange(self.dof - dof):
             self.displacements_nm.append([0])
 
-        if self.solve:
+        if self.solve or self.grid:
             self.q_grids = np.zeros((self.dof, self.nint))
             self.v_indep_grids = np.zeros((self.dof, self.nint))
             self.v_mft_grids = np.zeros((self.dof, self.nint))
-            self.v_coupled_grids = np.zeros((len(self.pair_combinations), self.nint, self.nint))
+            #self.v_coupled_grids = np.zeros((len(self.pair_combinations), self.nint, self.nint))
 
             self.psi_i_grids = np.zeros((self.dof, self.nbasis, self.nint))
             self.rho_grids = np.zeros((self.dof, self.nint))
@@ -738,7 +740,7 @@ class VSCF(IMF):
 
             # We need the independent mode correction on a grid.
             # Checks if the potential exists otherwise loads from file.
-            if self.solve:
+            if self.grid:
 
                 if os.path.exists(self.imm.output_maker.prefix + '.' + self.v_indep_grid_filename):
                     igrid, vigrid = np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_indep_grid_filename).T
@@ -777,7 +779,11 @@ class VSCF(IMF):
 
             info("\n @NM : Treating normal modes no.  %8d  and %8d  with frequencies %15.8f cm^-1 and %15.8f cm^-1, respectively." % (self.inm, self.jnm, self.imm.w[self.inm] * 219474,  self.imm.w[self.jnm] * 219474) ,verbosity.medium)
 
-            if os.path.exists(self.imm.output_maker.prefix + '.' + self.v_coupled_filename) != True:
+            # Skips the step if the grid file exists.
+            if os.path.exists(self.imm.output_maker.prefix + '.' + self.v_coupled_grid_filename):
+                return
+
+            elif os.path.exists(self.imm.output_maker.prefix + '.' + self.v_coupled_filename) != True:
 
                 # Initializes the grid for interpolating the potential when 
                 # displacements are made along pairs of normal modes.
@@ -816,7 +822,7 @@ class VSCF(IMF):
 
             else:
                 info(" @NM : Skipping the mapping for modes %8d and %8d." % (self.inm, self.jnm), verbosity.medium)
-                if self.solve:
+                if self.grid:
                     displacements_nmi, displacements_nmj, self.v_coupled = np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_coupled_filename).T
                     self.v_coupled += self.v0
                     displacements_nmi = self.displacements_nm[self.inm]
@@ -824,10 +830,10 @@ class VSCF(IMF):
 
             # We need the pair-wise coupling correction on a grid.
             # Checks if the correction exists otherwise loads from file.
-            if self.solve:
+            if self.grid:
 
                 if os.path.exists(self.imm.output_maker.prefix + '.' + self.v_coupled_grid_filename):
-                    vijgrid = np.load(self.imm.output_maker.prefix + '.' + self.v_coupled_grid_filename + '.npy')
+                    vijgrid = np.load(self.imm.output_maker.prefix + '.' + self.v_coupled_grid_filename)
 
                 else:
 
@@ -843,11 +849,21 @@ class VSCF(IMF):
                     outfile = self.imm.output_maker.get_output(self.v_coupled_grid_filename)
                     np.save(outfile, vijgrid)
                     outfile.close()
+
+                    tmpfile = self.v_coupled_grid_file_prefix + "." + str(self.jnm) + "." + str(self.inm) + ".dat"
+                    #vtspl = interp2d(displacements_nmj, displacements_nmi, self.v_coupled, kind='cubic', bounds_error=False)
+                    #vijgrid = vtspl(jgrid, igrid) - vtspl(jgrid, igrid * 0.0) - vtspl(jgrid * 0.0, igrid) + vtspl(jgrid * 0.0, igrid * 0.0)
+                    
+                    # Save coupling correction to file for vistualisation.
+                    info(" @NM : Saving the interpolated potential energy to %s" % (tmpfile,), verbosity.medium)
+                    outfile = self.imm.output_maker.get_output(tmpfile)
+                    np.save(outfile, vijgrid.T)
+                    outfile.close()
                 
                 # Saves the interpolated potential in memory.
-                c_index = self.pair_combinations.index((self.inm, self.jnm))
+                #c_index = self.pair_combinations.index((self.inm, self.jnm))
                 #self.v_coupled_grids[self.inm, self.jnm][:] = vijgrid
-                self.v_coupled_grids[c_index][:] = vijgrid
+                #self.v_coupled_grids[c_index][:] = vijgrid
 
         # Solves the SE once the mapping is finished.
         elif self.solve == True:
@@ -860,6 +876,27 @@ class VSCF(IMF):
         """
         Solves the VSCF equations in a mean-field manner.
         """
+
+        # Saves the interpolated potential for each normal mode separately.
+        for inm in self.inms:
+
+            # Skips iteration if the file exists.
+            ofn = 'simulation.vcoupled_grids.' + str(inm) + '.dat.npy' 
+            if os.path.exists(ofn):
+                continue
+
+            # Stores the coupled potential 
+            vc = np.zeros((self.dof, self.nint, self.nint))
+            for jnm in self.inms:
+
+              if inm == jnm:
+                  continue
+
+              fn = 'simulation.vcoupled_grid.' + str(inm) + '.' + str(jnm) + '.dat'
+              vc[jnm] = np.load(fn).T
+
+            info(' @NM : Saving the interpolated potentials for normal mode no. %8d in %s' % (inm, ofn), verbosity.medium)
+            np.save(ofn, vc)
 
         # Initializes the independent mode free and internal energy.
         ai, ei = np.zeros(self.dof), np.zeros(self.dof)
@@ -892,7 +929,7 @@ class VSCF(IMF):
             a_vscf = self.v0 + ai.sum()
             a_vscf = ai.sum()
             vscf_iter += 1
-            info(' @NM : COMVERGENCE : iteration = %8d   A =  %10.8e    D(A) = %10.8e / %10.8e' % (vscf_iter, a_vscf, np.absolute(a_vscf - a_vscf_old), self.athresh), verbosity.medium)
+            info(' @NM : COMVERGENCE : iteration = %8d   A =  %10.8e    D(A) = %10.8e / %10.8e' % (vscf_iter, a_vscf, np.absolute(a_vscf - a_vscf_old) / a_vscf, self.athresh), verbosity.medium)
 
             # Calculates the thermal density for each normal mode.
             # This is essentially the square of the wave function 
@@ -909,18 +946,13 @@ class VSCF(IMF):
             for inm in self.inms:
 
                 self.v_mft_grids[inm] = self.v_indep_grids[inm] + (1 - self.alpha) * self.v_mft_grids[inm]
+                vcg = np.load('simulation.vcoupled_grids.' + str(inm) + '.dat.npy')
+
                 for jnm in self.inms:
-                    if inm < jnm:
-                        c_index = self.pair_combinations.index((inm, jnm))
-                        self.v_mft_grids[inm] += self.alpha * np.dot(self.v_coupled_grids[c_index].T, self.rho_grids[jnm]) / self.nprim
-                    if inm > jnm:
-                        c_index = self.pair_combinations.index((jnm, inm))
-                        self.v_mft_grids[inm] += self.alpha * np.dot(self.v_coupled_grids[c_index], self.rho_grids[jnm]) / self.nprim
-                    else:
-                        continue
+                    self.v_mft_grids[inm] += self.alpha * np.dot(vcg[jnm], self.rho_grids[jnm]) / self.nprim
 
                 ai[inm], ei[inm], self.evals_vscf[inm], self.evecs_vscf[inm] = self.solve_schroedingers_equation(self.imm.w[inm], self.psi_i_grids[inm], self.v_mft_grids[inm], True)
-
+                np.savetxt('simulation.evals.' + str(inm) + '.dat', self.evals_vscf[inm])
 
             # Checks the convergence of the SCF procedure.
             if np.absolute((a_vscf - a_vscf_old) / a_vscf) < self.athresh and vscf_iter > 4:

@@ -92,6 +92,9 @@ class InputNormalMode(InputDictionary):
                 "solve": (InputValue, {"dtype": bool,
                                         "default": False,
                                         "help": "Flag determining whether the VSCF mean field Schroedinger's equation is solved."}),
+                "grid": (InputValue, {"dtype": bool,
+                                        "default": False,
+                                        "help": "Flag determining whether the coupling potential is gridded or not."}),
                 "print_mftpot": (InputValue, {"dtype": bool,
                                         "default": False,
                                         "help": "Flag determining whether MFT potentials are printed to file."}),
@@ -135,6 +138,7 @@ class InputNormalMode(InputDictionary):
         self.nkbt.store(nm.nkbt) #"4.0"
         self.nexc.store(nm.nexc) #"5"
         self.solve.store(nm.solve) #False
+        self.grid.store(nm.grid) #False
         self.mptwo.store(nm.mptwo) #False
         self.print_mftpot.store(nm.print_mftpot) #False
         self.print_1b_map.store(nm.print_1b_map) #False
