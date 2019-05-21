@@ -1,37 +1,37 @@
-<simulation verbosity="low">
-  <output prefix="300K_032N_qcmd">
+<simulation verbosity="debug">
+  <output prefix="@T@K_0@NB@N_qcmd">
       <properties stride="40" filename="out"> [time{picosecond}, conserved, potential, kinetic_md, spring] </properties>
-      <trajectory filename='pos' stride='40' format='xyz' bead='-8'> positions </trajectory>
-      <trajectory filename='force' stride='40' format='xyz' bead='-8'> forces </trajectory>
+      <trajectory filename='pos' stride='40' format='xyz' bead='-@SB@'> positions </trajectory>
+      <trajectory filename='force' stride='40' format='xyz' bead='-@SB@'> forces </trajectory>
   </output>
-  <total_steps>40000</total_steps>
+  <total_steps>4000</total_steps>
   <prng>
     <seed>87549</seed>
   </prng>
   <ffsocket name="driver" mode="unix" pbc="false" matching="any">
     <latency>0.001</latency>
-    <address>pswater0</address>
+    <address>pswater@PORT@</address>
+    <port>@PORT@</port>
   </ffsocket>
   <system>
-    <initialize nbeads="32">
-      <file mode="xyz"> init0.xyz </file>
-      <velocities mode="thermal" units="kelvin"> 300 </velocities>
+    <initialize nbeads="@NB@">
+      <file mode="xyz"> init.xyz </file>
+      <velocities mode="thermal" units="kelvin"> @T@ </velocities>
     </initialize>
     <forces>
             <force forcefield='driver'/>
     </forces>
     <ensemble>
-      <temperature units="kelvin">300</temperature>
+      <temperature units="kelvin">@T@</temperature>
     </ensemble>
     <normal_modes>
-       <frequencies style="pa-cmd" units="inversecm">[2000]</frequencies>
+       <frequencies style="pa-cmd" units="inversecm">[2500]</frequencies>
     </normal_modes>
-    <motion mode="multi">
-            <fixcom>False</fixcom>
+   <motion mode="multi">
     <motion mode="dynamics">
-      <dynamics mode='qcmd' splitting="obabo">
+      <dynamics mode='qcmd' splitting="@SPLIT@">
     	<thermostat mode="pile_l">
-           <tau units="femtosecond">100</tau>
+           <tau units="femtosecond">10</tau>
            <pile_lambda> 0.5 </pile_lambda>
         </thermostat>
         <constraints>

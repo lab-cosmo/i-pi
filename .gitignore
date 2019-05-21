@@ -16,3 +16,5 @@ regtest-ref
 examples/regtest/integrators/*-qcmd_nvt/**/*.xyz
 !examples/regtest/integrators/*-qcmd_nvt/**/init.xyz
 examples/regtest/integrators/*-qcmd_nvt/**/log.txt
+examples/regtest/integrators/*-qcmd_nvt/**/script
+examples/regtest/integrators/*-qcmd_nvt/**/input.xml
