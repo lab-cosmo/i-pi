@@ -253,6 +253,7 @@ class IMF(DummyCalculator):
         #self.imm.nmevib =  0.5 * self.imm.w
 
         # Harm vibr energy at finite temp
+        self.imm.nmevib = np.zeros(len(self.imm.w))
         self.imm.nmevib[self.imm.nz:] =  0.50 * self.imm.w[self.imm.nz:] / np.tanh(self.imm.w[self.imm.nz:] / self.imm.temp / 2.0)
 
 
