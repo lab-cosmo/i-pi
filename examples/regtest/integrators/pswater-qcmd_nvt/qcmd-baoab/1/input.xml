@@ -9,7 +9,8 @@
     <seed>87549</seed>
   </prng>
   <ffsocket name="driver" mode="unix" pbc="false" matching="any">
-    <port> 31415 </port>
+    <latency>0.001</latency>
+    <address>pswater1</address>
   </ffsocket>
   <system>
     <initialize nbeads="32">

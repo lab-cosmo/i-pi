@@ -1,5 +1,5 @@
-<simulation verbosity="low">
-  <output prefix="300K_64mol_032N_qcmd">
+<simulation verbosity="medium">
+  <output prefix="300K_032N_qcmd">
       <properties stride="40" filename="out"> [time{picosecond}, conserved, potential, kinetic_md, spring] </properties>
       <trajectory filename='pos' stride='40' format='xyz' bead='0'> positions </trajectory>
       <trajectory filename='force' stride='40' format='xyz' bead='0'> forces </trajectory>
@@ -9,7 +9,8 @@
     <seed>87549</seed>
   </prng>
   <ffsocket name="driver" mode="unix" pbc="false" matching="any">
-    <port> 31415 </port>
+    <latency>0.001</latency>
+    <address>pswater2</address>
   </ffsocket>
   <system>
     <initialize nbeads="32">
@@ -27,17 +28,17 @@
     </normal_modes>
    <motion mode="multi">
     <motion mode="dynamics">
-      <dynamics mode='qcmd' splitting="obabo">
+      <dynamics mode='nvt' splitting="obabo">
     	<thermostat mode="pile_l">
-           <tau units="femtosecond">100</tau>
-           <pile_lambda> 0.5 </pile_lambda>
+           <tau units="second">100</tau>
+           <pile_lambda> 0.0000000000001 </pile_lambda>
         </thermostat>
         <constraints>
-            <nfree>3</nfree>
+            <nfree>1</nfree>
             <tol>1.0e-06</tol>
             <maxcycle>100</maxcycle>
         </constraints>
-	   <timestep units="femtosecond"> 0.25</timestep>
+	   <timestep units="femtosecond"> 0.125</timestep>
      </dynamics>
     </motion>
   </motion>

@@ -741,7 +741,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
                              "This is inconsistent with a set of triatomics.")
         # Create a workspace array with continuous storage of replicas corresponding
         # to the same degree of freedom
-        self._temp = np.empty((self.beads.natoms//3,9,self.beads.nbeads))
+        self._temp = np.zeros((self.beads.natoms//3,9,self.beads.nbeads))
         # Initialise the constraints
         self.clist = [BondLength(indices=[0,1]),
                       BondLength(indices=[0,2]),
@@ -750,9 +750,9 @@ class QCMDWaterIntegrator(NVTIntegrator):
         mc = dstrip(self.beads.m3[0]).reshape(qc.shape)
         self.eckart = Eckart([], qref = qc, mref = mc)
         # Set up arrays for storing constraint targets and gradients
-        self.targetvals = np.empty((len(self.clist),self.beads.natoms//3))
-        self.grads = np.empty( (len(self.clist),)+self._temp.shape )
-        self.mgrads = np.empty_like(self.grads)
+        self.targetvals = np.zeros((len(self.clist),self.beads.natoms//3))
+        self.grads = np.zeros( (len(self.clist),)+self._temp.shape )
+        self.mgrads = np.zeros_like(self.grads)
         # Initialise the gradients
         self._temp[...] = np.reshape(dstrip(self.beads.q).T, self._temp.shape)
         for c, t, g, mg in zip(self.clist, self.targetvals,
@@ -796,22 +796,18 @@ class QCMDWaterIntegrator(NVTIntegrator):
         Args:
            dt: integration time-step for SHAKE/RATTLE
         """
-        #!! TODO: remove this after debugging
-        err_init = np.seterr()
-        np.seterr(all='raise')
+
         # Copy the current ring-polymer configuration into workspace array
         self._temp[...] = np.reshape(dstrip(self.beads.q).T,self._temp.shape)
         q_init = self._temp.copy()
-        # Initialise the Lagrange multipliers
-        lambdas = np.zeros_like(self.targetvals)
         # Initialise arrays flagging convergences
         nc = np.ones(len(self._temp), dtype=np.bool) # "not converged"
         ns = np.ones((len(self.clist)+1, len(self._temp)), dtype=np.bool) # "not satisfied"
         # Initialise the current values of constraint fxns and grads
-        sigmas = np.empty_like(ns, dtype=np.float)
-        grads = np.empty_like(self.grads)
-        qc_init = np.empty_like(self.eckart.qref)
-        qc_fin = np.empty_like(qc_init)
+        sigmas = np.zeros_like(ns, dtype=np.float)
+        grads = np.zeros_like(self.grads)
+        qc_init = np.zeros_like(self.eckart.qref)
+        qc_fin = np.zeros_like(qc_init)
         mtot = np.sum(self.eckart.mref[...,0:1], axis=-2)
         # Cycle over constraints until convergence
         ncycle = 1
@@ -820,33 +816,13 @@ class QCMDWaterIntegrator(NVTIntegrator):
                 self._msg = "Maximum number of iterations exceeded in SHAKE."
                 raise ValueError(self._msg)
             for i in range(len(self.clist)):
-                try:
-                    sigmas[i,nc], grads[i,nc,:,:] = \
-                        self.clist[i](self._temp[nc,:,:], grads[i,nc,:,:])
-                    sigmas[i,nc] -= self.targetvals[i,nc]
-                    ns[i,:] = np.abs(sigmas[i]) > self.constraints.tol
-                except:
-                    igp = np.argwhere(np.isnan(sigmas[i]))[0,0]
-                    self._msg = "SHAKE got invalid sigma at iter #{:d}".format(ncycle) +\
-                          " for constraint #{:d}".format(i) + \
-                          " in group #{:d}\n".format(igp) + \
-                          " with target {:.16f}\n".format(self.targetvals[i,igp]) + \
-                          " and configuration "+self._temp[igp].__repr__()
-                    raise ValueError(self._msg)
-                try:
-                    dlambda = -sigmas[i,ns[i]] / np.sum(
-                            grads[i,ns[i],:,:]*self.mgrads[i,ns[i],:,:],
-                            axis=(-1,-2))
-                    if np.any(np.isnan(dlambda)):
-                        raise ValueError
-                except:
-                    igp = np.argwhere(np.isnan(dlambda))[0,0]
-                    self._msg = "SHAKE got invalid dlambda at iter #{:d}".format(ncycle) +\
-                          " for constraint #{:d}".format(i) + \
-                          " with target {:.16f}\n".format(self.targetvals[i,igp]) + \
-                          " configuration "+self._temp[ns[i],...][igp].__repr__() + \
-                          " and gradient "+grads[i,igp,:,:].__repr__()
-                    raise ValueError(self._msg)
+                sigmas[i,nc], grads[i,nc,:,:] = \
+                    self.clist[i](self._temp[nc,:,:], grads[i,nc,:,:])
+                sigmas[i,nc] -= self.targetvals[i,nc]
+                ns[i,:] = np.abs(sigmas[i]) > self.constraints.tol
+                dlambda = -sigmas[i,ns[i]] / np.sum(
+                        grads[i,ns[i],:,:]*self.mgrads[i,ns[i],:,:],
+                        axis=(-1,-2))
                 self._temp[ns[i],:,:] += dlambda[:,None,None] * \
                                          self.mgrads[i,ns[i],:,:]
             # Get the centoids
@@ -857,16 +833,8 @@ class QCMDWaterIntegrator(NVTIntegrator):
             # Shift to CoM
             qc_fin[nc] = qc_init[nc]-CoM[:,None,:]
             # Calculate the Eckart product
-            try:
-                sigmas[-1,nc] = self.eckart(qc_fin, nc)
-                ns[-1,:] = np.abs(sigmas[-1]) > self.constraints.tol
-            except:
-                igp = np.argwhere(np.isnan(sigmas[-1]))[0,0]
-                self._msg = "SHAKE got invalid sigma at iter #{:d}".format(ncycle) +\
-                      " for the Eckart constraint"+ \
-                      " in group #{:d}\n".format(igp) + \
-                      " with configuration "+self._temp[igp].__repr__()
-                raise ValueError(self._msg)
+            sigmas[-1,nc] = self.eckart(qc_fin, nc)
+            ns[-1,:] = np.abs(sigmas[-1]) > self.constraints.tol
             # Rotate to Eckart frame
             qc_fin[ns[-1]] = mathtools.eckrot(
                     qc_fin[ns[-1]],
@@ -895,7 +863,6 @@ class QCMDWaterIntegrator(NVTIntegrator):
         self.grads[...] = grads
         for g, mg in zip(self.grads, self.mgrads):
             mg[...] = self._minv(g)
-        np.seterr(**err_init)
 
     def pconstraints(self):
         """This applies RATTLE to the momenta and returns the change in the
@@ -914,7 +881,8 @@ class QCMDWaterIntegrator(NVTIntegrator):
         if self._ethermo:
             p = dstrip(self.nm.pnm)
             m = dstrip(self.nm.dynm3)
-            kin_init = 0.5*np.sum(p**2/m, axis=-1)
+            self.ensemble.eens += 0.5*np.sum(p**2/m)
+
         self._temp[...] = np.reshape(dstrip(self.beads.p).T,self._temp.shape)
         # Calculate the diagonal elements of the Jacobian matrix
         gmg = np.sum(self.grads*self.mgrads, axis=(-1,-2))
@@ -922,11 +890,11 @@ class QCMDWaterIntegrator(NVTIntegrator):
         nc = np.ones(len(self._temp), dtype=np.bool) # "not converged"
         ns = np.ones((len(self.clist)+1, len(self._temp)), dtype=np.bool) # "not satisfied"
         # Initialise the constraint time-derivatives
-        sdots = np.empty_like(ns, dtype=np.float)
-        pc_init = np.empty_like(self.eckart.qref)
-        pc_fin = np.empty_like(pc_init)
-        L = np.empty((len(pc_init),3))
-        v = np.empty_like(L)
+        sdots = np.zeros_like(ns, dtype=np.float)
+        pc_init = np.zeros_like(self.eckart.qref)
+        pc_fin = np.zeros_like(pc_init)
+        L = np.zeros((len(pc_init),3))
+        v = np.zeros_like(L)
         mtot = np.sum(self.eckart.mref[...,0:1], axis=-2)
         qc = dstrip(self.beads.qc[:]).reshape(self.eckart.qref.shape)
         CoM = np.sum(self.eckart.mref * qc, axis=-2)/mtot
@@ -980,10 +948,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
         self.beads.p[...] = self._temp.reshape((-1,self.beads.nbeads)).T
         if self._ethermo:
             p = dstrip(self.nm.pnm)
-            kin_fin = 0.5*np.sum(p**2/m, axis=-1)
-            kin_fin -= kin_init
-            for i,t in enumerate(self.thermostat._thermos):
-                t.ethermo -= kin_fin[i]
+            self.ensemble.eens -= 0.5*np.sum(p**2/m)
             self._ethermo = False
         return
 
@@ -991,11 +956,8 @@ class QCMDWaterIntegrator(NVTIntegrator):
         """Velocity Verlet momentum propagator with ring-polymer spring forces,
            followed by RATTLE.
         """
-        # Note: m3*omegak**2 = dynm3*dynomegak**2
-        self.nm.pnm[1:,:] -= (
-                dstrip(self.nm.qnm)[1:,:] *
-                dstrip(self.beads.m3)[1:,:] *
-                dstrip(self.nm.omegak2)[1:,None])*self.fpdt
+
+        self.nm.pnm += dstrip(self.nm.fspringnm)*self.fpdt
         self.pconstraints() # RATTLE
 
     def free_q(self):
@@ -1028,8 +990,8 @@ class QCMDWaterIntegrator(NVTIntegrator):
             self.free_p() # B
 
         if (self.constraints.nfree%2 == 1):
-            self.free_p()
-            self.free_q()
+            self.free_p() # B
+            self.free_q() # A
 
     def free_qstep_ab(self):
         """Override the exact normal mode propagator for the free ring-polymer
@@ -1038,15 +1000,15 @@ class QCMDWaterIntegrator(NVTIntegrator):
 
         if (self.constraints.nfree%2 == 1):
             if self.splitting == "baoab":
-                self.free_q()
-            self.free_p()
+                self.free_q() # A
+            self.free_p() # B
 
         for i in range(self.constraints.nfree//2):
-            self.free_p()
-            self.free_q()
+            self.free_p() # B
+            self.free_q() # A
             if self.splitting == "baoab":
-                self.free_q()
-            self.free_p()
+                self.free_q() # A
+            self.free_p() # B
 
     def step(self, step=None):
         """Does one simulation time step."""
