@@ -240,13 +240,21 @@ class IMF(DummyCalculator):
         # Harm ZP RMS displacement along normal mode
         # Not temperature dependent so that sampled potentials can easily be 
         # reused to evaluate free energy at different temperature.
+        #self.imm.nmrms = np.zeros(len(self.imm.w)) 
+        #self.imm.nmrms[self.imm.nz:] = np.sqrt( 0.5 / self.imm.w[self.imm.nz:])
+
+        # Uses a temp dependent thermal RMS displacement as the scale of displacements.
+        # TODO : Add a separate mapping temperature.
         self.imm.nmrms = np.zeros(len(self.imm.w)) 
-        self.imm.nmrms[self.imm.nz:] = np.sqrt( 0.5 / self.imm.w[self.imm.nz:])
+        self.imm.nmrms[self.imm.nz:] = np.sqrt(0.5 / self.imm.w[self.imm.nz:] / np.tanh(self.imm.w[self.imm.nz:] / self.imm.temp / 2.0))
         self.nmrms = self.imm.nmrms
 
-        # Harm vibr energy at finite temp
         # Similarly this is also not temperature dependent.
-        self.imm.nmevib =  0.5 * self.imm.w 
+        #self.imm.nmevib =  0.5 * self.imm.w
+
+        # Harm vibr energy at finite temp
+        self.imm.nmevib[self.imm.nz:] =  0.50 * self.imm.w[self.imm.nz:] / np.tanh(self.imm.w[self.imm.nz:] / self.imm.temp / 2.0)
+
 
         # Fraction of the harmonic RMS displacement 
         # used to sample along a normal mode
