@@ -93,7 +93,7 @@ class InputNormalMode(InputDictionary):
                                         "default": False,
                                         "help": "Flag determining whether the VSCF mean field Schroedinger's equation is solved."}),
                 "grid": (InputValue, {"dtype": bool,
-                                        "default": False,
+                                        "default": True,
                                         "help": "Flag determining whether the coupling potential is gridded or not."}),
                 "print_mftpot": (InputValue, {"dtype": bool,
                                         "default": False,

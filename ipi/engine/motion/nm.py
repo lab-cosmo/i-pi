@@ -947,7 +947,6 @@ class VSCF(IMF):
 
                 self.v_mft_grids[inm] = self.v_indep_grids[inm] + (1 - self.alpha) * self.v_mft_grids[inm]
                 vcg = np.load('simulation.vcoupled_grids.' + str(inm) + '.dat.npy')
-
                 for jnm in self.inms:
                     self.v_mft_grids[inm] += self.alpha * np.dot(vcg[jnm], self.rho_grids[jnm]) / self.nprim
 
