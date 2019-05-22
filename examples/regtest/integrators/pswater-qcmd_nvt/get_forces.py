@@ -84,10 +84,10 @@ functions that appear in the definition of Eckart constraints.
     parser.add_argument('ref', help="""
 (Quasi-)centroid configuration used to initialise the simulation.
     """)
-    parser.add_argument('beads', help="""
+    parser.add_argument('-b', "--beads", nargs='+', help="""
 Trajectory files with configurations of individual bead replicas.
     """)
-    parser.add_argument('forces', help="""
+    parser.add_argument('-f', '--forces', nargs='+', help="""
 Trajectory files with forces on individual bead replicas.
     """)
     # Optional args
@@ -103,18 +103,19 @@ Number of frames to be skipped at the beginning.
     f = np.zeros_like(qref)
     F = np.zeros(3)
     nsample = 0
-    with open(args.beads,'r') as fq, open(args.forces,'r') as ff:
-        nframe = 0
-        while True:
-            try:
-                q[...] = read_frame(fq)
-                f[...] = read_frame(ff)
-            except:
-                break
-            nframe += 1
-            if (nframe < args.skip):
-                continue
-            F += get_forces(qref, q, f)
-            nsample += 1
+    for qfile, ffile in zip(args.beads, args.forces):
+        with open(qfile, 'r') as fq, open(ffile,'r') as ff:
+            nframe = 0
+            while True:
+                try:
+                    q[...] = read_frame(fq)
+                    f[...] = read_frame(ff)
+                except:
+                    break
+                nframe += 1
+                if (nframe < args.skip):
+                    continue
+                F += get_forces(qref, q, f)
+                nsample += 1
     F /= nsample
     print(F)

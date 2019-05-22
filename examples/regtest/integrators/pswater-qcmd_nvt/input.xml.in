@@ -1,10 +1,10 @@
-<simulation verbosity="debug">
+<simulation verbosity="low">
   <output prefix="@T@K_0@NB@N_qcmd">
-      <properties stride="40" filename="out"> [time{picosecond}, conserved, potential, kinetic_md, spring] </properties>
-      <trajectory filename='pos' stride='40' format='xyz' bead='-@SB@'> positions </trajectory>
-      <trajectory filename='force' stride='40' format='xyz' bead='-@SB@'> forces </trajectory>
+      <properties stride="20" filename="out"> [time{picosecond}, conserved, potential, kinetic_md, spring] </properties>
+      <trajectory filename='pos' stride='20' format='xyz' bead='-@SB@'> positions </trajectory>
+      <trajectory filename='force' stride='20' format='xyz' bead='-@SB@'> forces </trajectory>
   </output>
-  <total_steps>4000</total_steps>
+  <total_steps>40000</total_steps>
   <prng>
     <seed>87549</seed>
   </prng>

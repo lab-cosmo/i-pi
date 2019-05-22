@@ -17,7 +17,7 @@ def local(file=None):
         - file: Append file to the local folder
     """
     if file is None:
-        return os.path.dirname(__file__)
+        return os.path.abspath(os.path.dirname(__file__))
     else:
         return os.path.join(os.path.dirname(__file__), file)
 
@@ -71,6 +71,5 @@ Choose the splitting.
     cmd = "qsub script".split()
     subprocess.call(cmd)
     os.chdir(root)
-
 
 

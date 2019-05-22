@@ -1,5 +1,5 @@
 #PBS -N qcmd-@PORT@
-#PBS -q l16 -l walltime=004:00:00
+#PBS -q l16 -l walltime=002:00:00
 export SCR=/scratch/gt317
 cd $SCR
 mkdir $PBS_JOBID
