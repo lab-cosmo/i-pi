@@ -294,6 +294,9 @@ class nm_fft(object):  # ! TODO add (matrix-version) of the open path transforma
         try:
             import pyfftw
             info("Import of PyFFTW successful", verbosity.medium)
+            #!! TODO: this was changed from float32 to be consistent with
+            # workspaces for NumPy fft below; number of aligned bytes
+            # may need changing accordingly
             self.qdummy = pyfftw.n_byte_align_empty((nbeads, 3 * natoms), 16, 'float64')
             self.qnmdummy = pyfftw.n_byte_align_empty((nbeads // 2 + 1, 3 * natoms), 16, 'complex128')
             self.fft = pyfftw.FFTW(self.qdummy, self.qnmdummy, axes=(0,), direction='FFTW_FORWARD')
@@ -301,6 +304,9 @@ class nm_fft(object):  # ! TODO add (matrix-version) of the open path transforma
         except ImportError:  # Uses standard numpy fft library if nothing better
                             # is available
             info("Import of PyFFTW unsuccessful, using NumPy library instead", verbosity.medium)
+            #!! TODO: this was changed from float32; original worked fine in
+            # Python =<2.7.13 and 2.7.15rc but not 2.7.15 or 2.7.16
+            # as round-off errors caused conserved quantity drift
             self.qdummy = np.zeros((nbeads, 3 * natoms), dtype='float64')
             self.qnmdummy = np.zeros((nbeads // 2 + 1, 3 * natoms), dtype='complex128')
 
