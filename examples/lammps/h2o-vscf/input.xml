@@ -24,7 +24,7 @@
         <asr> poly </asr>
         <nbasis> 10 </nbasis>
         <nevib> 16 </nevib>
-        <athresh> 1e-22 </athresh>
+        <athresh units='electronvolt'> 1e-4 </athresh>
         <nint> 101 </nint>
         <solve> True </solve>
         <pair_range> [0,3] </pair_range>

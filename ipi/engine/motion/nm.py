@@ -399,10 +399,11 @@ class IMF(DummyCalculator):
                 bs_Aanh.append(bs_AEanh[0])
                 bs_Eanh.append(bs_AEanh[1])
 
-                info(" @NM : CONVERGENCE : nbasis = %5d    A =  %10.8e   D(A) =  %10.8e /  %10.8e" % (nnbasis, bs_Aanh[-1]     , np.abs(bs_Aanh[-1] - bs_Aanh[-2]) / np.abs(bs_Aanh[-2]), self.athresh), verbosity.medium)
+                dA = np.abs(bs_Aanh[-1] - bs_Aanh[-2]) / (self.dof - self.imm.nz)
+                info(" @NM : CONVERGENCE : nbasis = %5d    A =  %10.8e   D(A) =  %10.8e /  %10.8e" % (nnbasis, bs_Aanh[-1], dA, self.athresh), verbosity.medium)
  
                 # Check whether anharmonic frequency is converged
-                if (np.abs(bs_Aanh[-1] - bs_Aanh[-2]) / np.abs(bs_Aanh[-2])) < self.athresh:
+                if dA < self.athresh:
                     break
  
                 bs_iter += 1
@@ -432,7 +433,6 @@ class IMF(DummyCalculator):
             Aanh = []
             Eanh = []
             Aanh.append(1e-20)
-            Athresh = self.athresh 
 
             sampling_density_iter = -1
 
@@ -543,10 +543,11 @@ class IMF(DummyCalculator):
                     bs_Aanh.append(bs_AEanh[0])
                     bs_Eanh.append(bs_AEanh[1])
 
-                    info(" @NM : CONVERGENCE : fnmrms = %10.8e   nbasis = %5d    A =  %10.8e   D(A) =  %10.8e /  %10.8e" % (ffnmrms, nnbasis, bs_Aanh[-1], np.abs(bs_Aanh[-1] - bs_Aanh[-2]) / np.abs(bs_Aanh[-2]), self.athresh), verbosity.medium)
+                    dA = np.abs(bs_Aanh[-1] - bs_Aanh[-2]) / (self.dof - self.imm.nz)
+                    info(" @NM : CONVERGENCE : fnmrms = %10.8e   nbasis = %5d    A =  %10.8e   D(A) =  %10.8e /  %10.8e" % (ffnmrms, nnbasis, bs_Aanh[-1], dA, self.athresh), verbosity.medium)
 
                     # Check whether anharmonic frequency is converged
-                    if (np.abs(bs_Aanh[-1] - bs_Aanh[-2]) / np.abs(bs_Aanh[-2])) < self.athresh:
+                    if dA < self.athresh:
                         break
 
                     bs_iter += 1
@@ -555,7 +556,8 @@ class IMF(DummyCalculator):
                 Eanh.append(bs_Eanh[-1])
 
                 # Check whether anharmonic frequency is converged
-                if (np.abs(Aanh[-1] - Aanh[-2]) / np.abs(Aanh[-2])) < self.athresh:
+                dA = np.abs(Aanh[-1] - Aanh[-2]) / (self.dof - self.imm.nz)
+                if dA < self.athresh:
                     break
 
             # Prints the normal mode displacement, the potential and the force.
@@ -938,7 +940,8 @@ class VSCF(IMF):
             a_vscf = self.v0 + ai.sum()
             a_vscf = ai.sum()
             vscf_iter += 1
-            info(' @NM : COMVERGENCE : iteration = %8d   A =  %10.8e    D(A) = %10.8e / %10.8e' % (vscf_iter, a_vscf, np.absolute(a_vscf - a_vscf_old) / a_vscf, self.athresh), verbosity.medium)
+            da = np.absolute(a_vscf - a_vscf_old) / len(self.inms)
+            info(' @NM : COMVERGENCE : iteration = %8d   A =  %10.8e    D(A) = %10.8e / %10.8e' % (vscf_iter, a_vscf, da, self.athresh), verbosity.medium)
 
             # Calculates the thermal density for each normal mode.
             # This is essentially the square of the wave function 
@@ -959,11 +962,13 @@ class VSCF(IMF):
                 for jnm in self.inms:
                     self.v_mft_grids[inm] += self.alpha * np.dot(vcg[jnm], self.rho_grids[jnm]) / self.nprim
 
+                np.savetxt('vmf.' + str(inm) + '.dat.' + str(vscf_iter), np.c_[self.q_grids[inm], self.v_mft_grids[inm] ])
                 ai[inm], ei[inm], self.evals_vscf[inm], self.evecs_vscf[inm] = self.solve_schroedingers_equation(self.imm.w[inm], self.psi_i_grids[inm], self.v_mft_grids[inm], True)
-                np.savetxt('simulation.evals.' + str(inm) + '.dat', self.evals_vscf[inm])
+                np.savetxt('simulation.evals.' + str(inm) + '.dat.' + str(vscf_iter), self.evals_vscf[inm])
 
             # Checks the convergence of the SCF procedure.
-            if np.absolute((a_vscf - a_vscf_old) / a_vscf) < self.athresh and vscf_iter > 4:
+            da = np.absolute(a_vscf - a_vscf_old) / len(self.inms)
+            if da < self.athresh and vscf_iter > 4:
                 info("\n @NM : Convergence reached.", verbosity.medium)
                 info(" @NM : IMF free energy             = %10.8e" % (a_imf / self.nprim), verbosity.low) 
                 info(" @NM : VSCF free energy correction = %10.8e" % ((a_vscf - a_imf) / self.nprim), verbosity.low)

@@ -25,7 +25,7 @@
         <fnmrms> 0.10 </fnmrms>
         <nbasis> 30 </nbasis>
         <nevib> 25 </nevib>
-        <athresh> 1e-6 </athresh>
+        <athresh units='electronvolt'> 1e-4 </athresh>
         <nint> 501 </nint>
         <print_1b_map> True </print_1b_map>
       </normalmodes>
