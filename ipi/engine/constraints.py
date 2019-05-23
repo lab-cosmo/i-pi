@@ -11,7 +11,7 @@ functions.
 import numpy as np
 from ipi.utils.depend import depend_value, dd, dobject
 
-__all__ = ['HolonomicConstraint','BondLength','BondAngle','Eckart']
+__all__ = ['Constraints','ConstraintGroup','BondLength','BondAngle','Eckart']
 
 class Constraints(dobject):
 
@@ -27,6 +27,54 @@ class Constraints(dobject):
     """
 
     def __init__(self, tol=1.0e-06, maxcycle=100, nfree=1):
+
+        dself = dd(self)
+        dself.tol = depend_value(name='tol', value=tol)
+        dself.maxcycle = depend_value(name='maxcycle', value=maxcycle)
+        dself.nfree = depend_value(name='nfree', value=nfree)
+
+class ConstraintGroup(dobject):
+
+    """
+    Gathers constraints that link a subset of atoms and stores parameters
+    for constrained propagation. Handles calculation of constraint functions
+    and gradients, generation of quasi-centroid geometries compatible with a
+    given ring-polymer configuration, conversion between Cartesian and
+    internal forces/coordinates, and enforcement of constraints with SHAKE/RATTLE.
+
+    Attributes:
+        name: Name of the constraint type
+        nsets: The number of sets of atoms subject to the same constraint
+        nconst: The number of internal constraints
+        natoms: The number of atoms in a set
+        nbeads: The number of beads
+        tol: Tolerance threshold for RATTLE
+        maxcycle: Maximum number of cycles in RATTLE
+        indices: List of atomic indices specifying the atoms subject to the
+                 set of constraints.
+        internal: List of internal constraints
+        external: List of external constraints
+
+    Depend objects:
+        qc: Current quasi-centroid configuration
+        q: Current bead configuration
+        p: Current bead momenta
+        dynm3: Dynamic normal-mode masses
+        q0: Cached constrained configuration from the previous converged SHAKE step
+        g0: Corresponding constraint gradients
+        mg0: Gradients pre-multiplied by the inverse mass tensor
+        targets: Targets for the values of the internal constraint functions
+
+    Methods:
+        b2qc: Generates a quasi-centroid configuration compatible with the given
+              beads geometry
+        b2fc: Extracts forces onto the quasi-centroids from bead forces
+              and geometries
+        shake: Enforce the constraints
+        rattle: Enforce that the time-derivative of the constraints be zero
+    """
+
+    def __init__(self, tol=1.0e-06, maxcycle=100):
 
         dself = dd(self)
         dself.tol = depend_value(name='tol', value=tol)
