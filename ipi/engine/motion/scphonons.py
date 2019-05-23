@@ -268,10 +268,10 @@ class SCPhononator(DummyPhononator):
 
 
         if os.path.exists(self.dm.output_maker.prefix + '.' + self.dm.prefix + '.x.' + str(self.dm.isc)):
-            info(" @SCP : Loading %8d confiurations from file." % (self.dm.max_steps,), verbosity.medium)
+            info(" @SCP : Loading %8d configurations from file." % (self.dm.max_steps,), verbosity.medium)
             self.x[self.dm.isc] = np.loadtxt(self.dm.output_maker.prefix + '.' + self.dm.prefix + '.x.' + str(self.dm.isc))
         else:
-            info(" @SCP : Generating %8d new confiurations to be sampled." % (self.dm.max_steps,), verbosity.medium)
+            info(" @SCP : Generating %8d new configurations to be sampled." % (self.dm.max_steps,), verbosity.medium)
             # Creates a list of configurations that are to be sampled.
             while self.dm.imc <= self.dm.max_steps:
 
@@ -332,7 +332,7 @@ class SCPhononator(DummyPhononator):
                    str(self.dm.isc))
         np.savetxt(outfile,  self.x[self.dm.isc])
         outfile.close()
-        info(" @SCP : Saving the sampled confiugrations.", verbosity.medium)
+        info(" @SCP : Saving the sampled configurations.", verbosity.medium)
 
         # prints the potential energy of the sampled configurations.
         outfile = self.dm.output_maker.get_output(self.dm.prefix + ".v." +
