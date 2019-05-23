@@ -940,8 +940,12 @@ class VSCF(IMF):
             a_vscf = self.v0 + ai.sum()
             a_vscf = ai.sum()
             vscf_iter += 1
+<<<<<<< HEAD
             da = np.absolute(a_vscf - a_vscf_old) / len(self.inms)
             info(' @NM : COMVERGENCE : iteration = %8d   A =  %10.8e    D(A) = %10.8e / %10.8e' % (vscf_iter, a_vscf, da, self.athresh), verbosity.medium)
+=======
+            info(' @NM : CONVERGENCE : iteration = %8d   A =  %10.8e    D(A) = %10.8e / %10.8e' % (vscf_iter, a_vscf, np.absolute(a_vscf - a_vscf_old) / a_vscf, self.athresh), verbosity.medium)
+>>>>>>> 103eeb047997a9175a7c5039ce7f0f994b5e7107
 
             # Calculates the thermal density for each normal mode.
             # This is essentially the square of the wave function 

@@ -27,6 +27,7 @@
         <athresh units='electronvolt'> 1e-4 </athresh>
         <nint> 101 </nint>
         <solve> True </solve>
+        <grid> True </grid>
         <pair_range> [0,3] </pair_range>
       </normalmodes>
     </motion>
