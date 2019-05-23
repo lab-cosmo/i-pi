@@ -631,6 +631,9 @@ class VSCF(IMF):
         self.v_indep_grid_file_prefix = 'vindep_grid'
         self.v_coupled_file_prefix = 'vcoupled'
         self.v_coupled_grid_file_prefix = 'vcoupled_grid'
+        self.v_coupled_grids_file_prefix = 'vcoupled_grids'
+        self.eigenvalue_filename = 'evals.dat'
+        self.eigenvector_filename = 'evecs.dat'
 
         # Creates a list of modes with frequencies greater than 2 cm^-1.
         if os.path.exists(self.imm.output_maker.prefix + '.' + self.modes_filename):
@@ -679,7 +682,6 @@ class VSCF(IMF):
             self.q_grids = np.zeros((self.dof, self.nint))
             self.v_indep_grids = np.zeros((self.dof, self.nint))
             self.v_mft_grids = np.zeros((self.dof, self.nint))
-            #self.v_coupled_grids = np.zeros((len(self.pair_combinations), self.nint, self.nint))
 
             self.psi_i_grids = np.zeros((self.dof, self.nbasis, self.nint))
             self.rho_grids = np.zeros((self.dof, self.nint))
@@ -871,11 +873,6 @@ class VSCF(IMF):
                     np.save(outfile, vijgrid.T)
                     outfile.close()
                 
-                # Saves the interpolated potential in memory.
-                #c_index = self.pair_combinations.index((self.inm, self.jnm))
-                #self.v_coupled_grids[self.inm, self.jnm][:] = vijgrid
-                #self.v_coupled_grids[c_index][:] = vijgrid
-
         # Solves the SE once the mapping is finished.
         elif self.solve == True:
             self.solver()
@@ -892,8 +889,8 @@ class VSCF(IMF):
         for inm in self.inms:
 
             # Skips iteration if the file exists.
-            ofn = 'simulation.vcoupled_grids.' + str(inm) + '.dat.npy' 
-            if os.path.exists(ofn):
+            ofn = self.v_coupled_grids_file_prefix + '.' + str(inm) + '.dat' 
+            if os.path.exists(self.imm.output_maker.prefix + '.' + ofn):
                 continue
 
             # Stores the coupled potential 
@@ -903,11 +900,13 @@ class VSCF(IMF):
               if inm == jnm:
                   continue
 
-              fn = 'simulation.vcoupled_grid.' + str(inm) + '.' + str(jnm) + '.dat'
-              vc[jnm] = np.load(fn).T
+              fn = self.v_coupled_grid_file_prefix + '.' + str(inm) + '.' + str(jnm) + ".dat"
+              vc[jnm] = np.load(self.imm.output_maker.prefix + '.' + fn).T
 
             info(' @NM : Saving the interpolated potentials for normal mode no. %8d in %s' % (inm, ofn), verbosity.medium)
-            np.save(ofn, vc)
+            outfile = self.imm.output_maker.get_output(ofn)
+            np.save(outfile, vc)
+            outfile.close()
 
         # Initializes the independent mode free and internal energy.
         ai, ei = np.zeros(self.dof), np.zeros(self.dof)
@@ -922,7 +921,6 @@ class VSCF(IMF):
                 self.psi_i_grids[inm, ibasis, :] /= np.sqrt(np.sum(self.psi_i_grids[inm, ibasis, :]**2))
 
             ai[inm], ei[inm], self.evals_imf[inm], self.evecs_imf[inm] = self.solve_schroedingers_equation(self.imm.w[inm], self.psi_i_grids[inm], self.v_indep_grids[inm], True)
-
             info(' @NM : The IMF free energy of mode %8d is %10.8e' % (inm, ai[inm]), verbosity.medium)
 
         vscf_iter = 0
@@ -940,12 +938,8 @@ class VSCF(IMF):
             a_vscf = self.v0 + ai.sum()
             a_vscf = ai.sum()
             vscf_iter += 1
-<<<<<<< HEAD
             da = np.absolute(a_vscf - a_vscf_old) / len(self.inms)
-            info(' @NM : COMVERGENCE : iteration = %8d   A =  %10.8e    D(A) = %10.8e / %10.8e' % (vscf_iter, a_vscf, da, self.athresh), verbosity.medium)
-=======
             info(' @NM : CONVERGENCE : iteration = %8d   A =  %10.8e    D(A) = %10.8e / %10.8e' % (vscf_iter, a_vscf, np.absolute(a_vscf - a_vscf_old) / a_vscf, self.athresh), verbosity.medium)
->>>>>>> 103eeb047997a9175a7c5039ce7f0f994b5e7107
 
             # Calculates the thermal density for each normal mode.
             # This is essentially the square of the wave function 
@@ -962,11 +956,11 @@ class VSCF(IMF):
             for inm in self.inms:
 
                 self.v_mft_grids[inm] = self.v_indep_grids[inm] + (1 - self.alpha) * self.v_mft_grids[inm]
-                vcg = np.load('simulation.vcoupled_grids.' + str(inm) + '.dat.npy')
+                fn = self.v_coupled_grids_file_prefix + '.' + str(inm) + '.dat' 
+                vcg = np.load(self.imm.output_maker.prefix + '.' + fn)
                 for jnm in self.inms:
                     self.v_mft_grids[inm] += self.alpha * np.dot(vcg[jnm], self.rho_grids[jnm]) / self.nprim
 
-                np.savetxt('vmf.' + str(inm) + '.dat.' + str(vscf_iter), np.c_[self.q_grids[inm], self.v_mft_grids[inm] ])
                 ai[inm], ei[inm], self.evals_vscf[inm], self.evecs_vscf[inm] = self.solve_schroedingers_equation(self.imm.w[inm], self.psi_i_grids[inm], self.v_mft_grids[inm], True)
                 np.savetxt('simulation.evals.' + str(inm) + '.dat.' + str(vscf_iter), self.evals_vscf[inm])
 
@@ -977,6 +971,14 @@ class VSCF(IMF):
                 info(" @NM : IMF free energy             = %10.8e" % (a_imf / self.nprim), verbosity.low) 
                 info(" @NM : VSCF free energy correction = %10.8e" % ((a_vscf - a_imf) / self.nprim), verbosity.low)
                 info(' @NM : ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE) \n', verbosity.low)
+                info(' @NM : Saving the energy eigenvalues in %s' % (self.eigenvalue_filename), verbosity.low)
+                outfile = self.imm.output_maker.get_output(self.eigenvalue_filename)
+                np.savetxt(outfile, self.evals_vscf)
+                outfile.close()
+                info(' @NM : Saving the energy eigenvectors in %s in binary format.\n' % (self.eigenvector_filename), verbosity.low)
+                outfile = self.imm.output_maker.get_output(self.eigenvector_filename)
+                np.save(outfile, self.evecs_vscf)
+                outfile.close()
                 self.terminate()
 
     def one_dimensional_mapper(self, step):
