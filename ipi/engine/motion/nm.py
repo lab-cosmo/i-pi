@@ -354,16 +354,16 @@ class IMF(DummyCalculator):
 
         # Ignores (near) zero modes.
         if step < self.imm.nz:
-            info(" @NM : Ignoring the zero mode.", verbosity.medium)
+            info(" @NM: Ignoring the zero mode.", verbosity.medium)
             info(" ", verbosity.medium)
             return 
         elif self.imm.w[step] < 9.1126705e-06:
-            info(" @NM : Ignoring normal mode no.  %8d with frequency %15.8f cm^-1." % (step, self.imm.w[step] * 219474) , verbosity.medium)
+            info(" @NM: Ignoring normal mode no.  %8d with frequency %15.8f cm^-1." % (step, self.imm.w[step] * 219474) , verbosity.medium)
             info(" ", verbosity.medium)
             self.imm.nz += 1
             return
         else:
-            info(" @NM : Treating normal mode no.  %8d with frequency %15.8f cm^-1." % (step, self.imm.w[step] * 219474) ,verbosity.medium) 
+            info(" @NM: Treating normal mode no.  %8d with frequency %15.8f cm^-1." % (step, self.imm.w[step] * 219474) ,verbosity.medium) 
 
         self.v_indep_filename = self.imm.output_maker.prefix + '.' + self.imm.prefix + '.' + str(step) + '.qvf'
         if os.path.exists(self.v_indep_filename):
@@ -372,7 +372,7 @@ class IMF(DummyCalculator):
             qlist, vlist, flist = np.loadtxt(self.v_indep_filename).T
 
             # Fits cubic splines to data. 
-            info("@NM : Fitting cubic splines.", verbosity.medium)
+            info("@NM: Fitting cubic splines.", verbosity.medium)
             vspline = interp1d(qlist, vlist, kind='cubic', bounds_error=False)
              
             # Converge wrt size of SHO basis
@@ -400,7 +400,7 @@ class IMF(DummyCalculator):
                 bs_Eanh.append(bs_AEanh[1])
 
                 dA = np.abs(bs_Aanh[-1] - bs_Aanh[-2]) / (self.dof - self.imm.nz)
-                info(" @NM : CONVERGENCE : nbasis = %5d    A =  %10.8e   D(A) =  %10.8e /  %10.8e" % (nnbasis, bs_Aanh[-1], dA, self.athresh), verbosity.medium)
+                info(" @NM: CONVERGENCE : nbasis = %5d    A =  %10.8e   D(A) =  %10.8e /  %10.8e" % (nnbasis, bs_Aanh[-1], dA, self.athresh), verbosity.medium)
  
                 # Check whether anharmonic frequency is converged
                 if dA < self.athresh:
@@ -485,7 +485,7 @@ class IMF(DummyCalculator):
                     # Increases the displacement by 1 or 2 depending on the iteration.
                     counter += delta_counter
         
-                info(" @NM : Using %8d configurations along the +ve direction." % (counter,), verbosity.medium)
+                info(" @NM: Using %8d configurations along the +ve direction." % (counter,), verbosity.medium)
 
                 counter = -1
 
@@ -514,10 +514,10 @@ class IMF(DummyCalculator):
                     # Increases the displacement by 1 or 2 depending on the iteration.
                     counter -= delta_counter
         
-                info(" @NM : Using %8d configurations along the -ve direction." % (-counter,), verbosity.medium)
+                info(" @NM: Using %8d configurations along the -ve direction." % (-counter,), verbosity.medium)
        
                 # Fits cubic splines to data. 
-                info("@NM : Fitting cubic splines.", verbosity.medium)
+                info("@NM: Fitting cubic splines.", verbosity.medium)
                 vspline = interp1d(qlist, vlist, kind='cubic', bounds_error=False)
 
                 # Converge wrt size of SHO basis
@@ -544,7 +544,7 @@ class IMF(DummyCalculator):
                     bs_Eanh.append(bs_AEanh[1])
 
                     dA = np.abs(bs_Aanh[-1] - bs_Aanh[-2]) / (self.dof - self.imm.nz)
-                    info(" @NM : CONVERGENCE : fnmrms = %10.8e   nbasis = %5d    A =  %10.8e   D(A) =  %10.8e /  %10.8e" % (ffnmrms, nnbasis, bs_Aanh[-1], dA, self.athresh), verbosity.medium)
+                    info(" @NM: CONVERGENCE : fnmrms = %10.8e   nbasis = %5d    A =  %10.8e   D(A) =  %10.8e /  %10.8e" % (ffnmrms, nnbasis, bs_Aanh[-1], dA, self.athresh), verbosity.medium)
 
                     # Check whether anharmonic frequency is converged
                     if dA < self.athresh:
@@ -570,7 +570,7 @@ class IMF(DummyCalculator):
           output_grid = np.linspace(np.min(qlist), np.max(qlist), 100)
           outfile = self.imm.output_maker.get_output(self.imm.prefix + '.' + str(step) + '.vfit')
           np.savetxt(outfile,  np.c_[output_grid, vspline(output_grid)], header="Frequency = %10.8f" % self.imm.w[step])
-          info(" @NM : Prints the mapped potential energy to %s" % (self.imm.prefix + '.' + str(step) + '.vfit'), verbosity.medium)
+          info(" @NM: Prints the mapped potential energy to %s" % (self.imm.prefix + '.' + str(step) + '.vfit'), verbosity.medium)
           outfile.close()
 
         # Done converging wrt size of SHO basis.
@@ -579,9 +579,9 @@ class IMF(DummyCalculator):
         Zhar =  np.sum([np.exp(-1.0 * np.sqrt(self.imm.w2[step]) * (0.5+i) / dstrip(self.imm.temp)) for i in range(nnbasis)])
         Ehar =  np.sum([np.sqrt(self.imm.w2[step]) * (0.5+i) * np.exp(  -1.0 * np.sqrt(self.imm.w2[step]) * (0.5+i) / dstrip(self.imm.temp)) for i in range(nnbasis)]) / Zhar
 
-        info(' @NM : HAR frequency     =  %10.8e' % (self.imm.w[step],), verbosity.medium)
-        info(' @NM : HAR free energy   =  %10.8e' % (Ahar,), verbosity.medium)
-        info(' @NM : IMF free energy   =  %10.8e' % (Aanh[-1],), verbosity.medium)
+        info(' @NM: HAR frequency     =  %10.8e' % (self.imm.w[step],), verbosity.medium)
+        info(' @NM: HAR free energy   =  %10.8e' % (Ahar,), verbosity.medium)
+        info(' @NM: IMF free energy   =  %10.8e' % (Aanh[-1],), verbosity.medium)
         info('\n', verbosity.medium )
         self.total_anhar_free_energy += Aanh[-1]
         self.total_har_free_energy += Ahar
@@ -594,13 +594,13 @@ class IMF(DummyCalculator):
         for HAR and IMF, and triggers a soft exit.
         """
 
-        info(' @NM : Potential offset               =  %10.8e' % (self.v0,), verbosity.low)
-        info(' @NM : HAR free energy                =  %10.8e' % (np.sum((0.5 * np.sqrt(self.imm.w2[self.imm.nz:]) + self.imm.temp * np.log(1.0 - np.exp(-np.sqrt(self.imm.w2[self.imm.nz:]) / self.imm.temp)))) / self.nprim + self.v0,), verbosity.low)
-        info(' @NM : IMF free energy correction     =  %10.8e' % ((self.total_anhar_free_energy - self.total_har_free_energy) / self.nprim,), verbosity.low)
-        info(' @NM : HAR internal energy            =  %10.8e' % (np.sum(np.sqrt(self.imm.w2[self.imm.nz:]) * (0.5 + 1.0 / (np.exp(np.sqrt(self.imm.w2[self.imm.nz:]) / self.imm.temp) -1))) / self.nprim + self.v0,), verbosity.low)
-        info(' @NM : IMF internal energy correction =  %10.8e' % ((self.total_anhar_internal_energy -self.total_har_internal_energy) / self.nprim,), verbosity.low)
-        info(' @NM : ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE) \n', verbosity.low)
-        softexit.trigger(" @NM : The IMF calculation has terminated.")
+        info(' @NM: Potential offset               =  %10.8e' % (self.v0,), verbosity.low)
+        info(' @NM: HAR free energy                =  %10.8e' % (np.sum((0.5 * np.sqrt(self.imm.w2[self.imm.nz:]) + self.imm.temp * np.log(1.0 - np.exp(-np.sqrt(self.imm.w2[self.imm.nz:]) / self.imm.temp)))) / self.nprim + self.v0,), verbosity.low)
+        info(' @NM: IMF free energy correction     =  %10.8e' % ((self.total_anhar_free_energy - self.total_har_free_energy) / self.nprim,), verbosity.low)
+        info(' @NM: HAR internal energy            =  %10.8e' % (np.sum(np.sqrt(self.imm.w2[self.imm.nz:]) * (0.5 + 1.0 / (np.exp(np.sqrt(self.imm.w2[self.imm.nz:]) / self.imm.temp) -1))) / self.nprim + self.v0,), verbosity.low)
+        info(' @NM: IMF internal energy correction =  %10.8e' % ((self.total_anhar_internal_energy -self.total_har_internal_energy) / self.nprim,), verbosity.low)
+        info(' @NM: ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE) \n', verbosity.low)
+        softexit.trigger(" @NM: The IMF calculation has terminated.")
 
 
 class VSCF(IMF):
@@ -639,12 +639,12 @@ class VSCF(IMF):
         if os.path.exists(self.imm.output_maker.prefix + '.' + self.modes_filename):
             self.inms = np.loadtxt(self.imm.output_maker.prefix + '.' + self.modes_filename, dtype=int).tolist()
         else:
-            info(" @NM : Identifying relevant frequency modes.", verbosity.medium) 
+            info(" @NM: Identifying relevant frequency modes.", verbosity.medium) 
             self.inms = []
             for inm in range(self.dof):
                 
                 if self.imm.w[inm] < 9.1126705e-06:
-                    info(" @NM : Ignoring normal mode no.  %8d with frequency %15.8f cm^-1." % (inm, self.imm.w[inm] * 219474,) , verbosity.medium)
+                    info(" @NM: Ignoring normal mode no.  %8d with frequency %15.8f cm^-1." % (inm, self.imm.w[inm] * 219474,) , verbosity.medium)
                     continue
                 else:
                     self.inms.append(inm)
@@ -718,7 +718,7 @@ class VSCF(IMF):
             self.v_indep_filename = self.v_indep_file_prefix + "." + str(self.inm) + ".dat"
             self.v_indep_grid_filename = self.v_indep_grid_file_prefix + "." + str(self.inm) + ".dat"
 
-            info("\n @NM : Treating normal mode no.  %8d with frequency %15.8f cm^-1." % (self.inm, self.imm.w[self.inm] * 219474) ,verbosity.medium)
+            info("\n @NM: Treating normal mode no.  %8d with frequency %15.8f cm^-1." % (self.inm, self.imm.w[self.inm] * 219474) ,verbosity.medium)
 
             # If the indepent modes are already calculated, just loads from file.
             if os.path.exists(self.imm.output_maker.prefix + '.' + self.v_indep_filename):
@@ -732,9 +732,9 @@ class VSCF(IMF):
                     self.npts[self.inms] = self.npts_neg[self.inms] + self.npts_pos[self.inms] + 1
                 self.v_indep_list.append(np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_indep_filename).T)
                 self.displacements_nm.append([self.fnmrms * self.nmrms[self.inm] * (-self.npts_neg[self.inm] + i - 2.0) for i in xrange(self.npts[self.inm] + 4)])
-                info(" @NM : Loading the sampled potential energy for mode  %8d" % (self.inm,), verbosity.medium)
-                info(" @NM : Using %8d configurations along the +ve direction." % (self.npts_pos[self.inm],), verbosity.medium)
-                info(" @NM : Using %8d configurations along the -ve direction." % (self.npts_neg[self.inm],), verbosity.medium)
+                info(" @NM: Loading the sampled potential energy for mode  %8d" % (self.inm,), verbosity.medium)
+                info(" @NM: Using %8d configurations along the +ve direction." % (self.npts_pos[self.inm],), verbosity.medium)
+                info(" @NM: Using %8d configurations along the -ve direction." % (self.npts_neg[self.inm],), verbosity.medium)
 
             # If mapping has NOT been perfomed previously, maps the 1D curves.
             else:
@@ -744,9 +744,9 @@ class VSCF(IMF):
                 self.v_indep_list.append(v_indeps)
                 self.displacements_nm.append([self.fnmrms * self.nmrms[self.inm] * (-self.npts_neg[self.inm] + i - 2.0) for i in xrange(self.npts[self.inm] + 4)])
 
-                info(" @NM : Using %8d configurations along the +ve direction." % (self.npts_pos[self.inm],), verbosity.medium)
-                info(" @NM : Using %8d configurations along the -ve direction." % (self.npts_neg[self.inm],), verbosity.medium)
-                info(" @NM : Saving the sampled potential energy for mode  %8d in %s" % (self.inm, self.v_indep_filename), verbosity.medium)
+                info(" @NM: Using %8d configurations along the +ve direction." % (self.npts_pos[self.inm],), verbosity.medium)
+                info(" @NM: Using %8d configurations along the -ve direction." % (self.npts_neg[self.inm],), verbosity.medium)
+                info(" @NM: Saving the sampled potential energy for mode  %8d in %s" % (self.inm, self.v_indep_filename), verbosity.medium)
                 outfile = self.imm.output_maker.get_output(self.v_indep_filename)
                 np.savetxt(outfile, v_indeps, header=" npts_neg: %10d npts_pos: %10d" % (self.npts_neg[self.inm], self.npts_pos[self.inm]))
                 outfile.close()
@@ -758,13 +758,13 @@ class VSCF(IMF):
                 if os.path.exists(self.imm.output_maker.prefix + '.' + self.v_indep_grid_filename):
                     igrid, vigrid = np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_indep_grid_filename).T
                 else:
-                    info(" @NM : Interpolating the potential energy on a grid of %8d points." % (self.nint,), verbosity.medium)
+                    info(" @NM: Interpolating the potential energy on a grid of %8d points." % (self.nint,), verbosity.medium)
                     vspline = interp1d(self.displacements_nm[-1], self.v_indep_list[-1], kind='cubic', bounds_error=False)
                     igrid = np.linspace(-self.npts_neg[self.inm] * self.fnmrms * self.nmrms[self.inm], self.npts_pos[self.inm] * self.fnmrms * self.nmrms[self.inm], self.nint)
                     vigrid = np.asarray([np.asscalar(vspline(igrid[iinm]) - 0.5 * self.imm.w2[self.inm] * igrid[iinm]**2 - self.v0) for iinm in range(self.nint)])
 
                     # Save coupling correction to file for vistualisation.
-                    info(" @NM : Saving the interpolated potential energy to %s" % (self.v_indep_grid_filename,), verbosity.medium)
+                    info(" @NM: Saving the interpolated potential energy to %s" % (self.v_indep_grid_filename,), verbosity.medium)
                     outfile = self.imm.output_maker.get_output(self.v_indep_grid_filename)
                     np.savetxt(outfile, np.c_[igrid, vigrid])
                     outfile.close()
@@ -790,7 +790,7 @@ class VSCF(IMF):
             self.v_coupled_filename = self.v_coupled_file_prefix + "." + str(self.inm) + "." + str(self.jnm) + ".dat"
             self.v_coupled_grid_filename = self.v_coupled_grid_file_prefix + "." + str(self.inm) + "." + str(self.jnm) + ".dat"
 
-            info("\n @NM : Treating normal modes no.  %8d  and %8d  with frequencies %15.8f cm^-1 and %15.8f cm^-1, respectively." % (self.inm, self.jnm, self.imm.w[self.inm] * 219474,  self.imm.w[self.jnm] * 219474) ,verbosity.medium)
+            info("\n @NM: Treating normal modes no.  %8d  and %8d  with frequencies %15.8f cm^-1 and %15.8f cm^-1, respectively." % (self.inm, self.jnm, self.imm.w[self.inm] * 219474,  self.imm.w[self.jnm] * 219474) ,verbosity.medium)
 
             # Skips the step if the grid file exists.
             if os.path.exists(self.imm.output_maker.prefix + '.' + self.v_coupled_grid_filename):
@@ -811,7 +811,7 @@ class VSCF(IMF):
                 didjv = []
                 unit_displacement_nmi = np.real(self.imm.V.T[self.inm]) * np.sqrt(self.nprim)
                 unit_displacement_nmj = np.real(self.imm.V.T[self.jnm]) * np.sqrt(self.nprim)
-                info(" @NM : Sampling a total of %8d configurations." % (len(displacements_nmi) * len(displacements_nmj),), verbosity.medium)
+                info(" @NM: Sampling a total of %8d configurations." % (len(displacements_nmi) * len(displacements_nmj),), verbosity.medium)
 
                 for i in xrange(self.npts[self.inm] + 4):
                     for j in xrange(self.npts[self.jnm] + 4):
@@ -828,13 +828,13 @@ class VSCF(IMF):
                         k += 1
 
                 # Saves the displacements and the sampled potential energy.
-                info(" @NM : Saving the sampled potential energy to %s." % (self.v_coupled_filename,), verbosity.medium)
+                info(" @NM: Saving the sampled potential energy to %s." % (self.v_coupled_filename,), verbosity.medium)
                 outfile = self.imm.output_maker.get_output(self.v_coupled_filename)
                 np.savetxt(outfile, didjv)
                 outfile.close()
 
             else:
-                info(" @NM : Skipping the mapping for modes %8d and %8d." % (self.inm, self.jnm), verbosity.medium)
+                info(" @NM: Skipping the mapping for modes %8d and %8d." % (self.inm, self.jnm), verbosity.medium)
                 if self.grid:
                     displacements_nmi, displacements_nmj, self.v_coupled = np.loadtxt(self.imm.output_maker.prefix + '.' + self.v_coupled_filename).T
                     self.v_coupled += self.v0
@@ -851,14 +851,14 @@ class VSCF(IMF):
                 else:
 
                     # Interpolates the displacements on a grid and saves for VSCFSOLVER.
-                    info(" @NM : Interpolating the potential energy on a %8d x %8d grid." % (self.nint,self.nint), verbosity.medium)
+                    info(" @NM: Interpolating the potential energy on a %8d x %8d grid." % (self.nint,self.nint), verbosity.medium)
                     vtspl = interp2d(displacements_nmi, displacements_nmj, self.v_coupled, kind='cubic', bounds_error=False)
                     igrid = np.linspace(-self.npts_neg[self.inm] * self.fnmrms * self.nmrms[self.inm], self.npts_pos[self.inm] * self.fnmrms * self.nmrms[self.inm], self.nint)
                     jgrid = np.linspace(-self.npts_neg[self.jnm] * self.fnmrms * self.nmrms[self.jnm], self.npts_pos[self.jnm] * self.fnmrms * self.nmrms[self.jnm], self.nint)
                     vijgrid = vtspl(igrid, jgrid) - vtspl(igrid, jgrid * 0.0) - vtspl(igrid * 0.0, jgrid) + vtspl(igrid * 0.0, jgrid * 0.0)
 
                     # Save coupling correction to file for vistualisation.
-                    info(" @NM : Saving the interpolated potential energy to %s" % (self.v_coupled_grid_filename,), verbosity.medium)
+                    info(" @NM: Saving the interpolated potential energy to %s" % (self.v_coupled_grid_filename,), verbosity.medium)
                     outfile = self.imm.output_maker.get_output(self.v_coupled_grid_filename)
                     np.save(outfile, vijgrid)
                     outfile.close()
@@ -868,7 +868,7 @@ class VSCF(IMF):
                     #vijgrid = vtspl(jgrid, igrid) - vtspl(jgrid, igrid * 0.0) - vtspl(jgrid * 0.0, igrid) + vtspl(jgrid * 0.0, igrid * 0.0)
                     
                     # Save coupling correction to file for vistualisation.
-                    info(" @NM : Saving the interpolated potential energy to %s" % (tmpfile,), verbosity.medium)
+                    info(" @NM: Saving the interpolated potential energy to %s" % (tmpfile,), verbosity.medium)
                     outfile = self.imm.output_maker.get_output(tmpfile)
                     np.save(outfile, vijgrid.T)
                     outfile.close()
@@ -903,7 +903,7 @@ class VSCF(IMF):
               fn = self.v_coupled_grid_file_prefix + '.' + str(inm) + '.' + str(jnm) + ".dat"
               vc[jnm] = np.load(self.imm.output_maker.prefix + '.' + fn).T
 
-            info(' @NM : Saving the interpolated potentials for normal mode no. %8d in %s' % (inm, ofn), verbosity.medium)
+            info(' @NM: Saving the interpolated potentials for normal mode no. %8d in %s' % (inm, ofn), verbosity.medium)
             outfile = self.imm.output_maker.get_output(ofn)
             np.save(outfile, vc)
             outfile.close()
@@ -921,15 +921,15 @@ class VSCF(IMF):
                 self.psi_i_grids[inm, ibasis, :] /= np.sqrt(np.sum(self.psi_i_grids[inm, ibasis, :]**2))
 
             ai[inm], ei[inm], self.evals_imf[inm], self.evecs_imf[inm] = self.solve_schroedingers_equation(self.imm.w[inm], self.psi_i_grids[inm], self.v_indep_grids[inm], True)
-            info(' @NM : The IMF free energy of mode %8d is %10.8e' % (inm, ai[inm]), verbosity.medium)
+            info(' @NM: The IMF free energy of mode %8d is %10.8e' % (inm, ai[inm]), verbosity.medium)
 
         vscf_iter = 0
         a_imf = self.v0 + ai.sum()
         a_imf = ai.sum()
         a_vscf = a_imf
         self.evals_vscf, self.evecs_vscf = self.evals_imf.copy(), self.evecs_imf.copy()
-        info(' @NM : The total IMF free energy is %10.8e' % (a_imf), verbosity.medium)
-        info('\n @NM : The SCF begins.', verbosity.medium)
+        info(' @NM: The total IMF free energy is %10.8e' % (a_imf), verbosity.medium)
+        info('\n @NM: The SCF begins.', verbosity.medium)
 
         while True:
 
@@ -939,12 +939,12 @@ class VSCF(IMF):
             a_vscf = ai.sum()
             vscf_iter += 1
             da = np.absolute(a_vscf - a_vscf_old) / len(self.inms)
-            info(' @NM : CONVERGENCE : iteration = %8d   A =  %10.8e    D(A) = %10.8e / %10.8e' % (vscf_iter, a_vscf, da, self.athresh), verbosity.medium)
+            info(' @NM: CONVERGENCE : iteration = %8d   A =  %10.8e    D(A) = %10.8e / %10.8e' % (vscf_iter, a_vscf, da, self.athresh), verbosity.medium)
 
             # Calculates the thermal density for each normal mode.
             # This is essentially the square of the wave function 
             # times the Boltzmann density of each state.
-            #info(' @NM : Calculating the thermal density.', verbosity.medium)
+            #info(' @NM: Calculating the thermal density.', verbosity.medium)
             self.rho_grids *= 0.0
             for inm in self.inms:
                 for ibasis in xrange(self.nbasis):
@@ -967,15 +967,15 @@ class VSCF(IMF):
             # Checks the convergence of the SCF procedure.
             da = np.absolute(a_vscf - a_vscf_old) / len(self.inms)
             if da < self.athresh and vscf_iter > 4:
-                info("\n @NM : Convergence reached.", verbosity.medium)
-                info(" @NM : IMF free energy             = %10.8e" % (a_imf / self.nprim), verbosity.low) 
-                info(" @NM : VSCF free energy correction = %10.8e" % ((a_vscf - a_imf) / self.nprim), verbosity.low)
-                info(' @NM : ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE) \n', verbosity.low)
-                info(' @NM : Saving the energy eigenvalues in %s' % (self.eigenvalue_filename), verbosity.low)
+                info("\n @NM: Convergence reached.", verbosity.medium)
+                info(" @NM: IMF free energy             = %10.8e" % (a_imf / self.nprim), verbosity.low) 
+                info(" @NM: VSCF free energy correction = %10.8e" % ((a_vscf - a_imf) / self.nprim), verbosity.low)
+                info(' @NM: ALL QUANTITIES PER PRIMITIVE UNIT CELL (WHERE APPLICABLE) \n', verbosity.low)
+                info(' @NM: Saving the energy eigenvalues in %s' % (self.eigenvalue_filename), verbosity.low)
                 outfile = self.imm.output_maker.get_output(self.eigenvalue_filename)
                 np.savetxt(outfile, self.evals_vscf)
                 outfile.close()
-                info(' @NM : Saving the energy eigenvectors in %s in binary format.\n' % (self.eigenvector_filename), verbosity.low)
+                info(' @NM: Saving the energy eigenvectors in %s in binary format.\n' % (self.eigenvector_filename), verbosity.low)
                 outfile = self.imm.output_maker.get_output(self.eigenvector_filename)
                 np.save(outfile, self.evecs_vscf)
                 outfile.close()
@@ -1049,5 +1049,5 @@ class VSCF(IMF):
         Triggers a soft exit.
         """
 
-        softexit.trigger(" @NM : The VSCF calculation has terminated.")
+        softexit.trigger(" @NM: The VSCF calculation has terminated.")
 
