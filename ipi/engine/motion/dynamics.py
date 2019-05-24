@@ -19,7 +19,7 @@ from ipi.engine.motion import Motion
 from ipi.utils import mathtools
 from ipi.utils import nmtransform
 from ipi.utils.depend import *
-from ipi.engine.constraints import BondLength, BondAngle, Eckart, Constraints
+from ipi.engine.constraints import BondLength, BondAngle, _Eckart, Constraints
 from ipi.engine.thermostats import Thermostat
 from ipi.engine.barostats import Barostat
 from ipi.utils.softexit import softexit
@@ -748,7 +748,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
                       BondAngle(indices=[0,1,2])]
         qc = dstrip(self.beads.qc[:]).reshape(self._temp.shape[:-1])
         mc = dstrip(self.beads.m3[0]).reshape(qc.shape)
-        self.eckart = Eckart([], qref = qc, mref = mc)
+        self.eckart = _Eckart([], qref = qc, mref = mc)
         # Set up arrays for storing constraint targets and gradients
         self.targetvals = np.zeros((len(self.clist),self.beads.natoms//3))
         self.grads = np.zeros( (len(self.clist),)+self._temp.shape )

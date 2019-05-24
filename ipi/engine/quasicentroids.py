@@ -42,9 +42,9 @@ class QuasiCentroids(dobject):
         forces: QCForces object that emulates parts of Forces
 
     Methods:
-        scatter: scatter an array into disjoint sets subject grouped by
+        scatter: scatter an array into disjoint sets grouped by
                  quasi-centroid type
-        gather: gather the values partitioned by quasi-centroid type
+        gather: gather the values from different quasi-centroid type
 
     """
 

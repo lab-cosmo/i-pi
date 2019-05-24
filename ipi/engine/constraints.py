@@ -10,77 +10,9 @@ functions.
 
 import numpy as np
 from ipi.utils.depend import depend_value, dd, dobject
+from ipi.utils import mathtools
 
-__all__ = ['Constraints','ConstraintGroup','BondLength','BondAngle','Eckart']
-
-class Constraints(dobject):
-
-    """
-    Holds parameters used in cosnstrained propagation.
-
-    Attributes:
-       tol: Tolerance threshold for RATTLE
-       maxcycle: Maximum number of cycles in RATTLE
-       nfree: Number of steps into which ring-polymer propagation
-              under spring forces is split at the inner-most mts level.
-
-    """
-
-    def __init__(self, tol=1.0e-06, maxcycle=100, nfree=1):
-
-        dself = dd(self)
-        dself.tol = depend_value(name='tol', value=tol)
-        dself.maxcycle = depend_value(name='maxcycle', value=maxcycle)
-        dself.nfree = depend_value(name='nfree', value=nfree)
-
-class ConstraintGroup(dobject):
-
-    """
-    Gathers constraints that link a subset of atoms and stores parameters
-    for constrained propagation. Handles calculation of constraint functions
-    and gradients, generation of quasi-centroid geometries compatible with a
-    given ring-polymer configuration, conversion between Cartesian and
-    internal forces/coordinates, and enforcement of constraints with SHAKE/RATTLE.
-
-    Attributes:
-        name: Name of the constraint type
-        nsets: The number of sets of atoms subject to the same constraint
-        nconst: The number of internal constraints
-        natoms: The number of atoms in a set
-        nbeads: The number of beads
-        tol: Tolerance threshold for RATTLE
-        maxcycle: Maximum number of cycles in RATTLE
-        indices: List of atomic indices specifying the atoms subject to the
-                 set of constraints.
-        internal: List of internal constraints
-        external: List of external constraints
-
-    Depend objects:
-        qc: Current quasi-centroid configuration
-        q: Current bead configuration
-        p: Current bead momenta
-        dynm3: Dynamic normal-mode masses
-        q0: Cached constrained configuration from the previous converged SHAKE step
-        g0: Corresponding constraint gradients
-        mg0: Gradients pre-multiplied by the inverse mass tensor
-        targets: Targets for the values of the internal constraint functions
-
-    Methods:
-        b2qc: Generates a quasi-centroid configuration compatible with the given
-              beads geometry
-        b2fc: Extracts forces onto the quasi-centroids from bead forces
-              and geometries
-        shake: Enforce the constraints
-        rattle: Enforce that the time-derivative of the constraints be zero
-    """
-
-    def __init__(self, tol=1.0e-06, maxcycle=100):
-
-        dself = dd(self)
-        dself.tol = depend_value(name='tol', value=tol)
-        dself.maxcycle = depend_value(name='maxcycle', value=maxcycle)
-        dself.nfree = depend_value(name='nfree', value=nfree)
-
+__all__ = ['Constraints','ConstraintGroup','BondLength','BondAngle','_Eckart']
 
 class HolonomicConstraint(object):
     """Base holonomic constraints class.
@@ -203,7 +135,161 @@ class BondAngle(HolonomicConstraint):
         jac[...,slcX,:] = -(jac[...,slcA,:]+jac[...,slcB,:])
         return sigma, jac
 
-class Eckart(HolonomicConstraint):
+class ExternalConstraint(object):
+    """Base external constraints class.
+
+    This is different from the other holonomic constraints in that
+    (a) the constraints are applied to the centroids,
+    (b) the number of atoms is flexible, (c) the constraints require
+    the masses of the particles and a reference configuration instead
+    of a single value to specify the target, and (d) the constraints are
+    of a particularly simple form which allows them to be imposed exactly.
+
+    NOTE: using properties instead of depend arrays because the
+    constraint is called repeatedly in a loop during SHAKE/RATTLE,
+    and it seems to be faster to access the values this way.
+
+    Properties:
+        qref: The reference configuration
+        mref: The corresponding masses
+
+    Methods:
+        enforce_q: return an array indicating which sets of atoms did not
+                   initially satisfy the constraint to the specified tolerance
+                   and enforce the constraint onto any such non-conforming sets.
+        enforce_p: analogous procedure for the time-derivatives of the
+                   constraints.
+    """
+
+    def bind(self, qref, mref):
+        """
+        "Binds" the reference configuration and masses to the constraint.
+        Args:
+            qref (2d ndarray): the reference configuration stored as
+                               an ngp-by-ncart array, where ngp is the
+                               number of molecules/groups of atoms
+                               individually subject to the constraint,
+                               and ncart is the number of Cartesian DoFs
+                               in each such group
+            mref (2d ndarray): a conforming array of atomic masses
+
+        NOTE: this is not really proper "binding" because the configuration
+              and the masses have to be updated manually.
+        """
+        self.__qref = None
+        self.mref = mref
+        self.qref = qref
+
+        @property
+        def mref(self):
+            return self.__mref
+        @mref.setter
+        def mref(self, val):
+            init_shape = val.shape
+            self.__mref = val.reshape(init_shape[:-1]+(init_shape[-1]//3, 3))
+            if self.__qref is not None:
+                self._update_config()
+        @property
+        def qref(self):
+            return self.__qref
+        @qref.setter
+        def qref(self, val):
+            init_shape = val.shape
+            self.__qref = val.reshape(init_shape[:-1]+(init_shape[-1]//3, 3))
+            self._update_config()
+
+        def _update_config(self):
+            """Re-calculate the intermediate values used in enforcing the constraints.
+            """
+            pass
+
+        def enforce_q(self, q, tol, nc, ns):
+            """Test which constraints are not satisfied to within the given
+               tolerance, record their identities and enforce the constraints
+               on any such non-conforming sets of atoms
+
+               Args:
+                   q (2d ndarray): an ngp-by-ncart array of
+                                   atomic configurations
+                   tol (float): convergence parameter
+                   nc (1d ndarray): an ngp array of booleans indicating which sets
+                                    of atoms are still not converged and therefore
+                                    need to be processed
+                   ns (1d ndarray): an ngp array of boolean for indicating which
+                                    sets do not currently satisfy the constraints
+                                    to the level specified by tol.
+                All modified in-place.
+            """
+            pass
+
+        def enforce_p(self, p, q, tol, nc, ns):
+            """Analogous to the above but for enforcing constraints on the
+               momenta.
+            """
+            pass
+
+class Eckart(ExternalConstraint):
+    """The Eckart constraints, enforcing the coincidence of the CoMs of
+       the input and the reference configuration and a particular
+       relative orientation.
+    """
+
+    def _update_config(self):
+        """Re-calculate the CoM of the reference configuration
+           and its coordinates relative to the CoM
+        """
+        self.mtot = np.sum(self.mref[...,0:1], axis=-2)
+        # CoM of reference
+        self.qref_com = np.sum(
+                self.qref*self.mref, axis=-2
+                )/self.mtot
+        # Reference coords relative to CoM
+        self.qref_rel = self.qref-self.qref_com[...,None,:]
+        # The above, mass-weighted
+        self.mqref_rel = self.qref_rel*self.mref/self.mtot[...,None,:]
+
+    def _eckart_prod(self, q, nc):
+        ans = np.cross(self.mqref_rel[nc], (q[nc]-self.qref_rel[nc]),
+                       axis=-1).sum(axis=-2)
+        return np.sqrt(np.sum(ans**2, axis=-1))
+
+    def enforce_q(self, q, tol, nc, ns):
+        # Get the current CoM of the system and shift to CoM frame
+        init_shape = q.shape
+        q.shape = self.qref.shape
+        CoM = np.sum(self.mref[nc] * q, axis=-2)/self.mtot[nc]
+        q -= CoM[:,None,:]
+        # Calculate the Eckart product
+        sigmas = self._eckart_prod(q, nc)
+        ns[nc] = sigmas > tol
+        # Rotate into Eckart frame as required
+        q[ns] = mathtools.eckrot(q[ns], self.mref[ns], self.qref_rel[ns])
+        # Shift to CoM of reference
+        q[nc] += self.qref_com[nc,None,:]
+        q.shape = init_shape
+
+    def enforce_p(self, p, q, tol, nc, ns):
+        init_shape = p.shape
+        for arr in (p, q):
+            arr.shape = self.qref.shape
+        # Get CoM velocity and set to zero
+        v = np.sum(p[nc], axis=-2)/self.mtot[nc]
+        p[nc] -= self.mref[nc]*v[nc,None,:]
+        L = np.zeros((len(p),3))
+        L[nc,:] = np.cross(self.qref_rel[nc], p[nc],axis=-1).sum(axis=-2)
+        sdots = np.sqrt(np.sum(L**2, axis=-1))/self.mtot.reshape((-1,))[nc]
+        ns[nc] = sdots > tol
+        # Enforce the rotational constraint as required
+        p[ns] = mathtools.eckspin(p[ns], q[ns], self.mref[ns],
+                                  self.qref_rel[ns], L[ns])
+        for arr in (p, q):
+            arr.shape = init_shape
+
+class FixCoM(ExternalConstraint):
+    pass
+
+#!! TODO: This is to be retired and replaced by Eckart defined above.
+class _Eckart(HolonomicConstraint):
     """Rotational Eckart constraint.
 
        NOTE: this is different to the other HolonomicConstraint objects
@@ -224,7 +310,7 @@ class Eckart(HolonomicConstraint):
                               individually subject to the Eckart
                               constraint, and ncart is the number
                               of Cartesian DoFs in each such group
-               mref(ndarray): a confirming array of atomic masses
+               mref(ndarray): a conforming array of atomic masses
 
         """
         if qref is None:
@@ -281,3 +367,102 @@ class Eckart(HolonomicConstraint):
         ans = np.cross(self.mqref_rel[nc], (qarr-self.qref_rel[nc]),
                        axis=-1).sum(axis=-2)
         return np.sqrt(np.sum(ans**2, axis=-1))
+
+
+#!! TODO: the Constraints is to be retired and replaced by ConstrainGroup
+class Constraints(dobject):
+
+    """
+    Holds parameters used in cosnstrained propagation.
+
+    Attributes:
+       tol: Tolerance threshold for RATTLE
+       maxcycle: Maximum number of cycles in RATTLE
+       nfree: Number of steps into which ring-polymer propagation
+              under spring forces is split at the inner-most mts level.
+
+    """
+
+    def __init__(self, tol=1.0e-06, maxcycle=100, nfree=1):
+
+        dself = dd(self)
+        dself.tol = depend_value(name='tol', value=tol)
+        dself.maxcycle = depend_value(name='maxcycle', value=maxcycle)
+        dself.nfree = depend_value(name='nfree', value=nfree)
+
+class ConstraintGroup(dobject):
+
+    """
+    Gathers constraints that link a subset of atoms and stores parameters
+    for constrained propagation. Handles calculation of constraint functions
+    and gradients, generation of quasi-centroid geometries compatible with a
+    given ring-polymer configuration, conversion between Cartesian and
+    internal forces/coordinates, and enforcement of constraints with SHAKE/RATTLE.
+
+    Attributes:
+        name: Name of the constraint type
+        natoms: The number of atoms in a single constrained set
+        indices: List of atomic indices specifying the atoms subject to the
+                 set of constraints.
+        nsets: The number of sets of atoms subject to the same constraint
+        nbeads: The number of beads
+        tol: Tolerance threshold for RATTLE
+        maxcycle: Maximum number of cycles in RATTLE
+        internal: List of internal constraint objects
+        external: An object enforcing the external constraints
+
+    Depend objects:
+        qc: Current quasi-centroid configuration
+        q: Current bead configuration
+        p: Current bead momenta
+        dynm3: Dynamic normal-mode masses
+        q0: Cached constrained configuration from the previous converged SHAKE step
+        g0: Corresponding constraint gradients
+        mg0: Gradients pre-multiplied by the inverse mass tensor
+        targets: Targets for the values of the internal constraint functions
+
+    Methods:
+        b2qc: Generates a quasi-centroid configuration compatible with the given
+              beads geometry
+        b2fc: Extracts forces onto the quasi-centroids from bead forces
+              and geometries
+        shake: Enforce the constraints
+        rattle: Enforce that the time-derivative of the constraints be zero
+    """
+
+    def __init__(self, name, indices, tol=1.0e-06, maxcycle=100):
+
+        self.name = name.lower()
+        self.indices = indices
+        self.tol = tol
+        self.maxcycle = maxcycle
+        #!! TODO: implement routines and nonesuch
+        #!! TODO: in future add diatomic and 3-pyramid (ammonia)
+        dummy = np.ones(3) # Dummy array to give Eckart, override at binding
+        if self.name == "triatomic":
+            self.natoms = 3
+            self.b2qc = tri_b2qc
+            self.b2fc = tri_b2fc
+            self.internal = [BondLength(indices=[0,1]),
+                             BondLength(indices=[0,2]),
+                             BondAngle(indices=[0,1,2])]
+            self.external = Eckart()
+        elif self.name == "monatomic":
+            self.natoms = 1
+            self.b2qc = get_centroid
+            self.b2fc = get_centroid
+            self.internal = []
+            self.external = FixCoM()
+        else:
+            raise ValueError(
+                    "Quasi-centroid group of type '{:s}' ".format(self.name) +
+                    "has not been defined.")
+        if (len(self.indices)%self.natoms != 0):
+            raise ValueError(
+                    "Total number of atoms in the {:s} group ".format(self.name)+
+                    "is inconsistent with partitioning into sets "+
+                    "of size {:d}.".format(self.natoms))
+        self.nsets = len(self.indices)//self.natoms
+
+    def bind(self, beads, nm):
+        pass
