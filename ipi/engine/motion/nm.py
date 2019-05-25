@@ -962,7 +962,6 @@ class VSCF(IMF):
                     self.v_mft_grids[inm] += self.alpha * np.dot(vcg[jnm], self.rho_grids[jnm]) / self.nprim
 
                 ai[inm], ei[inm], self.evals_vscf[inm], self.evecs_vscf[inm] = self.solve_schroedingers_equation(self.imm.w[inm], self.psi_i_grids[inm], self.v_mft_grids[inm], True)
-                np.savetxt('simulation.evals.' + str(inm) + '.dat.' + str(vscf_iter), self.evals_vscf[inm])
 
             # Checks the convergence of the SCF procedure.
             da = np.absolute(a_vscf - a_vscf_old) / len(self.inms)
