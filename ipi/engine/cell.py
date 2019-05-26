@@ -117,16 +117,12 @@ class Cell(dobject):
            An array giving the position of the image that is inside the
            system box.
         """
-        print("1 pos_ats",pos)
         s = dstrip(pos).copy()
         s_return = dstrip(pos).copy()
-        print(pos.shape, s.shape, s_return.shape)
         s.shape = (pos.shape[1] / 3, 3)
         s = np.dot(dstrip(self.ih), s.T).T
         s_return[:]= s.reshape((len(s) * 3))
-        print("sreturn",pos.shape, s_return.shape)
         return s_return
-        #return s.reshape((len(s) * 3))
     def positions_scaled_to_abs(self, pos):
         """Uses the minimum image convention to return a list of particles to the
            unit cell.
@@ -142,11 +138,9 @@ class Cell(dobject):
         s = dstrip(pos).copy()
         s_return = dstrip(pos).copy()
         s.shape = (pos.shape[1] / 3, 3)
-        s = np.dot(dstrip(self.h), s.T).T
+        s = np.dot(s, dstrip(self.h).T)
         s_return[:] = s.reshape((len(s) * 3))
-
         return s_return
-
 
     def minimum_distance(self, atom1, atom2):
         """Takes two atoms and tries to find the smallest vector between two

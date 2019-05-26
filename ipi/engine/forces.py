@@ -514,21 +514,17 @@ class Forces(dobject):
         self.dforces = None
         self.dbeads = None
         self.dcell = None
-    def forces_abs_to_scaled(self,forcex):
-        print("forcex", forcex)
-        fats = dstrip(forcex).copy()
-        fats.shape = (forcex.shape[0] / 3, 3)
-        fats = np.dot(dstrip(self.cell.h), fats.T).T
-        print("forcex", forcex)
-        return fats.reshape((len(fats) * 3))
+    def forces_abs_to_scaled(self):
+        fats = dstrip(self.f[0]).copy()
+        fats.shape = (self.f[0].shape[0] / 3, 3)
+        fats = np.dot(dstrip(self.cell.h), fats.T).T#!
+        return fats.reshape((1, len(fats) * 3))
 
-    def forces_scaled_to_abs(self,forcex):
-        fsta = dstrip(forcex).copy()
-        fsta.shape = (forcex.shape[0] / 3, 3)
-        fsta = np.dot(dstrip(self.cell.ih), fsta.T).T
-        return fsta.reshape((len(fsta) * 3))
-
-
+    def forces_scaled_to_abs(self, fsta):
+        fsta = dstrip(fsta).copy()
+        fsta.shape = (self.f[0].shape[0] / 3, 3)
+        fsta = np.dot(fsta, dstrip(self.cell.ih).T)#!
+        return fsta.reshape((1, len(fsta) * 3))
 
     def add_component(self, nbeads, nrpc, nforces):
         self.mrpc.append(nrpc)
