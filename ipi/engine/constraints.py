@@ -9,7 +9,7 @@ functions.
 # See the "licenses" directory for full license information.
 
 import numpy as np
-from ipi.utils.depend import depend_value, dd, dobject
+from ipi.utils.depend import depend_value, dd, dobject, dstrip
 from ipi.utils import mathtools
 
 __all__ = ['Constraints','ConstraintGroup','BondLength','BondAngle','_Eckart']
@@ -258,7 +258,7 @@ class Eckart(ExternalConstraint):
         init_shape = q.shape
         q.shape = self.qref.shape
         CoM = np.sum(self.mref[nc] * q, axis=-2)/self.mtot[nc]
-        q -= CoM[:,None,:]
+        q[nc] -= CoM[:,None,:]
         # Calculate the Eckart product
         sigmas = self._eckart_prod(q, nc)
         ns[nc] = sigmas > tol
@@ -286,7 +286,33 @@ class Eckart(ExternalConstraint):
             arr.shape = init_shape
 
 class FixCoM(ExternalConstraint):
-    pass
+    """Constrain the CoM only
+    """
+
+    def _update_config(self):
+        self.mtot = np.sum(self.mref[...,0:1], axis=-2)
+        # CoM of reference
+        self.qref_com = np.sum(
+                self.qref*self.mref, axis=-2
+                )/self.mtot
+
+    def enforce_q(self, q, tol, nc, ns):
+        # Get the current CoM of the system and shift to CoM frame
+        init_shape = q.shape
+        q.shape = self.qref.shape
+        CoM = np.sum(self.mref[nc] * q, axis=-2)/self.mtot[nc]
+        q[nc] -= CoM[:,None,:]
+        q[nc] += self.qref_com[nc,None,:]
+        ns[nc] = False
+        q.shape = init_shape
+
+    def enforce_p(self, p, q, tol, nc, ns):
+        init_shape = p.shape
+        p.shape = self.qref.shape
+        v = np.sum(p[nc], axis=-2)/self.mtot[nc]
+        p[nc] -= self.mref[nc]*v[nc,None,:]
+        ns[nc] = False
+        p.shape = init_shape
 
 #!! TODO: This is to be retired and replaced by Eckart defined above.
 class _Eckart(HolonomicConstraint):
@@ -390,6 +416,127 @@ class Constraints(dobject):
         dself.maxcycle = depend_value(name='maxcycle', value=maxcycle)
         dself.nfree = depend_value(name='nfree', value=nfree)
 
+#------------ FUNCTIONS FOR CONVERTING TO QUASI-CENTROID COORDS ------------#
+## MONATOMIC
+
+## TRIATOMIC
+def tri_internals(q, axes=(-1,-2)):
+    """
+    Calculate the internal coordinates r1, r2, angle of a triatomic
+
+    q (ndarray): at least a 2d array of Cartesian coordinates,
+    axes (tuple): specifies the axis running over the Cartesian dimensions
+                  and the axis running over the atoms belonging to the same
+                  molecule
+    NOTE: the returned array contains cosine(angle); the angle itself
+          has to be calculated externally
+    """
+    cart_ax, atom_ax = axes
+    if cart_ax == atom_ax:
+        raise ValueError("tri_internals product and sum axes cannot be the same")
+    if (q.shape[cart_ax],q.shape[atom_ax]) != (3,3):
+        raise ValueError("tri_internals active axes must both be of length 3")
+    q0 = np.take(q, 0, axis=atom_ax)
+    q1 = np.take(q, 1, axis=atom_ax)-q0
+    q2 = np.take(q, 2, axis=atom_ax)-q0
+    r1 = np.sqrt(np.sum(q1**2, axis=cart_ax))
+    r2 = np.sqrt(np.sum(q2**2, axis=cart_ax))
+    ct = np.sum(q1*q2, axis=cart_ax)/(r1*r2)
+    return r1, r2, ct
+
+def tri_cart2ba(q, f, qba=None):
+    """
+    Convert the internal Cartesian forces acting on a set of beads
+    representing a triatomic molecule into bond-angle forces.
+
+    Args:
+        q (ndarray): at least a 2d array of Cartesian coordinates,
+                     with the final dimension running over x,y,z,
+                     and the one before running over the atoms in
+                     a triatomic
+        f (ndarray): a conforming array of forces
+        qba (ndarray): at least a 1d array of internal coordinates
+                       in the order r1, r2, angle; if not supplied,
+                       calculated internally
+    """
+    pass
+
+def tri_ba2cart(fba, q, qba=None):
+    pass
+
+def tri_b2qc(self):
+    """
+    Given a set of ring-polymer bead coordinates, generate a set
+    of quasi-centroid geometries describing triatomic molecules, such
+    that the bond-lengths are the means of the RP bond-lenghts, the angles
+    are the means of the RP angles, and the Eckart conditions are satisfied
+    between the centroids and the quasi-centroids
+
+    Args:
+        self(ConstraintGroup): an object describing sets of identically-defined
+                               quasi-centroids
+
+    """
+
+    nsets, _i, nbeads = dstrip(self.q).shape
+    q = np.reshape(dstrip(self.q), (nsets, 3, 3, nbeads))
+    qc = dstrip(self.qc).copy()
+    qc.shape = (nsets, 3, 3)
+    r1, r2, ct = tri_internals(q, axes=(-2,-3))
+    theta = np.arccos(ct)
+    R1 = np.mean(r1, axis=-1)
+    R2 = np.mean(r2, axis=-1)
+    Theta = np.mean(theta, axis=-1)
+    qc[:] = 0.0
+    qc[:,1,0] = R1
+    qc[:,2,0] = R2*np.cos(Theta)
+    qc[:,2,1] = R2*np.sin(Theta)
+    nc = np.ones(nsets, dtype=np.bool)
+    ns = nc.copy()
+    qc[:] = self.external.enforce_q(qc, 0.0, nc, ns)
+    qc.shape = (nsets, -1)
+    self.qc[:] = qc
+
+def tri_b2fc(self, f, fc):
+    """
+    Extract quasi-centroid forces from forces acting on the beads.
+
+    Args:
+        self(ConstraintGroup): an object describing sets of identically-defined
+                               quasi-centroids
+        f (3d-ndarray): an nsets-by-9-by-nbeads array of bead forces
+        fc (2d-ndarray): an nsets-by-9 array of quasi-centroid forces
+    """
+    # Swap beads and Cartesians in input and shift to CoM:
+    # Axis order: set, bead, atom, dimension
+    shape = (self.nsets,3,3,self.nbeads)
+    order = [0,3,1,2]
+    m = np.transpose( np.reshape(dstrip(self.dynm3), shape), order)
+    q = np.transpose( np.reshape(dstrip(self.q), shape), order)
+    mtot = np.sum(m[:,:,:,0:1], axis=-2)
+    CoM = np.sum(m*q, axis=-2)/mtot
+    q_bead = q-CoM[:,:,None,:]
+    f_bead = np.transpose(np.reshape(f, shape), order)
+    # For each replica, calculate the CoM force and torque about CoM
+    f_CoM = np.sum(f_bead, axis=-2)
+    tau_CoM = np.sum(np.cross(q_bead, f_bead, axis=-1), axis=-2)
+    # Convert these to Cartesian external forces and subtract from input
+    II = mathtools.mominertia(m, q, shift=False, axes=(-1,-2))
+    alpha = np.linalg.solve(II, tau_CoM)
+    # Use II as workspace to store intermediate results
+    II[...,0,:] = f_CoM/mtot
+    alpha = np.expand_dims(II, axis=2)
+    II[...,1,:] = np.cross(alpha, q, axis=-1) # f_rot / mtot
+    f_bead -= m*np.sum(II[...,:2,:], axis=-2) # this leaves the internal forces
+    # Extract the internal forces on r1, r2, theta
+
+    # Convert to Cartesian representation and add to fc
+    # Add CoM force to fc
+    # Extract rotational force on fc
+
+
+#---------------------------------------------------------------------------#
+
 class ConstraintGroup(dobject):
 
     """
@@ -413,6 +560,7 @@ class ConstraintGroup(dobject):
 
     Depend objects:
         qc: Current quasi-centroid configuration
+        mc: Quasi-centroid masses
         q: Current bead configuration
         p: Current bead momenta
         dynm3: Dynamic normal-mode masses
@@ -423,7 +571,7 @@ class ConstraintGroup(dobject):
 
     Methods:
         b2qc: Generates a quasi-centroid configuration compatible with the given
-              beads geometry
+              bead geometry
         b2fc: Extracts forces onto the quasi-centroids from bead forces
               and geometries
         shake: Enforce the constraints
@@ -438,21 +586,20 @@ class ConstraintGroup(dobject):
         self.maxcycle = maxcycle
         #!! TODO: implement routines and nonesuch
         #!! TODO: in future add diatomic and 3-pyramid (ammonia)
-        dummy = np.ones(3) # Dummy array to give Eckart, override at binding
         if self.name == "triatomic":
             self.natoms = 3
-            self.b2qc = tri_b2qc
-            self.b2fc = tri_b2fc
             self.internal = [BondLength(indices=[0,1]),
                              BondLength(indices=[0,2]),
                              BondAngle(indices=[0,1,2])]
             self.external = Eckart()
+            self.b2qc = tri_b2qc
+            self.b2fc = tri_b2fc
         elif self.name == "monatomic":
             self.natoms = 1
-            self.b2qc = get_centroid
-            self.b2fc = get_centroid
             self.internal = []
             self.external = FixCoM()
+            self.b2qc = get_centroid
+            self.b2fc = get_centroid
         else:
             raise ValueError(
                     "Quasi-centroid group of type '{:s}' ".format(self.name) +
