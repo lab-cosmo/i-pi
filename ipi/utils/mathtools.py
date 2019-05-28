@@ -365,7 +365,7 @@ def root_herm(A):
 
     return rv
 
-#!! TODO: add axes option like in mominertia
+
 def qua2mat(qua):
     """
     Convert a rotation quaternion to a rotation matrix.
@@ -404,7 +404,6 @@ def qua2mat(qua):
     rotmat += cross_mat
     return rotmat
 
-#!! TODO: add axes option like in mominertia
 def eckrot(q, m, ref):
     """
     Rotate the input configuration into the Eckart frame.
@@ -484,7 +483,30 @@ def eckspin(p, q, m, ref, L):
     p -= m*np.cross(ww[...,None,:], q, axis=-1)
     return p
 
-def mominertia(m, q, shift=True, axes=(-1,-2)):
+def toCoM(m, q, axes=(-1,-2)):
+    """
+    Shift the array of coordinates q to its centre of mass frame.
+
+    Args:
+        m (ndarray): particle masses, conforming to q
+        q (ndarray): particle coordinates
+        axes (tuple): length-2 tuple, first entry specifies the axis
+                      corresponding to the spatial dimension; second entry
+                      specifies the axis corresponding to the different atoms
+                      in the same molecule.
+    """
+    if (m.shape != q.shape):
+        raise ValueError("mominertia expects conforming mass an position arrays")
+    cart_ax, atom_ax = axes
+    if cart_ax == atom_ax:
+        raise ValueError("mominertia product and sum axes cannot be the same")
+    mx = np.expand_dims(m.take(0,axis=cart_ax), axis=cart_ax)
+    mtot = np.expand_dims(mx.sum(axis=atom_ax), axis=atom_ax)
+    CoM = np.expand_dims((m*q).sum(axis=atom_ax), axis=atom_ax)/mtot
+    return q-CoM, CoM
+
+
+def mominertia(m, q, q2=None, shift=True, axes=(-1,-2)):
     """
     Calculate the inertia tensor for a set of particles with coordinates
     q and mass m.
@@ -492,6 +514,8 @@ def mominertia(m, q, shift=True, axes=(-1,-2)):
     Args:
         m (ndarray): particle masses, conforming to q
         q (ndarray): particle coordinates
+        q2 (ndarray): if present, the result is an inertia-tensor-like
+                      array SUM[m_a {dot(q_a,q2_a)*eye(3)-outer(q_a,q2_a)}, a]
         shift (bool): if True, shift q to CoM before the calculation
         axes (tuple): length-2 tuple, first entry specifies the axis
                       corresponding to the spatial dimension; second entry
@@ -506,40 +530,43 @@ def mominertia(m, q, shift=True, axes=(-1,-2)):
     if (len(axes) != 2):
         raise ValueError("mominertia expects a length-2 tuple for argument 'axes'")
     ndim = q.ndim
-    prod_ax, sum_ax = axes
-    if q.shape[prod_ax] != 3:
+    cart_ax, atom_ax = axes
+    if q.shape[cart_ax] != 3:
         raise ValueError("mominertia product axis must be of length 3")
-    if prod_ax == sum_ax:
+    if cart_ax == atom_ax:
         raise ValueError("mominertia product and sum axes cannot be the same")
-    if prod_ax < 0:
-        prod_ax += ndim
-    if sum_ax < 0:
-        sum_ax += ndim
-    if sum_ax > prod_ax:
-        sum_ax += 1
-    mq = m*q
+    if cart_ax < 0:
+        cart_ax += ndim
+    if atom_ax < 0:
+        atom_ax += ndim
+    if atom_ax > cart_ax:
+        atom_ax += 1
     if shift:
         # Shift into CoM frame of reference
-        CoM = np.sum(mq, axis=sum_ax)/np.sum(m, axis=sum_ax)
-        CoM = np.expand_dims(CoM, axis=sum_ax)
-        q = q - CoM
-        mq = m*q
-    mq1 = -np.expand_dims(mq,axis=prod_ax+1)
-    q2 = np.expand_dims(q,axis=prod_ax)
+        q = toCoM(m, q, axes)[0]
+    mq1 = -np.expand_dims(m*q,axis=cart_ax+1)
+    if q2 is not None:
+        if q.shape != q2.shape:
+            raise ValueError("the two coordinate arrays must conform in mominertia")
+        if shift:
+            q2 = toCoM(m, q, axes)[0]
+        q2 = np.expand_dims(q2,axis=cart_ax)
+    else:
+        q2 = np.expand_dims(q,axis=cart_ax)
     # -m_{i,k}*q_{i,k}*q_{j,k}, where k is the atomic index and i,j = x,y,z
     outer_prod = mq1*q2
     # Calculate the trace of the outer product
     sublist0 = list(range(outer_prod.ndim))
-    sublist0[prod_ax+1] = sublist0[prod_ax]
+    sublist0[cart_ax+1] = sublist0[cart_ax]
     sublistout = list(range(outer_prod.ndim))
-    sublistout.pop(prod_ax+1)
-    sublistout.pop(prod_ax)
+    sublistout.pop(cart_ax+1)
+    sublistout.pop(cart_ax)
     trace = np.einsum(outer_prod, sublist0, sublistout)
     # Add to diagonal
-    trace = np.expand_dims(trace, axis=prod_ax)
+    trace = np.expand_dims(trace, axis=cart_ax)
     sublistout = sublist0[:]
-    sublistout.pop(prod_ax+1)
+    sublistout.pop(cart_ax+1)
     np.einsum(outer_prod, sublist0, sublistout)[:] -= trace
-    return np.sum(outer_prod, axis=sum_ax)
+    return np.sum(outer_prod, axis=atom_ax)
 
 

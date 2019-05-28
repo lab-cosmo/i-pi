@@ -442,9 +442,9 @@ def tri_internals(q, axes=(-1,-2)):
     r1 = np.sqrt(np.sum(q1**2, axis=cart_ax))
     r2 = np.sqrt(np.sum(q2**2, axis=cart_ax))
     ct = np.sum(q1*q2, axis=cart_ax)/(r1*r2)
-    return r1, r2, ct
+    return r1, r2, ct, q1, q2
 
-def tri_cart2ba(q, f, qba=None):
+def tri_cart2ba(q, f):
     """
     Convert the internal Cartesian forces acting on a set of beads
     representing a triatomic molecule into bond-angle forces.
@@ -455,14 +455,56 @@ def tri_cart2ba(q, f, qba=None):
                      and the one before running over the atoms in
                      a triatomic
         f (ndarray): a conforming array of forces
-        qba (ndarray): at least a 1d array of internal coordinates
-                       in the order r1, r2, angle; if not supplied,
-                       calculated internally
-    """
-    pass
 
-def tri_ba2cart(fba, q, qba=None):
-    pass
+    Result:
+        fba: array of shape (3,N,K,...) where N,K,... are the leading
+             dimensions of q and f (excluding the final two);
+             this unpacks to fr1, fr2, ftheta where fri is the force
+             on ri and ftheta the force on theta
+    """
+    r1, r2, ct, q1, q2 = tri_internals(q)
+    q1 /= r1[...,None]
+    f1 = f[...,1,:]
+    q2 /= r2[...,None]
+    f2 = f[...,2,:]
+    fr1 = np.sum(q1*f1, axis=-1)
+    fr2 = np.sum(q2*f2, axis=-1)
+    st = np.sqrt(1.0-ct**2)
+    r1 /= st
+    ftheta = -r1*np.sum((q2 - q1*ct[...,None])*f1, axis=-1)
+    return np.stack((fr1, fr2, ftheta))
+
+def tri_ba2cart(q, fba):
+    """
+    Convert the forces on bond-angle coordinates of a triatomic
+    into Cartesians.
+
+    Args:
+        q (ndarray): at least a 2d array of Cartesian coordinates,
+                     with the final dimension running over x,y,z,
+                     and the one before running over the atoms in
+                     a triatomic (generally shape = N,K,...,3,3)
+        fba (ndarray): a stack of internal forces in the order
+                       fr1, fr2, ftheta and shape 3,N,K,...
+
+    Result:
+        f: array of shape (N,K,...,3,3) of the Cartesian representation
+           of the internal forces.
+    """
+    f = np.zeros_like(q)
+    r1, r2, ct, q1, q2 = tri_internals(q)
+    q1 /= r1[...,None]
+    f1 = f[...,1,:]
+    q2 /= r2[...,None]
+    f2 = f[...,2,:]
+    fr1, fr2, ftheta = [np.expand_dims(arr, axis=-1) for arr in fba]
+    st = np.sqrt(1.0-ct**2)
+    r1 *= st
+    f1[...] = q1*fr1 - (q2 - q1*ct[...,None])*ftheta/r1[...,None]
+    r2 *= st
+    f2[...] = q2*fr2 - (q1 - q2*ct[...,None])*ftheta/r2[...,None]
+    f[...,0,:] = -(f1+f2)
+    return f
 
 def tri_b2qc(self):
     """
@@ -478,11 +520,10 @@ def tri_b2qc(self):
 
     """
 
-    nsets, _i, nbeads = dstrip(self.q).shape
-    q = np.reshape(dstrip(self.q), (nsets, 3, 3, nbeads))
+    q = np.reshape(dstrip(self.q), (self.nsets, 3, 3, self.nbeads))
     qc = dstrip(self.qc).copy()
-    qc.shape = (nsets, 3, 3)
-    r1, r2, ct = tri_internals(q, axes=(-2,-3))
+    qc.shape = (self.nsets, 3, 3)
+    r1, r2, ct = tri_internals(q, axes=(-2,-3))[:3]
     theta = np.arccos(ct)
     R1 = np.mean(r1, axis=-1)
     R2 = np.mean(r2, axis=-1)
@@ -491,10 +532,10 @@ def tri_b2qc(self):
     qc[:,1,0] = R1
     qc[:,2,0] = R2*np.cos(Theta)
     qc[:,2,1] = R2*np.sin(Theta)
-    nc = np.ones(nsets, dtype=np.bool)
+    nc = np.ones(self.nsets, dtype=np.bool)
     ns = nc.copy()
     qc[:] = self.external.enforce_q(qc, 0.0, nc, ns)
-    qc.shape = (nsets, -1)
+    qc.shape = (self.nsets, -1)
     self.qc[:] = qc
 
 def tri_b2fc(self, f, fc):
@@ -505,6 +546,8 @@ def tri_b2fc(self, f, fc):
         self(ConstraintGroup): an object describing sets of identically-defined
                                quasi-centroids
         f (3d-ndarray): an nsets-by-9-by-nbeads array of bead forces
+
+    Return:
         fc (2d-ndarray): an nsets-by-9 array of quasi-centroid forces
     """
     # Swap beads and Cartesians in input and shift to CoM:
@@ -512,104 +555,115 @@ def tri_b2fc(self, f, fc):
     shape = (self.nsets,3,3,self.nbeads)
     order = [0,3,1,2]
     m = np.transpose( np.reshape(dstrip(self.dynm3), shape), order)
-    q = np.transpose( np.reshape(dstrip(self.q), shape), order)
-    mtot = np.sum(m[:,:,:,0:1], axis=-2)
-    CoM = np.sum(m*q, axis=-2)/mtot
-    q_bead = q-CoM[:,:,None,:]
-    f_bead = np.transpose(np.reshape(f, shape), order)
-    # For each replica, calculate the CoM force and torque about CoM
-    f_CoM = np.sum(f_bead, axis=-2)
-    tau_CoM = np.sum(np.cross(q_bead, f_bead, axis=-1), axis=-2)
-    # Convert these to Cartesian external forces and subtract from input
-    II = mathtools.mominertia(m, q, shift=False, axes=(-1,-2))
+    q_bead = np.transpose(np.reshape(dstrip(self.q), shape), order).copy()
+    f_bead = np.transpose(np.reshape(f, shape), order).copy()
+    q0 = np.mean(dstrip(self.q), axis=-1) # centroid coordinates
+    f0 = np.mean(f, axis=-1) # Centroid forces
+    q_bead[:] = mathtools.toCoM(m, q_bead)[0]
+    # Remove the external forces
+    II = mathtools.mominertia(m, q_bead, shift=False, axes=(-1,-2))
+    tau_CoM = np.sum(np.cross(q_bead, f_bead, axis=-1), axis=2)
     alpha = np.linalg.solve(II, tau_CoM)
-    # Use II as workspace to store intermediate results
-    II[...,0,:] = f_CoM/mtot
-    alpha = np.expand_dims(II, axis=2)
-    II[...,1,:] = np.cross(alpha, q, axis=-1) # f_rot / mtot
-    f_bead -= m*np.sum(II[...,:2,:], axis=-2) # this leaves the internal forces
+    alpha = np.expand_dims(alpha, axis=2)
+    f_CoM = np.sum(f_bead, axis=2)/np.sum(m[:,:,:,0:1], axis=2)
+    f_CoM = np.expand_dims(f_CoM, axis=2)
+    f_bead -= m*(f_CoM + np.cross(alpha, q_bead, axis=-1))
     # Extract the internal forces on r1, r2, theta
-
+    fba = tri_cart2ba(q_bead, f_bead)
     # Convert to Cartesian representation and add to fc
-    # Add CoM force to fc
-    # Extract rotational force on fc
-
+    shape = (self.nsets,3,3)
+    qc = np.reshape(dstrip(self.qc), shape).copy()
+    mc = np.reshape(dstrip(self.mc), shape)
+    qc[:], CoM = mathtools.toCoM(mc, qc)
+    fcba = fba.mean(axis=-1)
+    fc = tri_ba2cart(qc, fcba)
+    # Extract the external forces on fc
+    q0 -= CoM[...,None,:]
+    rhs = np.cross(fc, q0, axis=-1).sum(axis=-2)
+    rhs -= np.cross(f0, qc, axis=-1).sum(axis=-2)
+    lhs = mathtools.mominertia(mc, qc, q2=q0, shift=False)
+    alpha = np.linalg.solve(lhs, rhs)
+    alpha = np.expand_dims(alpha, axis=1)
+    mtot = np.expand_dims(np.sum(mc[...,0:1], axis=-2),1)
+    f_CoM = np.expand_dims(np.sum(f0, axis=1), axis=1)/mtot
+    fc += mc*(f_CoM + np.cross(alpha, qc, axis=-1))
+    return fc
 
 #---------------------------------------------------------------------------#
-
-class ConstraintGroup(dobject):
-
-    """
-    Gathers constraints that link a subset of atoms and stores parameters
-    for constrained propagation. Handles calculation of constraint functions
-    and gradients, generation of quasi-centroid geometries compatible with a
-    given ring-polymer configuration, conversion between Cartesian and
-    internal forces/coordinates, and enforcement of constraints with SHAKE/RATTLE.
-
-    Attributes:
-        name: Name of the constraint type
-        natoms: The number of atoms in a single constrained set
-        indices: List of atomic indices specifying the atoms subject to the
-                 set of constraints.
-        nsets: The number of sets of atoms subject to the same constraint
-        nbeads: The number of beads
-        tol: Tolerance threshold for RATTLE
-        maxcycle: Maximum number of cycles in RATTLE
-        internal: List of internal constraint objects
-        external: An object enforcing the external constraints
-
-    Depend objects:
-        qc: Current quasi-centroid configuration
-        mc: Quasi-centroid masses
-        q: Current bead configuration
-        p: Current bead momenta
-        dynm3: Dynamic normal-mode masses
-        q0: Cached constrained configuration from the previous converged SHAKE step
-        g0: Corresponding constraint gradients
-        mg0: Gradients pre-multiplied by the inverse mass tensor
-        targets: Targets for the values of the internal constraint functions
-
-    Methods:
-        b2qc: Generates a quasi-centroid configuration compatible with the given
-              bead geometry
-        b2fc: Extracts forces onto the quasi-centroids from bead forces
-              and geometries
-        shake: Enforce the constraints
-        rattle: Enforce that the time-derivative of the constraints be zero
-    """
-
-    def __init__(self, name, indices, tol=1.0e-06, maxcycle=100):
-
-        self.name = name.lower()
-        self.indices = indices
-        self.tol = tol
-        self.maxcycle = maxcycle
-        #!! TODO: implement routines and nonesuch
-        #!! TODO: in future add diatomic and 3-pyramid (ammonia)
-        if self.name == "triatomic":
-            self.natoms = 3
-            self.internal = [BondLength(indices=[0,1]),
-                             BondLength(indices=[0,2]),
-                             BondAngle(indices=[0,1,2])]
-            self.external = Eckart()
-            self.b2qc = tri_b2qc
-            self.b2fc = tri_b2fc
-        elif self.name == "monatomic":
-            self.natoms = 1
-            self.internal = []
-            self.external = FixCoM()
-            self.b2qc = get_centroid
-            self.b2fc = get_centroid
-        else:
-            raise ValueError(
-                    "Quasi-centroid group of type '{:s}' ".format(self.name) +
-                    "has not been defined.")
-        if (len(self.indices)%self.natoms != 0):
-            raise ValueError(
-                    "Total number of atoms in the {:s} group ".format(self.name)+
-                    "is inconsistent with partitioning into sets "+
-                    "of size {:d}.".format(self.natoms))
-        self.nsets = len(self.indices)//self.natoms
-
-    def bind(self, beads, nm):
-        pass
+#
+#class ConstraintGroup(dobject):
+#
+#    """
+#    Gathers constraints that link a subset of atoms and stores parameters
+#    for constrained propagation. Handles calculation of constraint functions
+#    and gradients, generation of quasi-centroid geometries compatible with a
+#    given ring-polymer configuration, conversion between Cartesian and
+#    internal forces/coordinates, and enforcement of constraints with SHAKE/RATTLE.
+#
+#    Attributes:
+#        name: Name of the constraint type
+#        natoms: The number of atoms in a single constrained set
+#        indices: List of atomic indices specifying the atoms subject to the
+#                 set of constraints.
+#        nsets: The number of sets of atoms subject to the same constraint
+#        nbeads: The number of beads
+#        tol: Tolerance threshold for RATTLE
+#        maxcycle: Maximum number of cycles in RATTLE
+#        internal: List of internal constraint objects
+#        external: An object enforcing the external constraints
+#
+#    Depend objects:
+#        qc: Current quasi-centroid configuration
+#        mc: Quasi-centroid masses
+#        q: Current bead configuration
+#        p: Current bead momenta
+#        dynm3: Dynamic normal-mode masses
+#        q0: Cached constrained configuration from the previous converged SHAKE step
+#        g0: Corresponding constraint gradients
+#        mg0: Gradients pre-multiplied by the inverse mass tensor
+#        targets: Targets for the values of the internal constraint functions
+#
+#    Methods:
+#        b2qc: Generates a quasi-centroid configuration compatible with the given
+#              bead geometry
+#        b2fc: Extracts forces onto the quasi-centroids from bead forces
+#              and geometries
+#        shake: Enforce the constraints
+#        rattle: Enforce that the time-derivative of the constraints be zero
+#    """
+#
+#    def __init__(self, name, indices, tol=1.0e-06, maxcycle=100):
+#
+#        self.name = name.lower()
+#        self.indices = indices
+#        self.tol = tol
+#        self.maxcycle = maxcycle
+#        #!! TODO: implement routines and nonesuch
+#        #!! TODO: in future add diatomic and 3-pyramid (ammonia)
+#        if self.name == "triatomic":
+#            self.natoms = 3
+#            self.internal = [BondLength(indices=[0,1]),
+#                             BondLength(indices=[0,2]),
+#                             BondAngle(indices=[0,1,2])]
+#            self.external = Eckart()
+#            self.b2qc = tri_b2qc
+#            self.b2fc = tri_b2fc
+#        elif self.name == "monatomic":
+#            self.natoms = 1
+#            self.internal = []
+#            self.external = FixCoM()
+#            self.b2qc = get_centroid
+#            self.b2fc = get_centroid
+#        else:
+#            raise ValueError(
+#                    "Quasi-centroid group of type '{:s}' ".format(self.name) +
+#                    "has not been defined.")
+#        if (len(self.indices)%self.natoms != 0):
+#            raise ValueError(
+#                    "Total number of atoms in the {:s} group ".format(self.name)+
+#                    "is inconsistent with partitioning into sets "+
+#                    "of size {:d}.".format(self.natoms))
+#        self.nsets = len(self.indices)//self.natoms
+#
+#    def bind(self, beads, nm):
+#        pass
