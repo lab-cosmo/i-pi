@@ -1,0 +1,16 @@
+Step 1 :
+Launch i-pi by typing:
+${PATH2IPI}/bin/i-pi input.xml > log.i-pi & 
+
+Step 2 :
+Launch LAMMPS by typing:
+${PATH2LAMMPS}/src/${LMP_EXE} < in.lmp > log.lmp & 
+
+Step 3 :
+Wait for the calculation to end.
+Run the post processing script to get the free energy:
+${PATH2IPI}/tools/py/get_Ascp.pu -i input.xml > log.scp 
+
+Step 4 : 
+Plot the anharmonic free energy:
+gnuplot > p "log.scp" us 1:2 w l 

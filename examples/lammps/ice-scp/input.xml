@@ -1,0 +1,36 @@
+<simulation mode='static' verbosity='medium'>
+  <output prefix='simulation'>
+    <properties stride='10000' filename='out'>[ step, time{picosecond}, conserved{electronvolt}, temperature{kelvin}, kinetic_cv{electronvolt}, potential{electronvolt}, pressure_cv{megapascal}]</properties>
+    <trajectory filename='pos' stride='10000'>positions{angstrom}</trajectory>
+  </output>
+  <total_steps>30000000</total_steps>
+  <prng>
+    <seed>32342</seed>
+  </prng>
+  <ffsocket name='lmp' mode='unix' pbc='true'>
+    <address> scp </address>
+  </ffsocket>
+  <system>
+  <initialize nbeads='1'>
+    <file mode='xyz' > init.xyz </file>
+  </initialize>
+  <forces>
+  <force forcefield='lmp'> </force>
+  </forces>
+  <motion mode='scp'>
+    <scp mode='qn'>
+      <dynmat mode='file'> dynmat.data  </dynmat>
+      <asr> crystal </asr>
+      <max_steps> 200 </max_steps>
+      <nparallel> 20 </nparallel>
+      <max_iter> 20 </max_iter>
+      <random_type> sobol </random_type>
+      <displace_mode> rnmik </displace_mode>
+      <batch_weight_exponent> 1 </batch_weight_exponent>
+    </scp>
+  </motion>
+  <ensemble>
+  <temperature units='kelvin'> 300 </temperature>
+  </ensemble>
+   </system>
+</simulation>
