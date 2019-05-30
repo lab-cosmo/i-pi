@@ -157,9 +157,9 @@ class GradientMapper(object):
         self.h0 = dstrip(self.dcell.h).copy()
         self.ih0 = dstrip(self.dcell.ih).copy()
         self.strain = (np.dot(dstrip(self.dcell.h),self.ih0) - np.eye(3)).flatten()
-        sp = self.dcell.positions_abs_to_scaled(self.dbeads.q)
-        print(sp.shape)
-        ap = self.dcell.positions_scaled_to_abs(sp)
+        #sp = self.dcell.positions_abs_to_scaled(self.dbeads.q)
+        #print(sp.shape)
+        #ap = self.dcell.positions_scaled_to_abs(sp)
         # stores a reference to the atoms and cell we are computing forces for
 
 
@@ -168,32 +168,43 @@ class GradientMapper(object):
 
         self.fcount += 1
         #CHECK THE DIMENSIONALITY OF X
+        new_strain = x[:,0:9].reshape((3,3))
+        print("new_strain", new_strain)
+        print("h0", self.h0)
+        print("h", self.dcell.h)
+        print("h computed",np.dot((np.eye(3)+new_strain), self.h0))
+        self.dcell.h = np.dot((np.eye(3)+new_strain), self.h0)
+        print("h updated", self.dcell.h)
+        print("COORDS Before", self.dbeads.q)
         self.dbeads.q = self.dcell.positions_scaled_to_abs(x[:,9:]) #dbeads.q should be equal to scaled_to_abs positions because x[:,9:] contains scaled pos
-        self.h0 ###should be passed from input.xml
-        self.pext = 0.0 #  for zero external pressure
-        self.strain = (np.dot(dstrip(self.dcell.h),self.ih0) - np.eye(3)).flatten() #epsilon
-        metric = np.dot(self.dcell.h.T, self.dcell.h) #g = hTh(3,3)
+        print("COORDS After", self.dbeads.q)
+        #self.h0 ###should be passed from input.xml
+        #self.pext = 0.0 #  for zero external pressure
+        #self.strain = (np.dot(dstrip(self.dcell.h),self.ih0) - np.eye(3)).flatten() #epsilon
+        print("Should be the same", new_strain, self.strain)
+        print("Vir", self.dforces.vir)
+        #metric = np.dot(self.dcell.h.T, self.dcell.h) #g = hTh(3,3)
 
         nat = len(self.dforces.f[0]) / 3
-        #sf=self.dforces.forces_abs_to_scaled(self.dforces.f[0])
-        f_sc = self.dforces.forces_abs_to_scaled()
-        f_sc_reshaped = f_sc.reshape((nat,3))
+        #f_sc = self.dforces.forces_abs_to_scaled()
+        #f_sc_reshaped = f_sc.reshape((nat,3))
         # Defines the effective energy
         e = self.dforces.pot   # Energy
-        pV = self.pext * self.dcell.V
-        p=0
+        #pV = self.pext * self.dcell.V
+        pV=0
         e = e + pV #assume p = 0
-        #self.strain= np.zeros((3,3))#self.strain.reshape((3,3))
-
-        # Defines the effective gradient
         g = np.zeros(nat*3 + 9)
+        g[0:9] = -np.dot((self.dforces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + new_strain.reshape((3,3)).T)).flatten()
+        g[9:] = -self.dforces.forces_abs_to_scaled()
+        #sf=self.dforces.forces_abs_to_scaled(self.dforces.f[0])
+        #self.strain= np.zeros((3,3))#self.strain.reshape((3,3))
+        # Defines the effective gradient
         #g_x_old_f = np.zeros((nat,3))
         # Gradient contains 3N + 9 components
         #g[0:9] = - np.dot((self.dforces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + (self.strain).T)).flatten()
         #g_x_old_f[:] = np.dot(metric, f_sc_reshaped.T).T
         #g[9:] = np.dot(self.metric, sf.T).T.flatten()
         #g[9:] = -g_x_old_f.flatten().reshape((1, nat*3))
-        g[9:] = -self.dforces.forces_abs_to_scaled()
         #print(self.dforces.pot / self.dbeads.nbeads, np.trace((self.dforces.vir) / (3.0 * self.dcell.V)),self.tensor2vec((self.dforces.vir) / self.dcell.V))
         return e, g
 
@@ -292,7 +303,7 @@ class DummyOptimizer(dobject):
             fmax = np.amax(np.absolute(self.forces.f))
 
         e = np.absolute((fx - u0) / self.beads.natoms)
-        #if step==1:
+        #if step==2:
         #    fmax = 0
         #    e = 0
         #    x = 0
@@ -330,7 +341,11 @@ class BFGSOptimizer(DummyOptimizer):
                 nat = self.beads.q.size/3
                 icell=np.dot(self.cell.ih,self.cell.ih)
                 h_block =np.kron(np.eye(nat), icell)
-                strain_matrix=np.eye(9)
+                #h_block = np.zeros((nat*3, nat*3))
+                #strain_matrix= np.diag(self.cell.)
+                print("INIT_Of_Hessian", self.cell.ih.flatten())
+                strain_matrix=np.eye(9)/self.cell.V**(1./3)
+                print("strain_matrix", strain_matrix)
                 invhess = np.zeros([9+3*nat,9+3*nat])
                 invhess[0:9,0:9]= strain_matrix
                 invhess[-3*nat:,-3*nat:]= h_block
@@ -360,14 +375,40 @@ class BFGSOptimizer(DummyOptimizer):
             ####should be rewritten properly
             print("ZERO STEP")
             print("step = 0", self.forces.f[0])
+            self.ih0 = dstrip(self.cell.ih).copy()
+            self.h0 = dstrip(self.cell.h).copy()
+            print("CHECK", self.ih0, invert_ut3x3(self.h0))
+            #self.h0 = np.array([[9.82657000e+00, 4.62849404e-16, 4.62849404e-16],
+            #  [0.00000000e+00, 7.55890440e+00, 4.62849404e-16],
+            #  [0.00000000e+00, 0.00000000e+00, 7.55890440e+00]])
+            #self.ih0 = invert_ut3x3(self.h0)
             nat = len(self.forces.f[0])/3
+            strain = (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)).flatten()
             ar_len = nat*3+9
+            pV = 0
             ff = np.zeros((1,ar_len))
+            print("vir", self.forces.vir)
+            ff[:,0:9] = np.dot((self.forces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + strain.reshape((3,3)).T)).flatten()*0.1
+            #print("strain", strain)
+            #print("strain before flatten", (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)))
+            #print("strin reshaped", strain.reshape((3,3)))
+            #print("cell", self.cell.h)
+            #print("cell flatten", self.cell.h.flatten())
+            #print("ff_0-9", ff[:,0:9])
+            #print("vir", self.forces.vir)
+            #print("energy", self.forces.pot)
             ff[:,9:] = dstrip(self.forces.f)
-            self.d += ff / np.sqrt(np.dot(ff.flatten(), ff.flatten()))
-            self.d.shape = (nat+3, 3)
-            self.d = np.dot(self.d, dstrip(self.cell.ih).T)
-            self.d = self.d.reshape((1, nat * 3 +9))
+            d = np.zeros((1,nat*3))
+            d += ff[:,9:] / np.sqrt(np.dot(ff[:,9:].flatten(), ff[:,9:].flatten()))
+            d.shape = (nat, 3)
+            d = np.dot(d, dstrip(self.cell.ih).T)
+            d = d.reshape((1, nat * 3))
+            self.d[:,0:9] = ff[:, 0:9]
+            self.d[:,9:] = d
+            print("ff, d", ff, self.d)
+            #print("self.d", self.d)
+
+            #print("h0", self.h0)
 
             #g_x_old_f = np.zeros((nat,3))
             #f_sc = self.forces.forces_abs_to_scaled()
@@ -377,7 +418,6 @@ class BFGSOptimizer(DummyOptimizer):
             #f_sc =  g_x_old_f.flatten().reshape((1, nat*3))
             #ff[:,9:] = dstrip(self.forces. forces_abs_to_scaled())
             #ff[:,9:] = self.forces.forces_abs_to_scaled()
-
             #self.d += ff / np.sqrt(np.dot(ff.flatten(), ff.flatten()))
             #print("d", self.d)
             if len(self.fixatoms) > 0:
@@ -395,31 +435,27 @@ class BFGSOptimizer(DummyOptimizer):
         #self.ih0 = dstrip(self.cell.ih).copy()
         #print(self.forces.pot)
 
-        #strain = (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)).flatten() #epsilon
         #strain = strain.reshape((3,3))
         #nat = len(self.forces.f[0]) / 3
-        strain = np.zeros((3,3))
         #This is g in article
         #metric = np.dot(self.cell.h.T, self.cell.h) #g = hTh(3,3)
         # This is just to get n_of_atoms
         #f  = self.forces.f[0] #check if it refers to the 0 bead or centriod
-        nat = len(self.forces.f[0]) / 3
+
         #print("f", f)
         #print("self.force.f[0]", self.forces.f[0])
         #print("self.beads.q[0]",self.beads.q[0])
         # This is for now to define pv
-        pV = 0
-        self.old_x[0,0:9] = strain.flatten()
+
+        #strain = np.zeros((3,3))
         #self.gm.strain.flatten() #self.gm.strain.flatten()
         #print("1 self.force.f[0]", self.forces.f[0])
-        self.old_x[:,9:] = self.cell.positions_abs_to_scaled(self.beads.q) #scaled positions; you can use the function of the class cell
         #print("2 self.force.f[0]", self.forces.f[0])
-        self.old_u[:] = self.forces.pot +pV #  = 0 it's fine like that for now
         # These 4 lines define the components of your self.old_f array
         # Replace g with old_f
         # dforces --> forces; dcell --> cell and so on
         #self.g = np.zeros(nat*3 + 9)
-        print("3 self.force.f[0]", self.forces.f[0])
+        #print("3 self.force.f[0]", self.forces.f[0])
         #sf=self.forces.forces_abs_to_scaled(self.forces.f[0])
         #sf=self.forces.forces_abs_to_scaled()
         #sf = sf.reshape((nat,3))
@@ -433,6 +469,20 @@ class BFGSOptimizer(DummyOptimizer):
         #g_x_old_f[:] = np.dot(metric, f_sc_reshaped.T).T
         #self.g[9:] = self.forces.forces_abs_to_scaled()
         #self.old_f[0:9] = ..
+        #np.dot((self.forces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + (strain).T)).flatten()
+
+        nat = len(self.forces.f[0]) / 3
+        pV = 0
+        print("cell, cell0", self.cell.h, self.h0)
+        strain = (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)).flatten()
+        self.old_x[:,0:9] = strain.flatten()
+        print("x_0-9", (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)).flatten())
+        self.old_x[:,9:] = self.cell.positions_abs_to_scaled(self.beads.q) #scaled positions; you can use the function of the class cell
+        self.old_u[:] = self.forces.pot +pV #  = 0 it's fine like that for now
+        print("vir", self.forces.vir)
+        print("strain, invert", strain, invert_ut3x3(strain.reshape((3,3))+np.eye(3)).T)
+        print("f_0-9",self.forces.vir + np.eye(3) * pV, invert_ut3x3( np.eye(3) + strain.reshape((3,3)).T) )#invert_ut3x3( np.eye(3) + (strain.reshape((3.3)).T)).flatten() ))
+        self.old_f[:,0:9] = np.dot((self.forces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + strain.reshape((3,3)).T)).flatten()
         self.old_f[:,9:] = self.forces.forces_abs_to_scaled() #first 9 components are g[0:9], g[9:] is the rest
 
         if len(self.fixatoms) > 0:
@@ -442,6 +492,9 @@ class BFGSOptimizer(DummyOptimizer):
                 dqb[self.fixatoms * 3 + 2] = 0.0
 
         fdf0 = (self.old_u, -self.old_f) #don't modify
+        print("old_x TEST", self.old_x[:,9:])
+        print("cell old TEST", self.cell.h)
+        print("fdf0", fdf0)
 
         # Do one iteration of BFGS
         # The invhessian and the directions are updated inside.
@@ -452,11 +505,20 @@ class BFGSOptimizer(DummyOptimizer):
 
         info("   Number of force calls: %d" % (self.gm.fcount)); self.gm.fcount = 0
         # Update positions and forces
+        print("CHECK", self.d)
+        print("dcell.h updated", self.gm.dcell.h)
+        print("cell.h old", self.cell.h)
+        print("h0", self.h0)
+        print("old_x TEST the same?", self.old_x[:,9:])
+        print("cell old TEST the same?", self.cell.h, self.gm.dcell.h)
+        old_x_abs = dstrip(self.cell.positions_scaled_to_abs(self.old_x[:,9:]))
+        self.cell.h = self.gm.dcell.h
         self.beads.q = self.gm.dbeads.q #don't touch !
+        print(self.beads.q)
         self.forces.transfer_forces(self.gm.dforces)  # This forces the update of the forces
         print("this is cellop")
         # Exit simulation step
-        old_x_abs = self.cell.positions_scaled_to_abs(self.old_x[:,9:])
+
         d_x_max = np.amax(np.absolute(np.subtract(self.beads.q, old_x_abs)))
-        print("dxmax",d_x_max)
+        print("final pos", self.beads.q, self.cell.h )
         self.exitstep(self.forces.pot, self.old_u, d_x_max, step)

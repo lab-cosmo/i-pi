@@ -360,6 +360,7 @@ class BFGSOptimizer(DummyOptimizer):
         print("d", self.d)
         print("old_f", self.old_f)
         print("fdf0", fdf0)
+        old_x = dstrip(self.beads.q)
         BFGS(self.old_x, self.d, self.gm, fdf0, self.invhessian, self.big_step,
              self.ls_options["tolerance"] * self.tolerances["energy"], self.ls_options["iter"])
 
@@ -369,6 +370,7 @@ class BFGSOptimizer(DummyOptimizer):
         self.forces.transfer_forces(self.gm.dforces)  # This forces the update of the forces
         print("this is cellop")
         # Exit simulation step
+        print(self.old_x, old_x)
         d_x_max = np.amax(np.absolute(np.subtract(self.beads.q, self.old_x)))
         self.exitstep(self.forces.pot, self.old_u, d_x_max)
 

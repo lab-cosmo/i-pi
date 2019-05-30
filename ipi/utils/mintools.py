@@ -387,13 +387,16 @@ def min_approx(fdf, x0, fdf0, d0, big_step, tol, itmax):
             tol: tolerance for exiting line search
             itmax: maximum number of iterations for the line search
     """
-
+    print("INSIDE min_approx")
     # Initializations and constants
     info(" @MINIMIZE: Started approx. line search", verbosity.debug)
     n = len(x0.flatten())
 
+    print("fdf0", fdf0)
+
     if fdf0 is None: fdf0 = fdf(x0)
     f0, df0 = fdf0
+
 
 
     if d0 is None: d0 = -df0 / np.sqrt(np.dot(df0.flatten(), df0.flatten()))
@@ -424,22 +427,27 @@ def min_approx(fdf, x0, fdf0, d0, big_step, tol, itmax):
     i = 1
     while i < itmax:
         x = np.add(x0, (alam * d0))
+        print("INSIDE while, x0, d0", x0, d0 )
+        print("x", x)
         fx, dfx = fdf(x) #gm()
         info(" @MINIMIZE: Calculated energy", verbosity.debug)
 
         # Check for convergence on change in x
         if alam < alamin:
+            print("ALERT1")
             x = x0
             info(" @MINIMIZE: Convergence in position, exited line search", verbosity.debug)
             return (x, fx, dfx)
 
         # Sufficient function decrease
         elif fx <= (f0 + alf * alam * slope):
+            print("ALERT2")
             info(" @MINIMIZE: Sufficient function decrease, exited line search", verbosity.debug)
             return (x, fx, dfx)
 
         # No convergence; backtrack
         else:
+            print("ALERT3")
             info(" @MINIMIZE: No convergence on step; backtrack to find point", verbosity.debug)
 
             # First backtrack
@@ -503,7 +511,7 @@ def BFGS(x0, d0, fdf, fdf0, invhessian, big_step, tol, itmax):
     info(" @MINIMIZE: Started BFGS", verbosity.debug)
     zeps = 1.0e-13
     u0, g0 = fdf0
-
+    print("INSIDE bfgs")
     # Maximum step size
     n = len(x0.flatten())
     linesum = np.dot(x0.flatten(), x0.flatten())
@@ -511,33 +519,45 @@ def BFGS(x0, d0, fdf, fdf0, invhessian, big_step, tol, itmax):
 
     # Perform approximate line minimization in direction d0
     x, u, g = min_approx(fdf, x0, fdf0, d0, big_step, tol, itmax)
+    print("x,u,g", x, u, g)
     d_x = np.subtract(x, x0)
+    print("d_x", d_x)
 
     # Update invhessian.
     # Here we are breaking the fixatom constrain I
     d_g = np.subtract(g, g0)
+    print("d_g", d_g, g, g0)
     hdg = np.dot(invhessian, d_g.flatten())
+    #print("invh", invhessian)
+    print("hdg", hdg)
 
     fac = np.dot(d_g.flatten(), d_x.flatten())
     fae = np.dot(d_g.flatten(), hdg)
     sumdg = np.dot(d_g.flatten(), d_g.flatten())
     sumxi = np.dot(d_x.flatten(), d_x.flatten())
+    print("fac", fac)
+    print("fae", fae)
+    print("sumdg", sumdg)
+    print("sumxi", sumxi)
 
     # Skip update if not 'fac' sufficiently positive
     if fac > np.sqrt(zeps * sumdg * sumxi):
         fac = 1.0 / fac
         fad = 1.0 / fae
+        print("TRUE")
 
         # Compute BFGS term
         dg = np.subtract((fac * d_x).flatten(), fad * hdg)
+        print("dg", dg)
         invhessian += np.outer(d_x, d_x) * fac - np.outer(hdg, hdg) * fad + np.outer(dg, dg) * fae
         info(" @MINIMIZE: Updated invhessian", verbosity.debug)
     else:
         info(" @MINIMIZE: Skipped invhessian update; direction x gradient insufficient", verbosity.debug)
-
+    #print("invh updated", invhessian)
     # Update direction
     # Here we are breaking the fixatom constrain II
     d = np.dot(invhessian, -g.flatten())
+    #print("d at the end of the step", d)
     d0[:] = d.reshape(d_x.shape)
     info(" @MINIMIZE: Updated search direction", verbosity.debug)
 
