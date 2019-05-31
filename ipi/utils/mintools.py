@@ -519,26 +519,26 @@ def BFGS(x0, d0, fdf, fdf0, invhessian, big_step, tol, itmax):
 
     # Perform approximate line minimization in direction d0
     x, u, g = min_approx(fdf, x0, fdf0, d0, big_step, tol, itmax)
-    print("x,u,g", x, u, g)
+    #print("x,u,g", x, u, g)
     d_x = np.subtract(x, x0)
-    print("d_x", d_x)
+    #print("d_x", d_x)
 
     # Update invhessian.
     # Here we are breaking the fixatom constrain I
     d_g = np.subtract(g, g0)
-    print("d_g", d_g, g, g0)
+    #print("d_g", d_g, g, g0)
     hdg = np.dot(invhessian, d_g.flatten())
     #print("invh", invhessian)
-    print("hdg", hdg)
+    #print("hdg", hdg)
 
     fac = np.dot(d_g.flatten(), d_x.flatten())
     fae = np.dot(d_g.flatten(), hdg)
     sumdg = np.dot(d_g.flatten(), d_g.flatten())
     sumxi = np.dot(d_x.flatten(), d_x.flatten())
-    print("fac", fac)
-    print("fae", fae)
-    print("sumdg", sumdg)
-    print("sumxi", sumxi)
+    #print("fac", fac)
+    #print("fae", fae)
+    #print("sumdg", sumdg)
+    #print("sumxi", sumxi)
 
     # Skip update if not 'fac' sufficiently positive
     if fac > np.sqrt(zeps * sumdg * sumxi):
@@ -548,7 +548,7 @@ def BFGS(x0, d0, fdf, fdf0, invhessian, big_step, tol, itmax):
 
         # Compute BFGS term
         dg = np.subtract((fac * d_x).flatten(), fad * hdg)
-        print("dg", dg)
+        #print("dg", dg)
         invhessian += np.outer(d_x, d_x) * fac - np.outer(hdg, hdg) * fad + np.outer(dg, dg) * fae
         info(" @MINIMIZE: Updated invhessian", verbosity.debug)
     else:

@@ -25,7 +25,7 @@ from ipi.utils.mathtools import *
 
 
 __all__ = ['CellopMotion']
-
+pGPA = 5.
 
 class CellopMotion(Motion):
     """Geometry optimization class.
@@ -189,9 +189,15 @@ class GradientMapper(object):
         #f_sc = self.dforces.forces_abs_to_scaled()
         #f_sc_reshaped = f_sc.reshape((nat,3))
         # Defines the effective energy
-        e = self.dforces.pot   # Energy
+        #pGPA = 4
+        p = pGPA*10**9/(2.9421912*10**13)
+        pV = -p*self.dcell.V
+        e = self.dforces.pot +pV  # Energy
         #pV = self.pext * self.dcell.V
-        pV=0
+        #pV=0
+        print("vir+pV", self.dforces.vir+pV*np.eye(3))
+        print("vir",self.dforces.vir )
+        print("pV", pV*np.eye(3))
         e = e + pV #assume p = 0
         g = np.zeros(nat*3 + 9)
         g[0:9] = -np.dot((self.dforces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + new_strain.reshape((3,3)).T)).flatten()
@@ -377,7 +383,7 @@ class BFGSOptimizer(DummyOptimizer):
             print("step = 0", self.forces.f[0])
             self.ih0 = dstrip(self.cell.ih).copy()
             self.h0 = dstrip(self.cell.h).copy()
-            print("CHECK", self.ih0, invert_ut3x3(self.h0))
+            #print("CHECK", self.ih0, invert_ut3x3(self.h0))
             #self.h0 = np.array([[9.82657000e+00, 4.62849404e-16, 4.62849404e-16],
             #  [0.00000000e+00, 7.55890440e+00, 4.62849404e-16],
             #  [0.00000000e+00, 0.00000000e+00, 7.55890440e+00]])
@@ -385,9 +391,13 @@ class BFGSOptimizer(DummyOptimizer):
             nat = len(self.forces.f[0])/3
             strain = (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)).flatten()
             ar_len = nat*3+9
-            pV = 0
+            #pGPA = 4
+            p = -pGPA*10**9/(2.9421912*10**13)
+            pV = p*self.cell.V
             ff = np.zeros((1,ar_len))
-            print("vir", self.forces.vir)
+            print("vir+pV", self.forces.vir+pV*np.eye(3))
+            print("vir",self.forces.vir )
+            print("pV", pV*np.eye(3))
             ff[:,0:9] = np.dot((self.forces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + strain.reshape((3,3)).T)).flatten()*0.1
             #print("strain", strain)
             #print("strain before flatten", (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)))
@@ -405,7 +415,7 @@ class BFGSOptimizer(DummyOptimizer):
             d = d.reshape((1, nat * 3))
             self.d[:,0:9] = ff[:, 0:9]
             self.d[:,9:] = d
-            print("ff, d", ff, self.d)
+            #print("ff, d", ff, self.d)
             #print("self.d", self.d)
 
             #print("h0", self.h0)
@@ -472,16 +482,20 @@ class BFGSOptimizer(DummyOptimizer):
         #np.dot((self.forces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + (strain).T)).flatten()
 
         nat = len(self.forces.f[0]) / 3
-        pV = 0
-        print("cell, cell0", self.cell.h, self.h0)
+        #pGPA = 4
+        p = pGPA*10**9/(2.9421912*10**13)
+        pV = -p*self.cell.V
+        #print("cell, cell0", self.cell.h, self.h0)
         strain = (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)).flatten()
         self.old_x[:,0:9] = strain.flatten()
         print("x_0-9", (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)).flatten())
         self.old_x[:,9:] = self.cell.positions_abs_to_scaled(self.beads.q) #scaled positions; you can use the function of the class cell
         self.old_u[:] = self.forces.pot +pV #  = 0 it's fine like that for now
-        print("vir", self.forces.vir)
-        print("strain, invert", strain, invert_ut3x3(strain.reshape((3,3))+np.eye(3)).T)
-        print("f_0-9",self.forces.vir + np.eye(3) * pV, invert_ut3x3( np.eye(3) + strain.reshape((3,3)).T) )#invert_ut3x3( np.eye(3) + (strain.reshape((3.3)).T)).flatten() ))
+        print("vir+pV", self.forces.vir+pV*np.eye(3))
+        print("vir",self.forces.vir )
+        print("pV", pV*np.eye(3))
+        #print("strain, invert", strain, invert_ut3x3(strain.reshape((3,3))+np.eye(3)).T)
+        #print("f_0-9",self.forces.vir + np.eye(3) * pV, invert_ut3x3( np.eye(3) + strain.reshape((3,3)).T) )#invert_ut3x3( np.eye(3) + (strain.reshape((3.3)).T)).flatten() ))
         self.old_f[:,0:9] = np.dot((self.forces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + strain.reshape((3,3)).T)).flatten()
         self.old_f[:,9:] = self.forces.forces_abs_to_scaled() #first 9 components are g[0:9], g[9:] is the rest
 
@@ -492,9 +506,9 @@ class BFGSOptimizer(DummyOptimizer):
                 dqb[self.fixatoms * 3 + 2] = 0.0
 
         fdf0 = (self.old_u, -self.old_f) #don't modify
-        print("old_x TEST", self.old_x[:,9:])
-        print("cell old TEST", self.cell.h)
-        print("fdf0", fdf0)
+        #print("old_x TEST", self.old_x[:,9:])
+        #print("cell old TEST", self.cell.h)
+        #print("fdf0", fdf0)
 
         # Do one iteration of BFGS
         # The invhessian and the directions are updated inside.
@@ -505,20 +519,29 @@ class BFGSOptimizer(DummyOptimizer):
 
         info("   Number of force calls: %d" % (self.gm.fcount)); self.gm.fcount = 0
         # Update positions and forces
-        print("CHECK", self.d)
-        print("dcell.h updated", self.gm.dcell.h)
-        print("cell.h old", self.cell.h)
-        print("h0", self.h0)
-        print("old_x TEST the same?", self.old_x[:,9:])
-        print("cell old TEST the same?", self.cell.h, self.gm.dcell.h)
+        #print("CHECK", self.d)
+        #print("dcell.h updated", self.gm.dcell.h)
+        #print("cell.h old", self.cell.h)
+        #print("h0", self.h0)
+        #print("old_x TEST the same?", self.old_x[:,9:])
+        #print("cell old TEST the same?", self.cell.h, self.gm.dcell.h)
+        print("vir+pV", self.forces.vir+pV*np.eye(3))
+        print("vir",self.forces.vir )
+        print("pV", pV*np.eye(3))
         old_x_abs = dstrip(self.cell.positions_scaled_to_abs(self.old_x[:,9:]))
+
+        #V_old = np.linalg.det(np.dot(np.eye(3)+self.old_x[:,0:9].reshape((3,3)),self.h0))
+        #print("V_old", V_old)
+
         self.cell.h = self.gm.dcell.h
         self.beads.q = self.gm.dbeads.q #don't touch !
-        print(self.beads.q)
+                #print(self.beads.q)
         self.forces.transfer_forces(self.gm.dforces)  # This forces the update of the forces
-        print("this is cellop")
+        #print("this is cellop")
         # Exit simulation step
-
+        #pGPA = 4
+        p = pGPA*10**9/(2.9421912*10**13)
+        pV = -p*self.cell.V
         d_x_max = np.amax(np.absolute(np.subtract(self.beads.q, old_x_abs)))
         print("final pos", self.beads.q, self.cell.h )
-        self.exitstep(self.forces.pot, self.old_u, d_x_max, step)
+        self.exitstep(self.forces.pot+pV, self.old_u, d_x_max, step)
