@@ -25,7 +25,7 @@ from ipi.utils.mathtools import *
 
 
 __all__ = ['CellopMotion']
-pGPA = 5.
+pGPA = -10.
 
 class CellopMotion(Motion):
     """Geometry optimization class.
@@ -169,10 +169,17 @@ class GradientMapper(object):
         self.fcount += 1
         #CHECK THE DIMENSIONALITY OF X
         new_strain = x[:,0:9].reshape((3,3))
+
         print("new_strain", new_strain)
         print("h0", self.h0)
         print("h", self.dcell.h)
+        p = pGPA*10**9/(2.9421912*10**13)
+        pV = -p*self.dcell.V
         print("h computed",np.dot((np.eye(3)+new_strain), self.h0))
+        print("COORDS Before 1", self.dbeads.q)
+        print("vir+pV", self.dforces.vir+pV*np.eye(3))
+        print("vir",self.dforces.vir )
+        print("pV", pV*np.eye(3))
         self.dcell.h = np.dot((np.eye(3)+new_strain), self.h0)
         print("h updated", self.dcell.h)
         print("COORDS Before", self.dbeads.q)
@@ -202,6 +209,12 @@ class GradientMapper(object):
         g = np.zeros(nat*3 + 9)
         g[0:9] = -np.dot((self.dforces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + new_strain.reshape((3,3)).T)).flatten()
         g[9:] = -self.dforces.forces_abs_to_scaled()
+        print("g", g[0:9])
+        print("np.dot", np.dot((self.dforces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + new_strain.reshape((3,3)).T)))
+        print("invert", invert_ut3x3( np.eye(3) + new_strain.reshape((3,3)).T))
+        print("new_strain", new_strain.reshape((3,3)).T)
+        print("I+new_strain", np.eye(3) + new_strain.reshape((3,3)).T)
+        print("vir+pv", self.dforces.vir + np.eye(3) * pV)
         #sf=self.dforces.forces_abs_to_scaled(self.dforces.f[0])
         #self.strain= np.zeros((3,3))#self.strain.reshape((3,3))
         # Defines the effective gradient
@@ -309,7 +322,7 @@ class DummyOptimizer(dobject):
             fmax = np.amax(np.absolute(self.forces.f))
 
         e = np.absolute((fx - u0) / self.beads.natoms)
-        #if step==2:
+        #if step==20:
         #    fmax = 0
         #    e = 0
         #    x = 0
@@ -380,7 +393,7 @@ class BFGSOptimizer(DummyOptimizer):
 
             ####should be rewritten properly
             print("ZERO STEP")
-            print("step = 0", self.forces.f[0])
+            print("step = 0, self.forces.f[0]", self.forces.f[0])
             self.ih0 = dstrip(self.cell.ih).copy()
             self.h0 = dstrip(self.cell.h).copy()
             #print("CHECK", self.ih0, invert_ut3x3(self.h0))
@@ -392,13 +405,13 @@ class BFGSOptimizer(DummyOptimizer):
             strain = (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)).flatten()
             ar_len = nat*3+9
             #pGPA = 4
-            p = -pGPA*10**9/(2.9421912*10**13)
-            pV = p*self.cell.V
+            p = pGPA*10**9/(2.9421912*10**13)
+            pV = -p*self.cell.V
             ff = np.zeros((1,ar_len))
             print("vir+pV", self.forces.vir+pV*np.eye(3))
             print("vir",self.forces.vir )
             print("pV", pV*np.eye(3))
-            ff[:,0:9] = np.dot((self.forces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + strain.reshape((3,3)).T)).flatten()*0.1
+            ff[:,0:9] = np.dot((self.forces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + strain.reshape((3,3)).T)).flatten()*0.05
             #print("strain", strain)
             #print("strain before flatten", (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)))
             #print("strin reshaped", strain.reshape((3,3)))
@@ -415,8 +428,9 @@ class BFGSOptimizer(DummyOptimizer):
             d = d.reshape((1, nat * 3))
             self.d[:,0:9] = ff[:, 0:9]
             self.d[:,9:] = d
+            print("self.d", self.d)
             #print("ff, d", ff, self.d)
-            #print("self.d", self.d)
+            print("self.d", self.d)
 
             #print("h0", self.h0)
 
@@ -485,6 +499,7 @@ class BFGSOptimizer(DummyOptimizer):
         #pGPA = 4
         p = pGPA*10**9/(2.9421912*10**13)
         pV = -p*self.cell.V
+        print("pV", pV)
         #print("cell, cell0", self.cell.h, self.h0)
         strain = (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)).flatten()
         self.old_x[:,0:9] = strain.flatten()
@@ -494,6 +509,7 @@ class BFGSOptimizer(DummyOptimizer):
         print("vir+pV", self.forces.vir+pV*np.eye(3))
         print("vir",self.forces.vir )
         print("pV", pV*np.eye(3))
+        print("strain", strain)
         #print("strain, invert", strain, invert_ut3x3(strain.reshape((3,3))+np.eye(3)).T)
         #print("f_0-9",self.forces.vir + np.eye(3) * pV, invert_ut3x3( np.eye(3) + strain.reshape((3,3)).T) )#invert_ut3x3( np.eye(3) + (strain.reshape((3.3)).T)).flatten() ))
         self.old_f[:,0:9] = np.dot((self.forces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + strain.reshape((3,3)).T)).flatten()
@@ -506,9 +522,9 @@ class BFGSOptimizer(DummyOptimizer):
                 dqb[self.fixatoms * 3 + 2] = 0.0
 
         fdf0 = (self.old_u, -self.old_f) #don't modify
-        #print("old_x TEST", self.old_x[:,9:])
+        print("old_x TEST", self.old_x)
         #print("cell old TEST", self.cell.h)
-        #print("fdf0", fdf0)
+        print("fdf0", fdf0)
 
         # Do one iteration of BFGS
         # The invhessian and the directions are updated inside.
