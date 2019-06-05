@@ -26,6 +26,7 @@ from ipi.utils.mathtools import *
 
 __all__ = ['CellopMotion']
 pGPA = -10.
+Nstep = 100
 
 class CellopMotion(Motion):
     """Geometry optimization class.
@@ -169,18 +170,12 @@ class GradientMapper(object):
         self.fcount += 1
         #CHECK THE DIMENSIONALITY OF X
         new_strain = x[:,0:9].reshape((3,3))
-
         print("new_strain", new_strain)
         print("h0", self.h0)
         print("h", self.dcell.h)
-        p = pGPA*10**9/(2.9421912*10**13)
-        pV = -p*self.dcell.V
         print("h computed",np.dot((np.eye(3)+new_strain), self.h0))
-        print("COORDS Before 1", self.dbeads.q)
-        print("vir+pV", self.dforces.vir+pV*np.eye(3))
-        print("vir",self.dforces.vir )
-        print("pV", pV*np.eye(3))
         self.dcell.h = np.dot((np.eye(3)+new_strain), self.h0)
+        print("Volume", self.dcell.V, np.linalg.det(self.dcell.h))
         print("h updated", self.dcell.h)
         print("COORDS Before", self.dbeads.q)
         self.dbeads.q = self.dcell.positions_scaled_to_abs(x[:,9:]) #dbeads.q should be equal to scaled_to_abs positions because x[:,9:] contains scaled pos
@@ -199,22 +194,16 @@ class GradientMapper(object):
         #pGPA = 4
         p = pGPA*10**9/(2.9421912*10**13)
         pV = -p*self.dcell.V
-        e = self.dforces.pot +pV  # Energy
+        e = self.dforces.pot -pV  # Energy
         #pV = self.pext * self.dcell.V
         #pV=0
         print("vir+pV", self.dforces.vir+pV*np.eye(3))
         print("vir",self.dforces.vir )
         print("pV", pV*np.eye(3))
-        e = e + pV #assume p = 0
+        #e = e + pV #assume p = 0
         g = np.zeros(nat*3 + 9)
         g[0:9] = -np.dot((self.dforces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + new_strain.reshape((3,3)).T)).flatten()
         g[9:] = -self.dforces.forces_abs_to_scaled()
-        print("g", g[0:9])
-        print("np.dot", np.dot((self.dforces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + new_strain.reshape((3,3)).T)))
-        print("invert", invert_ut3x3( np.eye(3) + new_strain.reshape((3,3)).T))
-        print("new_strain", new_strain.reshape((3,3)).T)
-        print("I+new_strain", np.eye(3) + new_strain.reshape((3,3)).T)
-        print("vir+pv", self.dforces.vir + np.eye(3) * pV)
         #sf=self.dforces.forces_abs_to_scaled(self.dforces.f[0])
         #self.strain= np.zeros((3,3))#self.strain.reshape((3,3))
         # Defines the effective gradient
@@ -322,10 +311,10 @@ class DummyOptimizer(dobject):
             fmax = np.amax(np.absolute(self.forces.f))
 
         e = np.absolute((fx - u0) / self.beads.natoms)
-        #if step==20:
-        #    fmax = 0
-        #    e = 0
-        #    x = 0
+        if step==Nstep:
+            fmax = 0
+            e = 0
+            x = 0
         info("@GEOP", verbosity.medium)
         self.tolerances["position"]
         info("   Current energy             %e" % (fx))
@@ -367,7 +356,7 @@ class BFGSOptimizer(DummyOptimizer):
                 print("strain_matrix", strain_matrix)
                 invhess = np.zeros([9+3*nat,9+3*nat])
                 invhess[0:9,0:9]= strain_matrix
-                invhess[-3*nat:,-3*nat:]= h_block
+                #invhess[-3*nat:,-3*nat:]= h_block
                 geop.invhessian = invhess ###change the hessioan
             else:
                 raise ValueError("Inverse Hessian size does not match system size")
@@ -393,25 +382,25 @@ class BFGSOptimizer(DummyOptimizer):
 
             ####should be rewritten properly
             print("ZERO STEP")
-            print("step = 0, self.forces.f[0]", self.forces.f[0])
+            print("step = 0", self.forces.f[0])
             self.ih0 = dstrip(self.cell.ih).copy()
             self.h0 = dstrip(self.cell.h).copy()
             #print("CHECK", self.ih0, invert_ut3x3(self.h0))
-            #self.h0 = np.array([[9.82657000e+00, 4.62849404e-16, 4.62849404e-16],
-            #  [0.00000000e+00, 7.55890440e+00, 4.62849404e-16],
-            #  [0.00000000e+00, 0.00000000e+00, 7.55890440e+00]])
-            #self.ih0 = invert_ut3x3(self.h0)
+            self.h0 = np.array([[6.600594, 4.62849404e-16, 4.62849404e-16],
+              [0.00000000e+00, 6.600594, 4.62849404e-16],
+              [0.00000000e+00, 0.00000000e+00, 6.600594]])
+            self.ih0 = invert_ut3x3(self.h0)
             nat = len(self.forces.f[0])/3
             strain = (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)).flatten()
             ar_len = nat*3+9
             #pGPA = 4
-            p = pGPA*10**9/(2.9421912*10**13)
-            pV = -p*self.cell.V
+            p = -pGPA*10**9/(2.9421912*10**13)
+            pV = p*self.cell.V
             ff = np.zeros((1,ar_len))
             print("vir+pV", self.forces.vir+pV*np.eye(3))
             print("vir",self.forces.vir )
             print("pV", pV*np.eye(3))
-            ff[:,0:9] = np.dot((self.forces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + strain.reshape((3,3)).T)).flatten()*0.05
+            ff[:,0:9] = np.dot((self.forces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + strain.reshape((3,3)).T)).flatten()*0.1
             #print("strain", strain)
             #print("strain before flatten", (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)))
             #print("strin reshaped", strain.reshape((3,3)))
@@ -427,10 +416,9 @@ class BFGSOptimizer(DummyOptimizer):
             d = np.dot(d, dstrip(self.cell.ih).T)
             d = d.reshape((1, nat * 3))
             self.d[:,0:9] = ff[:, 0:9]
-            self.d[:,9:] = d
-            print("self.d", self.d)
+            #self.d[:,9:] = d
             #print("ff, d", ff, self.d)
-            print("self.d", self.d)
+            #print("self.d", self.d)
 
             #print("h0", self.h0)
 
@@ -499,17 +487,15 @@ class BFGSOptimizer(DummyOptimizer):
         #pGPA = 4
         p = pGPA*10**9/(2.9421912*10**13)
         pV = -p*self.cell.V
-        print("pV", pV)
         #print("cell, cell0", self.cell.h, self.h0)
         strain = (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)).flatten()
         self.old_x[:,0:9] = strain.flatten()
         print("x_0-9", (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)).flatten())
         self.old_x[:,9:] = self.cell.positions_abs_to_scaled(self.beads.q) #scaled positions; you can use the function of the class cell
-        self.old_u[:] = self.forces.pot +pV #  = 0 it's fine like that for now
+        self.old_u[:] = self.forces.pot -pV #  = 0 it's fine like that for now
         print("vir+pV", self.forces.vir+pV*np.eye(3))
         print("vir",self.forces.vir )
         print("pV", pV*np.eye(3))
-        print("strain", strain)
         #print("strain, invert", strain, invert_ut3x3(strain.reshape((3,3))+np.eye(3)).T)
         #print("f_0-9",self.forces.vir + np.eye(3) * pV, invert_ut3x3( np.eye(3) + strain.reshape((3,3)).T) )#invert_ut3x3( np.eye(3) + (strain.reshape((3.3)).T)).flatten() ))
         self.old_f[:,0:9] = np.dot((self.forces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + strain.reshape((3,3)).T)).flatten()
@@ -522,9 +508,15 @@ class BFGSOptimizer(DummyOptimizer):
                 dqb[self.fixatoms * 3 + 2] = 0.0
 
         fdf0 = (self.old_u, -self.old_f) #don't modify
-        print("old_x TEST", self.old_x)
+        #print("old_x TEST", self.old_x[:,9:])
         #print("cell old TEST", self.cell.h)
+        print("d", self.d)
+        print("x", self.old_x)
         print("fdf0", fdf0)
+        print("e, pV", self.forces.pot, pV)
+        print("cell h0, h", self.h0, self.cell.h)
+        print("vir", self.forces.vir, pV*np.eye(3))
+
 
         # Do one iteration of BFGS
         # The invhessian and the directions are updated inside.
@@ -560,4 +552,4 @@ class BFGSOptimizer(DummyOptimizer):
         pV = -p*self.cell.V
         d_x_max = np.amax(np.absolute(np.subtract(self.beads.q, old_x_abs)))
         print("final pos", self.beads.q, self.cell.h )
-        self.exitstep(self.forces.pot+pV, self.old_u, d_x_max, step)
+        self.exitstep(self.forces.pot-pV, self.old_u, d_x_max, step)

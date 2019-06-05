@@ -392,7 +392,7 @@ def min_approx(fdf, x0, fdf0, d0, big_step, tol, itmax):
     info(" @MINIMIZE: Started approx. line search", verbosity.debug)
     n = len(x0.flatten())
 
-    #print("fdf0", fdf0)
+    print("fdf0", fdf0)
 
     if fdf0 is None: fdf0 = fdf(x0)
     f0, df0 = fdf0
@@ -416,7 +416,7 @@ def min_approx(fdf, x0, fdf0, d0, big_step, tol, itmax):
 
     if slope >= 0.0:
         info(" @MINIMIZE: Warning -- gradient is >= 0 (%f)" % slope, verbosity.low)
-    print("slope", slope)
+
     test = np.amax(np.divide(np.absolute(d0.flatten()), np.maximum(np.absolute(x0.flatten()), np.ones(n))))
 
     # Setup to try Newton step first
@@ -427,9 +427,8 @@ def min_approx(fdf, x0, fdf0, d0, big_step, tol, itmax):
     i = 1
     while i < itmax:
         x = np.add(x0, (alam * d0))
-        print("INSIDE while")
-        #print("INSIDE while, x0, d0", x0, d0 )
-        #print("x", x)
+        print("INSIDE while, x0, d0", x0, d0 )
+        print("x", x)
         fx, dfx = fdf(x) #gm()
         info(" @MINIMIZE: Calculated energy", verbosity.debug)
 
@@ -441,7 +440,7 @@ def min_approx(fdf, x0, fdf0, d0, big_step, tol, itmax):
             return (x, fx, dfx)
 
         # Sufficient function decrease
-        elif np.abs(fx) <= np.abs((f0 + alf * alam * slope)):
+        elif fx <= (f0 + alf * alam * slope):
             print("ALERT2")
             info(" @MINIMIZE: Sufficient function decrease, exited line search", verbosity.debug)
             return (x, fx, dfx)
@@ -486,7 +485,7 @@ def min_approx(fdf, x0, fdf0, d0, big_step, tol, itmax):
 
         # Coefficient greater than 0.1 * lambda_1
         alam = max(tmplam, 0.1 * alam)
-        print("ALAM", alam)
+
         i += 1
 
     info(" @MINIMIZE: Error - maximum iterations for line search (%d) exceeded, exiting search" % itmax, verbosity.low)
@@ -512,7 +511,7 @@ def BFGS(x0, d0, fdf, fdf0, invhessian, big_step, tol, itmax):
     info(" @MINIMIZE: Started BFGS", verbosity.debug)
     zeps = 1.0e-13
     u0, g0 = fdf0
-    #print("INSIDE bfgs")
+    print("INSIDE bfgs")
     # Maximum step size
     n = len(x0.flatten())
     linesum = np.dot(x0.flatten(), x0.flatten())
