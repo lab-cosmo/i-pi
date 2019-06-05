@@ -25,7 +25,7 @@ from ipi.utils.mathtools import *
 
 
 __all__ = ['CellopMotion']
-pGPA = -10.
+pGPA = 0.
 Nstep = 100
 
 class CellopMotion(Motion):
@@ -386,10 +386,10 @@ class BFGSOptimizer(DummyOptimizer):
             self.ih0 = dstrip(self.cell.ih).copy()
             self.h0 = dstrip(self.cell.h).copy()
             #print("CHECK", self.ih0, invert_ut3x3(self.h0))
-            self.h0 = np.array([[6.600594, 4.62849404e-16, 4.62849404e-16],
-              [0.00000000e+00, 6.600594, 4.62849404e-16],
-              [0.00000000e+00, 0.00000000e+00, 6.600594]])
-            self.ih0 = invert_ut3x3(self.h0)
+            #self.h0 = np.array([[6.600594, 4.62849404e-16, 4.62849404e-16],
+            #  [0.00000000e+00, 6.600594, 4.62849404e-16],
+            #  [0.00000000e+00, 0.00000000e+00, 6.600594]])
+            #self.ih0 = invert_ut3x3(self.h0)
             nat = len(self.forces.f[0])/3
             strain = (np.dot(dstrip(self.cell.h),self.ih0) - np.eye(3)).flatten()
             ar_len = nat*3+9
