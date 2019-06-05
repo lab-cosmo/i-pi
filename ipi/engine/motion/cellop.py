@@ -356,7 +356,7 @@ class BFGSOptimizer(DummyOptimizer):
                 print("strain_matrix", strain_matrix)
                 invhess = np.zeros([9+3*nat,9+3*nat])
                 invhess[0:9,0:9]= strain_matrix
-                #invhess[-3*nat:,-3*nat:]= h_block
+                invhess[-3*nat:,-3*nat:]= h_block
                 geop.invhessian = invhess ###change the hessioan
             else:
                 raise ValueError("Inverse Hessian size does not match system size")
@@ -416,7 +416,7 @@ class BFGSOptimizer(DummyOptimizer):
             d = np.dot(d, dstrip(self.cell.ih).T)
             d = d.reshape((1, nat * 3))
             self.d[:,0:9] = ff[:, 0:9]
-            #self.d[:,9:] = d
+            self.d[:,9:] = d
             #print("ff, d", ff, self.d)
             #print("self.d", self.d)
 
