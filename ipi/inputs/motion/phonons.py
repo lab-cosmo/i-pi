@@ -37,7 +37,7 @@ class InputDynMatrix(InputDictionary):
 
     """Dynamic matrix calculation options.
 
-       Contains options related with finite difference computation of force constats.
+       Contains options related with finite difference computation of force constants.
 
     """
 
@@ -57,20 +57,20 @@ class InputDynMatrix(InputDictionary):
                 "prefix": (InputValue, {"dtype": str, "default": "phonons",
                                         "help": "Prefix of the output files."
                                         }),
-                "asr": (InputValue, {"dtype": str, "default": "none", "options": ["none", "poly", "lin", "crystal"],
-                                     "help": "Removes the zero frequency vibrational modes depending on the symmerty of the system."
+                "asr": (InputValue, {"dtype": str, "default": "none", "options": ["none", "poly", "crystal"],
+                                     "help": "Removes the zero frequency vibrational modes depending on the symmetry of the system for general polyatomic molecules, and periodic crystal structures."
                                      }),
                 "dynmat": (InputArray, {"dtype": float,
                                         "default": np.zeros(0, float),
-                                        "help": "Portion of the dynamical matrix known up to now."}),
+                                        "help": "Portion of the dynamical matrix known up to the current point in the calculation."}),
                 "refdynmat": (InputArray, {"dtype": float,
                                            "default": np.zeros(0, float),
-                                           "help": "Portion of the refined dynamical matrix known up to now."})
+                                           "help": "Portion of the refined dynamical matrix known up tothe current point in the calculation."})
     }
 
     dynamic = {}
 
-    default_help = "Fill in."
+    default_help = "Calculation of harmonic vibrations for periodic (Gamma-point only) and non-periodic systems. See descriptions for further help."
     default_label = "PHONONS"
 
     def store(self, phonons):

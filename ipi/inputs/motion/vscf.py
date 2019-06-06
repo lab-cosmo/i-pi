@@ -34,7 +34,7 @@ __all__ = ["InputNormalMode"]
 
 
 class InputNormalMode(InputDictionary):
-    """Dynamic matrix calculation options.
+    """Vibrational self-consistent phonons calculation options.
 
        Contains options related with finite difference computation of force constats. 
 
@@ -47,18 +47,18 @@ class InputNormalMode(InputDictionary):
                 "prefix": (InputValue, {"dtype": str, "default": "",
                                         "help": "Prefix of the output files."
                                         }),
-                "asr": (InputValue, {"dtype": str, "default": "none", "options": ["none", "poly", "lin", "crystal"],
-                                     "help": "Removes the zero frequency vibrational modes depending on the symmerty of the system."
+                "asr": (InputValue, {"dtype": str, "default": "none", "options": ["none", "poly", "crystal"],
+                                     "help": "Removes the zero frequency vibrational modes depending on the symmetry of the system for general polyatomic molecules, and periodic crystal structures."
                                      }),
                 "dynmat": (InputArray, {"dtype": float,
                                         "default": np.zeros(0, float),
-                                        "help": "Portion of the dynamical matrix known up to now."}),
+                                        "help": "Portion of the dynamical matrix known to the current point in the calculation."}),
                 "nprim": (InputValue, {"dtype": float,
                                         "default": 1.0,
                                         "help": "Number of primitive unit cells in the simulation cell."}),
                 "fnmrms": (InputValue, {"dtype": float,
                                         "default": 1.0,
-                                        "help": "Fraction of harm RMS displ used to sample along normal mode."}),
+                                        "help": "Fraction of harmonic RMS displacement used to sample along normal mode."}),
                 "nevib": (InputValue, {"dtype": float,
                                         "default": 25.0,
                                         "help": "Multiple of harm vibr energy up to which BO surface is sampled."}),

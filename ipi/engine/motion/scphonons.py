@@ -104,7 +104,7 @@ class SCPhononsMover(Motion):
         self.dynmatrix = self.dynmatrix.reshape((beads.q.size, beads.q.size))
         self.atol = self.chop
 
-        # Creates dublicate classes to easer computation of forces.
+        # Creates duplicate classes to simplify computation of forces.
         self.dof = 3 * self.beads.natoms
         self.dbeads = self.beads.copy(nbeads=self.nparallel)
         self.dcell = self.cell.copy()
@@ -731,13 +731,13 @@ class SCPhononator(DummyPhononator):
         Removes the translations and/or rotations depending on the asr mode.
         """
 
-        if(self.dm.asr == "internal"):
-
-            self.dm.w2, self.dm.U = np.linalg.eigh(self.dm.dynmatrix)
-            self.dm.V = self.dm.U.T[-(self.dm.dof - 5):]
-            self.dm.v2 = self.dm.w2[-(self.dm.dof - 5):]
-            self.dm.dynmatrix = np.dot(
-                self.dm.V, np.dot(self.dm.dynmatrix, self.dm.V.T))
+#        if(self.dm.asr == "internal"):
+#
+#            self.dm.w2, self.dm.U = np.linalg.eigh(self.dm.dynmatrix)
+#            self.dm.V = self.dm.U.T[-(self.dm.dof - 5):]
+#            self.dm.v2 = self.dm.w2[-(self.dm.dof - 5):]
+#            self.dm.dynmatrix = np.dot(
+#                self.dm.V, np.dot(self.dm.dynmatrix, self.dm.V.T))
 
         if(self.dm.asr == "molecule"):
 

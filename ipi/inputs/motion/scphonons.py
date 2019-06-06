@@ -34,14 +34,14 @@ __all__ = ['InputSCPhonons']
 
 
 class InputSCPhonons(InputDictionary):
-    """Dynamic matrix calculation options.
+    """Calculation options for self-consistent phonons algorithm.
 
        Contains options related to self consistent phonons method.
 
     """
 
     attribs = {"mode": (InputAttribute, {"dtype": str, "default": "qn",
-                                         "help": "The algorithm to be used",
+                                         "help": "The statistics to be used in the calculation of the free energy. Quantum (qn) or classical (cl) Boltzmann statistics.",
                                          "options": ["qn", "cl"]})}
     fields = {
         "prefix": (InputValue, {"dtype": str, "default": "",
@@ -49,7 +49,7 @@ class InputSCPhonons(InputDictionary):
                                 }),
         "asr": (InputValue, {"dtype": str, "default": "none",
                              "options": ["none", "crystal", "molecule" ],
-                             "help": "The method used to project out zero modes coming from continuous symmetries : crystal removes the three translational modes. molecule removes the three rotational modes in addition to the translational ones. none keeps all the modes."
+                             "help": "The method used to project out zero modes coming from continuous symmetries: crystal removes the three translational modes; molecule removes the three rotational modes in addition to the translational ones. none keeps all the modes."
                              }),
         "random_type": (InputValue, {"dtype": str, "default": "pseudo",
                                      "options": ["sobol", "pseudo", "file"],
@@ -57,7 +57,7 @@ class InputSCPhonons(InputDictionary):
                                      }),
         "displace_mode": (InputValue, {"dtype": str, "default": "nmik",
                                        "options": ["ik", "sd", "nmik", "rnmik"],
-                                       "help": "The type of optimisation strategy for obtaining the mean position. sd stands for a steepest decent algorithm. ik stands for a Newton-Raphson scheme that requires the iverse of the force constant matrix iK. mnik stands for a Newton-Raphson scheme that only displaces along normal modes directions with statistically significant forces. rnmik same as nmik but performs several optimization steps using a reweighted sampling."
+                                       "help": "The type of optimisation strategy for obtaining the mean position. sd stands for a steepest descent algorithm. ik stands for a Newton-Raphson scheme that requires the inverse of the force constant matrix iK. nmik stands for a Newton-Raphson scheme that only displaces along normal modes directions with statistically significant forces. rnmik same as nmik but performs several optimization steps using a reweighted sampling."
                                        }),
         "dynmat": (InputArray, {"dtype": float,
                                 "default": np.zeros(0, float),
@@ -91,10 +91,10 @@ class InputSCPhonons(InputDictionary):
             "help": "Threshold below which frequencies are set to zero."}),
         "nparallel": (InputValue, {"dtype": int,
             "default": 1,
-            "help": "The number of Monte Carlo forces to be evaluated per i-PI step."}),
+            "help": "The number of Monte Carlo forces to be evaluated (in parallel) per i-PI step."}),
         "batch_weight_exponent": (InputValue, {"dtype": int,
             "default": 1,
-            "help": "The exponent used to supress low batch weights."}),
+            "help": "The exponent used to suppress low batch weights."}),
     }
 
     dynamic = {}
