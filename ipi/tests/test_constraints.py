@@ -59,27 +59,36 @@ class MinimalCG(dobject):
     def __init__(self):
         self.natoms = 3
         self.external = Eckart()
-        self.b2qc = tri_b2qc
-        self.b2fc = tri_b2fc
+        self.b2qc = lambda: tri_b2qc(self)
+        self.b2fc = lambda f, fc: tri_b2fc(self, f, fc)
 
     def bind(self, q, m, qc=None, mc=None):
         ncart, self.nbeads = q.shape
-        self.nsets = ncart//self.natoms
+        self.nsets = ncart//(3*self.natoms)
         dself = dd(self)
-        dself.q = depend_array(name="q", value=np.zeros(ncart, self.nbeads))
-        dself.dynm3 = depend_array(name="dynm3", value=np.zeros(ncart, self.nbeads))
-        dself.qc = depend_array(name="qc", value=np.zeros(ncart,))
-        dself.mc = depend_array(name="dynm3", value=np.zeros(ncart,))
-        dself.q[:] = q
-        dself.dynm3[:] = m
+        rpshape=(self.nsets, 3*self.natoms, self.nbeads)
+        dself.q = depend_array(name="q",
+                               value=np.zeros(rpshape))
+        dself.dynm3 = depend_array(name="dynm3",
+                                   value=np.zeros(rpshape))
+        dself.qc = depend_array(name="qc",
+                                value=np.zeros((self.nsets, 3*self.natoms)))
+        dself.mc = depend_array(name="mc",
+                                value=np.zeros((self.nsets, 3*self.natoms)))
+        dself.q[:] = q.reshape(rpshape)
+        dself.dynm3[:] = m.reshape(rpshape)
         if qc is None:
+            self.external.bind(dstrip(self.q).mean(axis=-1),
+                               dstrip(self.dynm3)[...,0])
             self.b2qc()
         else:
             dself.qc[:] = qc
         if mc is None:
-            dself.mc = m[:,0]
+            dself.mc = m.reshape(rpshape)[...,0]
         else:
             dself.mc[:] = mc
+        self.external.bind(dstrip(self.qc), dstrip(self.mc))
+
 
 def create_beads(fin):
     """Read atom coordinates from file @fin and return an initialised
@@ -136,68 +145,45 @@ def bondangle(beads, indices, target):
 
     return sigma, grad.T
 
-def com(beads, indices, target):
-    """Calculate the position of the centre of mass of a system of beads
-       and return the corresponding value of the constraint function and
-       its gradient.
-    """
-    natom = len(indices)//3
-    grad = np.empty((beads.nbeads,natom),float)
-    for i,idx in enumerate(indices[::3]):
-        grad[:,i] = beads.m[idx//3]
-    mtot = np.sum(grad)
-    grad /= mtot
-    sigma = np.sum(grad[:,:,None]*np.reshape(
-                dstrip(beads.q)[:,indices],
-                (-1,natom,3)), axis=(0,1))
-    sigma -= target
-    return sigma, grad.T
+def com(q, m, axes=(-1,-2)):
+    """Calculate the position of the com of the system
 
-def eckart_rot(beads, indices, reference):
+    Args:
+        q (ndarray): at least a 2d array with particle positions
+        m (ndarray): at least a 2d array with particle masses
+        axes (tuple): length-2 tuple indicating the axes corresponding to
+                      the cartesian dimensions and the identities of the atoms
+    """
+    cart_ax, atom_ax = [ax if ax >= 0 else ax+q.ndim for ax in axes]
+    mtot = np.sum(m, axis=atom_ax)
+    ans = np.sum(m*q, axis=atom_ax)/mtot
+    return ans
+
+def eckart(q, m, qref, axes=(-1,-2)):
     """Calculate the angular-momentum-like quantity that appears in the
-       rotational Eckart conditions and return the corresponding value
-       of the constraint function and its gradient.
+       rotational Eckart conditions.
+
+    Args:
+        q (ndarray): at least a 2d array with particle positions
+        m (ndarray): at least a 2d array with particle masses
+        qref (ndarray): at least a 2d array with reference coordinates
+        axes (tuple): length-2 tuple indicating the axes corresponding to
+                      the cartesian dimensions and the identities of the atoms
+
     """
     # Calculate the total mass of the RP
-    natom = len(indices)//3
-    m = np.empty((beads.nbeads,natom,3))
-    for i,idx in enumerate(indices[::3]):
-        m[:,i,:] = dstrip(beads.m)[idx//3]
-    mtot = np.sum(m[:,:,0])
-
+    cart_ax, atom_ax = [ax if ax >= 0 else ax+q.ndim for ax in axes]
+    mtot = np.sum(m, axis=atom_ax)
     # Calculate the CoM of the reference configuration
-    lref = np.asarray([reference[i] for i in indices]).reshape((natom,3))
-    ref_com = np.sum(m[0,:,:]*lref, axis=0)/np.sum(m[0,:,0])
-
+    ref_com = np.sum(m*qref, axis=atom_ax)/mtot
+    ref_com = np.expand_dims(ref_com, axis=atom_ax)
+    mtot = np.expand_dims(mtot, axis=atom_ax)
     # Calculate the reference configuration in its CoM, weighted
     # by mass/mtot
-    mref = lref - ref_com
-    mref *= m[0,...]
-    mref /= mtot
-
-    #Calculate the gradients of the three Cartesian components of the
-    #sum of cross-products
-    grad = np.empty((3,beads.nbeads,natom,2))
-    temp = np.empty((beads.nbeads,natom,3))
-    for i,jk in enumerate([(1,2), (2,0), (0,1)]):
-        for ndim,idx in enumerate(jk):
-            temp *= 0
-            temp[...,idx] = 1
-            grad[i,:,:,ndim] = np.cross(mref, temp, axis=-1)[:,:,i]
-
-    #Calculate the sum of cross-products
-    temp.shape = (beads.nbeads,-1)
-    for i in indices:
-        temp[:,i] = dstrip(beads.q)[:,i]
-    temp.shape = (beads.nbeads,natom,3)
-    temp -= lref
-    sigma = np.cross(mref, temp, axis=-1).sum(axis=(0,1))
-
-    # Gradients needs to be transposed to agree with the ordering
-    # from EckartRot
-    return sigma, np.asarray([
-            np.transpose(g,(0,2,1)).reshape(beads.nbeads,-1).T
-            for g in grad])
+    mref = (qref-ref_com)*m/mtot
+    # Calculate the cross-product
+    ans = np.sum(np.cross(mref, q-qref, axis=cart_ax), axis=atom_ax)
+    return ans
 
 def tri_force(q):
     """
@@ -309,5 +295,57 @@ def test_b2qc():
             np.array([15.999, 1.0078, 1.0078])[:,None,None]
     m.shape = q.shape
     m[...,1:] *= np.random.uniform(low=0.01, high=1.0, size=nbeads-1)
-    #!! TODO: continue from here
+    # Initialising a constraint group
+    cg = MinimalCG()
+    cg.bind(q, m)
+    # Test that the quasi-centroid internals have been calculated correctly
+    qc = dstrip(cg.qc).reshape((-1,3,3))
+    mc = dstrip(cg.mc).reshape((-1,3,3))
+    r1_qc, r2_qc, ct_qc = tri_internals(qc)[:3]
+    r1, r2, ct = tri_internals(dstrip(cg.q).reshape((-1,3,3,nbeads)), axes=(-2,-3))[:3]
+    assert r1.mean(axis=-1) == pytest.approx(r1_qc)
+    assert r2.mean(axis=-1) == pytest.approx(r2_qc)
+    assert np.arccos(ct).mean(axis=-1) == pytest.approx(np.arccos(ct_qc))
+    # Test that the externals have been calculated correctly
+    q0 = dstrip(cg.q).mean(axis=-1).reshape((-1,3,3))
+    com0 = com(q0, mc)
+    comc = com(qc, mc)
+    assert com0 == pytest.approx(comc)
+    assert eckart(qc, mc, q0) == pytest.approx(0.0)
+    # NOTE: to use the following need to comment out the external forces
+    #       in tri_b2fc
+#    # Test that internal-only forces are reproduced correctly
+#    qref = np.transpose(
+#            np.reshape(q, (nsets, natoms, ndims, nbeads)),
+#            [0,3,1,2]) # nsets, nbeads, natoms, ndims
+#    fr1ref = np.zeros((nsets,nbeads))
+#    fr2ref = np.zeros_like(fr1ref)
+#    ftref = np.zeros_like(fr1ref)
+#    fref = np.zeros_like(qref)
+#    for i, qbeads in enumerate(qref):
+#        for j, qmol in enumerate(qbeads):
+#            fref[i,j], fr1ref[i,j], fr2ref[i,j], ftref[i,j] = \
+#                tri_force(qmol)
+#    fref = np.transpose(fref, [0,2,3,1])
+#    fc = np.empty((nsets, 9))
+#    fc = cg.b2fc(fref, fc)
+#    fr1, fr2, ftheta = tri_cart2ba(qc.reshape((-1,3,3)),
+#                                   fc.reshape((-1,3,3)))
+#    assert fr1ref.mean(axis=-1) == pytest.approx(fr1)
+#    assert fr2ref.mean(axis=-1) == pytest.approx(fr2)
+#    assert ftref.mean(axis=-1) == pytest.approx(ftheta)
+
+    # Test forces for a single-bead case -- should be exactly reproduced
+    nbeads=1
+    # Generate a new set of random geometries
+    q = np.random.uniform(low=-1.5, high=1.5, size=(nsets*natoms*ndims,nbeads))
+    fref = np.random.uniform(low=-1.5, high=1.5, size=(nsets,natoms*ndims,nbeads))
+    fc = np.empty((nsets,natoms*ndims))
+    m = np.ones((nsets,natoms,ndims,nbeads)) * \
+            np.array([15.999, 1.0078, 1.0078])[:,None,None]
+    m.shape = q.shape
+    cg = MinimalCG()
+    cg.bind(q, m)
+    fc = cg.b2fc(fref, fc)
+    assert fc.flatten() == pytest.approx(fref.flatten())
 

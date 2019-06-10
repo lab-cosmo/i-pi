@@ -180,53 +180,53 @@ class ExternalConstraint(object):
         self.mref = mref
         self.qref = qref
 
-        @property
-        def mref(self):
-            return self.__mref
-        @mref.setter
-        def mref(self, val):
-            init_shape = val.shape
-            self.__mref = val.reshape(init_shape[:-1]+(init_shape[-1]//3, 3))
-            if self.__qref is not None:
-                self._update_config()
-        @property
-        def qref(self):
-            return self.__qref
-        @qref.setter
-        def qref(self, val):
-            init_shape = val.shape
-            self.__qref = val.reshape(init_shape[:-1]+(init_shape[-1]//3, 3))
+    @property
+    def mref(self):
+        return self.__mref
+    @mref.setter
+    def mref(self, val):
+        init_shape = val.shape
+        self.__mref = val.reshape(init_shape[:-1]+(init_shape[-1]//3, 3))
+        if self.__qref is not None:
             self._update_config()
+    @property
+    def qref(self):
+        return self.__qref
+    @qref.setter
+    def qref(self, val):
+        init_shape = val.shape
+        self.__qref = val.reshape(init_shape[:-1]+(init_shape[-1]//3, 3))
+        self._update_config()
 
-        def _update_config(self):
-            """Re-calculate the intermediate values used in enforcing the constraints.
-            """
-            pass
+    def _update_config(self):
+        """Re-calculate the intermediate values used in enforcing the constraints.
+        """
+        pass
 
-        def enforce_q(self, q, tol, nc, ns):
-            """Test which constraints are not satisfied to within the given
-               tolerance, record their identities and enforce the constraints
-               on any such non-conforming sets of atoms
+    def enforce_q(self, q, tol, nc, ns):
+        """Test which constraints are not satisfied to within the given
+           tolerance, record their identities and enforce the constraints
+           on any such non-conforming sets of atoms
 
-               Args:
-                   q (2d ndarray): an ngp-by-ncart array of
-                                   atomic configurations
-                   tol (float): convergence parameter
-                   nc (1d ndarray): an ngp array of booleans indicating which sets
-                                    of atoms are still not converged and therefore
-                                    need to be processed
-                   ns (1d ndarray): an ngp array of boolean for indicating which
-                                    sets do not currently satisfy the constraints
-                                    to the level specified by tol.
-                All modified in-place.
-            """
-            pass
+           Args:
+               q (2d ndarray): an ngp-by-ncart array of
+                               atomic configurations
+               tol (float): convergence parameter
+               nc (1d ndarray): an ngp array of booleans indicating which sets
+                                of atoms are still not converged and therefore
+                                need to be processed
+               ns (1d ndarray): an ngp array of boolean for indicating which
+                                sets do not currently satisfy the constraints
+                                to the level specified by tol.
+            All modified in-place.
+        """
+        pass
 
-        def enforce_p(self, p, q, tol, nc, ns):
-            """Analogous to the above but for enforcing constraints on the
-               momenta.
-            """
-            pass
+    def enforce_p(self, p, q, tol, nc, ns):
+        """Analogous to the above but for enforcing constraints on the
+           momenta.
+        """
+        pass
 
 class Eckart(ExternalConstraint):
     """The Eckart constraints, enforcing the coincidence of the CoMs of
@@ -240,9 +240,14 @@ class Eckart(ExternalConstraint):
         """
         self.mtot = np.sum(self.mref[...,0:1], axis=-2)
         # CoM of reference
-        self.qref_com = np.sum(
-                self.qref*self.mref, axis=-2
-                )/self.mtot
+        try:
+            self.qref_com = np.sum(
+                    self.qref*self.mref, axis=-2
+                    )/self.mtot
+        except:
+            raise ValueError(self.qref.shape.__repr__()+
+                             self.mref.shape.__repr__()+
+                             self.mtot.shape.__repr__())
         # Reference coords relative to CoM
         self.qref_rel = self.qref-self.qref_com[...,None,:]
         # The above, mass-weighted
@@ -521,20 +526,19 @@ def tri_b2qc(self):
     """
 
     q = np.reshape(dstrip(self.q), (self.nsets, 3, 3, self.nbeads))
-    qc = dstrip(self.qc).copy()
-    qc.shape = (self.nsets, 3, 3)
     r1, r2, ct = tri_internals(q, axes=(-2,-3))[:3]
     theta = np.arccos(ct)
     R1 = np.mean(r1, axis=-1)
     R2 = np.mean(r2, axis=-1)
     Theta = np.mean(theta, axis=-1)
-    qc[:] = 0.0
+    qc = np.zeros_like(dstrip(self.qc))
+    qc.shape = (self.nsets, 3, 3)
     qc[:,1,0] = R1
     qc[:,2,0] = R2*np.cos(Theta)
     qc[:,2,1] = R2*np.sin(Theta)
     nc = np.ones(self.nsets, dtype=np.bool)
     ns = nc.copy()
-    qc[:] = self.external.enforce_q(qc, 0.0, nc, ns)
+    self.external.enforce_q(qc, 0.0, nc, ns)
     qc.shape = (self.nsets, -1)
     self.qc[:] = qc
 
@@ -546,19 +550,24 @@ def tri_b2fc(self, f, fc):
         self(ConstraintGroup): an object describing sets of identically-defined
                                quasi-centroids
         f (3d-ndarray): an nsets-by-9-by-nbeads array of bead forces
+        fc (2d-ndarray): an nsets-by-9 array of quasi-centroid forces
 
     Return:
-        fc (2d-ndarray): an nsets-by-9 array of quasi-centroid forces
+        fc (2d-ndarray): modified in-place
     """
     # Swap beads and Cartesians in input and shift to CoM:
     # Axis order: set, bead, atom, dimension
     shape = (self.nsets,3,3,self.nbeads)
     order = [0,3,1,2]
+    q = dstrip(self.q)
+    q_bead = np.empty((self.nsets,self.nbeads,3,3))
+    q_bead[:] = np.transpose(np.reshape(q, shape), order)
+    q0 = np.reshape(np.mean(q, axis=-1), (self.nsets,3,3)) # Centroid coordinates
+    f_bead = np.empty((self.nsets,self.nbeads,3,3))
+    f_bead[:] = np.transpose(np.reshape(f, shape), order)
+    f0 = np.reshape(np.mean(f, axis=-1), (self.nsets,3,3)) # Centroid forces
     m = np.transpose( np.reshape(dstrip(self.dynm3), shape), order)
-    q_bead = np.transpose(np.reshape(dstrip(self.q), shape), order).copy()
-    f_bead = np.transpose(np.reshape(f, shape), order).copy()
-    q0 = np.mean(dstrip(self.q), axis=-1) # centroid coordinates
-    f0 = np.mean(f, axis=-1) # Centroid forces
+    # Shift to CoM
     q_bead[:] = mathtools.toCoM(m, q_bead)[0]
     # Remove the external forces
     II = mathtools.mominertia(m, q_bead, shift=False, axes=(-1,-2))
@@ -576,17 +585,18 @@ def tri_b2fc(self, f, fc):
     mc = np.reshape(dstrip(self.mc), shape)
     qc[:], CoM = mathtools.toCoM(mc, qc)
     fcba = fba.mean(axis=-1)
-    fc = tri_ba2cart(qc, fcba)
+    fcview = np.reshape(fc, (self.nsets,3,3))
+    fcview[:] = tri_ba2cart(qc, fcba)
     # Extract the external forces on fc
-    q0 -= CoM[...,None,:]
-    rhs = np.cross(fc, q0, axis=-1).sum(axis=-2)
+    q0 -= CoM
+    rhs = np.cross(fcview, q0, axis=-1).sum(axis=-2)
     rhs -= np.cross(f0, qc, axis=-1).sum(axis=-2)
     lhs = mathtools.mominertia(mc, qc, q2=q0, shift=False)
     alpha = np.linalg.solve(lhs, rhs)
     alpha = np.expand_dims(alpha, axis=1)
     mtot = np.expand_dims(np.sum(mc[...,0:1], axis=-2),1)
     f_CoM = np.expand_dims(np.sum(f0, axis=1), axis=1)/mtot
-    fc += mc*(f_CoM + np.cross(alpha, qc, axis=-1))
+    fcview += mc*(f_CoM + np.cross(alpha, qc, axis=-1))
     return fc
 
 #---------------------------------------------------------------------------#
@@ -646,14 +656,14 @@ def tri_b2fc(self, f, fc):
 #                             BondLength(indices=[0,2]),
 #                             BondAngle(indices=[0,1,2])]
 #            self.external = Eckart()
-#            self.b2qc = tri_b2qc
-#            self.b2fc = tri_b2fc
+#            self.b2qc = lambda: tri_b2qc(self)
+#            self.b2fc = lambda: tri_b2fc(self)
 #        elif self.name == "monatomic":
 #            self.natoms = 1
 #            self.internal = []
 #            self.external = FixCoM()
-#            self.b2qc = get_centroid
-#            self.b2fc = get_centroid
+#            self.b2qc = lambda: get_centroid(self)
+#            self.b2fc = lambda: get_centroid(self)
 #        else:
 #            raise ValueError(
 #                    "Quasi-centroid group of type '{:s}' ".format(self.name) +
