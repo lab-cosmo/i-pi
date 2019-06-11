@@ -9,8 +9,11 @@ functions.
 # See the "licenses" directory for full license information.
 
 import numpy as np
-from ipi.utils.depend import depend_value, dd, dobject, dstrip
+from ipi.utils.depend import depend_value, depend_array, dd, dobject, dstrip
 from ipi.utils import mathtools
+from ipi.utils import nmtransform
+from ipi.engine.beads import Beads
+from ipi.engine.normalmodes import NormalModes
 
 __all__ = ['Constraints','ConstraintGroup','BondLength','BondAngle','_Eckart']
 
@@ -531,149 +534,294 @@ def tri_b2qc(self):
     R1 = np.mean(r1, axis=-1)
     R2 = np.mean(r2, axis=-1)
     Theta = np.mean(theta, axis=-1)
-    qc = np.zeros_like(dstrip(self.qc))
-    qc.shape = (self.nsets, 3, 3)
-    qc[:,1,0] = R1
-    qc[:,2,0] = R2*np.cos(Theta)
-    qc[:,2,1] = R2*np.sin(Theta)
+    qqc = np.zeros_like(dstrip(self.qqc))
+    qqc.shape = (self.nsets, 3, 3)
+    qqc[:,1,0] = R1
+    qqc[:,2,0] = R2*np.cos(Theta)
+    qqc[:,2,1] = R2*np.sin(Theta)
     nc = np.ones(self.nsets, dtype=np.bool)
     ns = nc.copy()
-    self.external.enforce_q(qc, 0.0, nc, ns)
-    qc.shape = (self.nsets, -1)
-    self.qc[:] = qc
+    self.external.enforce_q(qqc, 0.0, nc, ns)
+    qqc.shape = (self.nsets, -1)
+    self.qqc[:] = qqc
 
-def tri_b2fc(self, f, fc):
+def tri_b2fc(self, f, fqc):
     """
     Extract quasi-centroid forces from forces acting on the beads.
 
     Args:
         self(ConstraintGroup): an object describing sets of identically-defined
                                quasi-centroids
-        f (3d-ndarray): an nsets-by-9-by-nbeads array of bead forces
-        fc (2d-ndarray): an nsets-by-9 array of quasi-centroid forces
+        f (4d-ndarray): a shape=(nsets,nbeads,natoms,3) array of bead forces;
+                        CAUTION this is assumed to be a working copy that may
+                        be modified in-place
+        fqc (3d-ndarray): an shape=(nsets,natoms,3) of quasi-centroid forces
 
     Return:
-        fc (2d-ndarray): modified in-place
+        fqc (3d-ndarray): modified in-place
     """
     # Swap beads and Cartesians in input and shift to CoM:
     # Axis order: set, bead, atom, dimension
     shape = (self.nsets,3,3,self.nbeads)
     order = [0,3,1,2]
-    q = dstrip(self.q)
-    q_bead = np.empty((self.nsets,self.nbeads,3,3))
-    q_bead[:] = np.transpose(np.reshape(q, shape), order)
-    q0 = np.reshape(np.mean(q, axis=-1), (self.nsets,3,3)) # Centroid coordinates
-    f_bead = np.empty((self.nsets,self.nbeads,3,3))
-    f_bead[:] = np.transpose(np.reshape(f, shape), order)
-    f0 = np.reshape(np.mean(f, axis=-1), (self.nsets,3,3)) # Centroid forces
+    q = np.empty((self.nsets,self.nbeads,3,3))
+    q[:] = np.transpose(np.reshape(dstrip(self.q), shape), order)
     m = np.transpose( np.reshape(dstrip(self.dynm3), shape), order)
-    # Shift to CoM
-    q_bead[:] = mathtools.toCoM(m, q_bead)[0]
+    shape = (self.nsets,3,3)
+    q0 = np.empty(shape)
+    q0 = np.reshape(np.mean(q, axis=1), shape) # Centroid coordinates
+    f0 = np.reshape(np.mean(f, axis=1), shape) # Centroid forces
+    qqc = np.reshape(dstrip(self.qqc), shape).copy()  # Quasi-centroid coords
+    mqc = np.reshape(dstrip(self.mqc), shape)         # __"__"__ masses
+    # Shift each replica to CoM frame
+    q[:] = mathtools.toCoM(m, q)[0]
     # Remove the external forces
-    II = mathtools.mominertia(m, q_bead, shift=False, axes=(-1,-2))
-    tau_CoM = np.sum(np.cross(q_bead, f_bead, axis=-1), axis=2)
+    II = mathtools.mominertia(m, q, shift=False, axes=(-1,-2))
+    tau_CoM = np.sum(np.cross(q, f, axis=-1), axis=2)
     alpha = np.linalg.solve(II, tau_CoM)
     alpha = np.expand_dims(alpha, axis=2)
-    f_CoM = np.sum(f_bead, axis=2)/np.sum(m[:,:,:,0:1], axis=2)
+    f_CoM = np.sum(f, axis=2)/np.sum(m[:,:,:,0:1], axis=2)
     f_CoM = np.expand_dims(f_CoM, axis=2)
-    f_bead -= m*(f_CoM + np.cross(alpha, q_bead, axis=-1))
+    f -= m*(f_CoM + np.cross(alpha, q, axis=-1))
     # Extract the internal forces on r1, r2, theta
-    fba = tri_cart2ba(q_bead, f_bead)
-    # Convert to Cartesian representation and add to fc
-    shape = (self.nsets,3,3)
-    qc = np.reshape(dstrip(self.qc), shape).copy()
-    mc = np.reshape(dstrip(self.mc), shape)
-    qc[:], CoM = mathtools.toCoM(mc, qc)
-    fcba = fba.mean(axis=-1)
-    fcview = np.reshape(fc, (self.nsets,3,3))
-    fcview[:] = tri_ba2cart(qc, fcba)
-    # Extract the external forces on fc
+    fba = tri_cart2ba(q, f)
+    qqc[:], CoM = mathtools.toCoM(mqc, qqc)
+    fcba = fba.mean(axis=-1)           # quasi-centroid bond-angle forces...
+    fqc[:] = tri_ba2cart(qqc, fcba)  # ...converted to Cartesians
+    # Extract the external force on CoM and torque about CoM
+    # for the quasi-centroids
     q0 -= CoM
-    rhs = np.cross(fcview, q0, axis=-1).sum(axis=-2)
-    rhs -= np.cross(f0, qc, axis=-1).sum(axis=-2)
-    lhs = mathtools.mominertia(mc, qc, q2=q0, shift=False)
+    rhs = np.cross(fqc, q0, axis=-1).sum(axis=-2)
+    rhs -= np.cross(f0, qqc, axis=-1).sum(axis=-2)
+    lhs = mathtools.mominertia(mqc, qqc, q2=q0, shift=False)
     alpha = np.linalg.solve(lhs, rhs)
     alpha = np.expand_dims(alpha, axis=1)
-    mtot = np.expand_dims(np.sum(mc[...,0:1], axis=-2),1)
+    mtot = np.expand_dims(np.sum(mqc[...,0:1], axis=-2),1)
     f_CoM = np.expand_dims(np.sum(f0, axis=1), axis=1)/mtot
-    fcview += mc*(f_CoM + np.cross(alpha, qc, axis=-1))
-    return fc
+    fqc += mqc*(f_CoM + np.cross(alpha, qqc, axis=-1))
+    return fqc
 
 #---------------------------------------------------------------------------#
-#
-#class ConstraintGroup(dobject):
-#
-#    """
-#    Gathers constraints that link a subset of atoms and stores parameters
-#    for constrained propagation. Handles calculation of constraint functions
-#    and gradients, generation of quasi-centroid geometries compatible with a
-#    given ring-polymer configuration, conversion between Cartesian and
-#    internal forces/coordinates, and enforcement of constraints with SHAKE/RATTLE.
-#
-#    Attributes:
-#        name: Name of the constraint type
-#        natoms: The number of atoms in a single constrained set
-#        indices: List of atomic indices specifying the atoms subject to the
-#                 set of constraints.
-#        nsets: The number of sets of atoms subject to the same constraint
-#        nbeads: The number of beads
-#        tol: Tolerance threshold for RATTLE
-#        maxcycle: Maximum number of cycles in RATTLE
-#        internal: List of internal constraint objects
-#        external: An object enforcing the external constraints
-#
-#    Depend objects:
-#        qc: Current quasi-centroid configuration
-#        mc: Quasi-centroid masses
-#        q: Current bead configuration
-#        p: Current bead momenta
-#        dynm3: Dynamic normal-mode masses
-#        q0: Cached constrained configuration from the previous converged SHAKE step
-#        g0: Corresponding constraint gradients
-#        mg0: Gradients pre-multiplied by the inverse mass tensor
-#        targets: Targets for the values of the internal constraint functions
-#
-#    Methods:
-#        b2qc: Generates a quasi-centroid configuration compatible with the given
-#              bead geometry
-#        b2fc: Extracts forces onto the quasi-centroids from bead forces
-#              and geometries
-#        shake: Enforce the constraints
-#        rattle: Enforce that the time-derivative of the constraints be zero
-#    """
-#
-#    def __init__(self, name, indices, tol=1.0e-06, maxcycle=100):
-#
-#        self.name = name.lower()
-#        self.indices = indices
-#        self.tol = tol
-#        self.maxcycle = maxcycle
-#        #!! TODO: implement routines and nonesuch
-#        #!! TODO: in future add diatomic and 3-pyramid (ammonia)
-#        if self.name == "triatomic":
-#            self.natoms = 3
-#            self.internal = [BondLength(indices=[0,1]),
-#                             BondLength(indices=[0,2]),
-#                             BondAngle(indices=[0,1,2])]
-#            self.external = Eckart()
-#            self.b2qc = lambda: tri_b2qc(self)
-#            self.b2fc = lambda: tri_b2fc(self)
+
+class ConstraintGroup(dobject):
+
+    """
+    Gathers constraints that link a subset of atoms and stores parameters
+    for constrained propagation. Handles calculation of constraint functions
+    and gradients, generation of quasi-centroid geometries compatible with a
+    given ring-polymer configuration, conversion between Cartesian and
+    internal forces/coordinates, and enforcement of constraints with SHAKE/RATTLE.
+
+    Attributes:
+        name: Name of the constraint type
+        natoms: The number of atoms in a single constrained set
+        indices: List of atomic indices specifying the atoms subject to the
+                 set of constraints.
+        indices3: The corresponding indices of cartesian coordinates
+                  (to filter e.g. the last dimension of beads.q)
+        nsets: The number of sets of atoms subject to the same constraint
+        nbeads: The number of beads
+        tol: Tolerance threshold for RATTLE
+        maxcycle: Maximum number of cycles in RATTLE
+        internal: List of internal constraint objects
+        external: An object enforcing the external constraints
+
+    NOTE: from here onwards all phase-space coordinates and masses are
+          local copies of only the atoms that belong to the constraint
+          group.
+
+    Depend objects:
+        qqc: Current quasi-centroid configuration
+        mqc: Quasi-centroid masses
+        q: Current bead configuration
+        p: Current bead momenta
+        dynm3: Dynamic normal-mode masses
+        qc: Current centroid positions
+        pc: Current centroid momenta
+        q0: Cached bead configuration from the previous converged SHAKE step
+        g0: Corresponding constraint gradients
+        mg0: __"__"__ pre-multiplied by the inverse mass tensor
+        targets: Target values of the internal constraints
+
+    Methods:
+        _b2qc: Generates a quasi-centroid configuration compatible with the given
+               bead geometry
+        _b2fc: Extracts forces onto the quasi-centroids from bead forces
+              and geometries
+        b2fc: A wrapper for _b2fc that filters out the atoms belonging to the
+              group and performs all the necessary array shape manipulations
+              before sending the input to _b2fc
+        shake: Enforce the constraints on the bead coordinates
+        rattle: Enforce the constraints on the bead momenta
+    """
+
+    def __init__(self, name, indices, tol=1.0e-06, maxcycle=100):
+
+        self.name = name.lower()
+        self.tol = tol
+        self.maxcycle = maxcycle
+        self.indices = indices
+        self.indices3 = [3*i+j for i in self.indices for j in range(3)]
+        #!! TODO: in future add diatomic and trigonal pyramid (ammonia)
+        if self.name == "triatomic":
+            self.natoms = 3
+            self.internal = [BondLength(indices=[0,1]),
+                             BondLength(indices=[0,2]),
+                             BondAngle(indices=[0,1,2])]
+            self.external = Eckart()
+            self._b2qc = lambda: tri_b2qc(self)
+            self._b2fc = lambda f, fqc: tri_b2fc(self, f, fqc)
 #        elif self.name == "monatomic":
 #            self.natoms = 1
 #            self.internal = []
 #            self.external = FixCoM()
-#            self.b2qc = lambda: get_centroid(self)
-#            self.b2fc = lambda: get_centroid(self)
-#        else:
-#            raise ValueError(
-#                    "Quasi-centroid group of type '{:s}' ".format(self.name) +
-#                    "has not been defined.")
-#        if (len(self.indices)%self.natoms != 0):
-#            raise ValueError(
-#                    "Total number of atoms in the {:s} group ".format(self.name)+
-#                    "is inconsistent with partitioning into sets "+
-#                    "of size {:d}.".format(self.natoms))
-#        self.nsets = len(self.indices)//self.natoms
-#
-#    def bind(self, beads, nm):
-#        pass
+#            self._b2qc = lambda: get_centroid(self)
+#            self._b2fc = lambda f, fqc: get_centroid(self, f, fqc)
+        else:
+            raise ValueError(
+                    "Quasi-centroid group of type '{:s}' ".format(self.name) +
+                    "has not been defined.")
+        if (len(self.indices)%self.natoms != 0):
+            raise ValueError(
+                    "Total number of atoms in the {:s} group ".format(self.name)+
+                    "is inconsistent with partitioning into sets "+
+                    "of size {:d}.".format(self.natoms))
+        self.nsets = len(self.indices)//self.natoms
+
+    def bind(self, quasi=None):
+        """Binds the appropriate degrees of freedom to the constraint group.
+
+        This takes a quasi-centroids object and makes a local copy of the
+        bead positions and momenta involved in the constraint group.
+        This copy is to be updated manually during propagation.
+        The method also extracts the information required to create a
+        local normal-mode transform specifically for the constrained subset.
+        If quasi-centroid positions are initialised, a local reference to those
+        is stored; otherwise the quasi-centroids are initialised to fit
+        the bead configuration excatly.
+
+        Args:
+            quasi: A quasi-centroids object from which to extract the
+                   corresponding masses and geometry
+        """
+
+        #from quasicentroids import QuasiCentroids
+        if quasi is None:# or not issubclass(QuasiCentroids):
+            raise TypeError("ConstraintGroup.bind expects a quasi-centroids object")
+        self.nbeads = quasi.beads.nbeads
+        self.beads = quasi.beads
+        self.nm = quasi.nm
+        self.quasi = quasi
+        dself = dd(self)
+        dquasi = dd(self.quasi)
+        dbeads = dd(self.beads)
+        dnm = dd(self.nm)
+        # Bind the masses, positions and momenta
+        shape = (self.nsets, 3*self.natoms, self.nbeads)
+        dself.p = depend_array(name="p", value=np.zeros(shape, float),
+                               dependencies=[dbeads.p], func=(
+                               lambda: np.reshape(
+                                       dstrip(self.beads.p)[:,self.indices3].T,
+                                       (self.nsets, 3*self.natoms, self.nbeads))
+                               ))
+        dself.q = depend_array(name="q", value=np.zeros(shape, float),
+                               dependencies=[dbeads.q], func=(
+                               lambda: np.reshape(
+                                       dstrip(self.beads.q)[:,self.indices3].T,
+                                       (self.nsets, 3*self.natoms, self.nbeads))
+                               ))
+        dself.dynm3 = depend_array(name="dynm3", value=np.zeros(shape, float),
+                                   dependencies=[dnm.dynm3], func=(
+                                   lambda: np.reshape(
+                                           dstrip(self.nm.q)[:,self.indices3].T,
+                                           (self.nsets, 3*self.natoms, self.nbeads))
+                                   ))
+        shape = (self.nsets, 3*self.natoms)
+        dself.qc = depend_array(name="qc", value=np.zeros(shape, float),
+                                 dependencies=[dbeads.qc], func=(
+                                 lambda: np.reshape(
+                                         dstrip(self.beads.qc)[self.indices3],
+                                         (self.nsets, 3*self.natoms))
+                                ))
+        dself.pc = depend_array(name="pc", value=np.zeros(shape, float),
+                                 dependencies=[dbeads.pc], func=(
+                                 lambda: np.reshape(
+                                         dstrip(self.beads.pc)[self.indices3],
+                                         (self.nsets, 3*self.natoms))
+                                ))
+        dself.qqc = depend_array(name="qqc", value=np.zeros(shape, float),
+                                 dependencies=[dquasi.q], func=(
+                                 lambda: np.reshape(
+                                         dstrip(self.quasi.q)[self.indices3],
+                                         (self.nsets, 3*self.natoms))
+                                ))
+        dself.mqc = depend_array(name="mqc", value=np.zeros(shape, float),
+                                dependencies=[dquasi.m3], func=(
+                                lambda: np.reshape(
+                                         dstrip(self.quasi.m3)[self.indices3],
+                                         (self.nsets, 3*self.natoms))
+                                ))
+        # If qqc not initialised, generate a consistent configuration
+        if np.any(np.isnan(dstrip(self.qqc))):
+            dself.qqc.hold()
+            self.external.bind(dstrip(self.qc), dstrip(self.mqc))
+            self._b2qc()
+            self.quasi.q[self.indices3] = np.ravel(self.qqc)
+            dself.qqc.resume()
+        self.external.bind(dstrip(self.qqc), dstrip(self.mqc))
+        # Create local normal-mode transform object
+        if isinstance(self.nm.transform, nmtransform.nm_noop):
+            self.nmtransform = self.nm.transform
+        else:
+            if self.nm.transform._open != []:
+                raise ValueError("QCMD not permitted with open paths")
+            if isinstance(self.nm.transform, nmtransform.nm_trans):
+                self.nmtransform = self.nm.transform
+            elif isinstance(self.nm.transform, nmtransform.nm_fft):
+                self.nmtransform = nmtransform.nm_fft(nbeads=self.nbeads,
+                                                      natoms=self.nsets*self.natoms)
+            else:
+                raise TypeError("ConstraintGroup.bind encountered unknown NM transform type")
+        # Cache the initial geometries and constraint gradients, presumed to satisfy the constraints
+        shape = (len(self.internal),self.nsets, 3*self.natoms, self.nbeads)
+        dself.q0 = depend_array(name="q0", value=dstrip(self.q).copy())
+        dself.g0 = depend_array(name="g0", value=np.zeros(shape,float),
+                               dependencies=[dself.q0],
+                               func=self.get_g0)
+        #!! TODO: create dself.mg0
+        #!! TODO: create an array of internal "targets", s.t. the func has the
+        # side-effect of updating reference coords in externals
+
+    def b2fc(self, f, fqc=None):
+        """
+        For the atoms involved in the group, convert the bead forces
+        into forces onto the quasi-centroids.
+
+        Args:
+            f (2d-ndarray): array of bead forces with shape (nbeads, 3*natoms)
+            fqc (1d-ndarray): array of quasi-centroid forces with shape (3*natoms)
+                              if not supplied, such an array is created and returned
+        Result:
+            fqc: if present then modified in-place
+        """
+
+        shape = [self.nbeads,self.nsets,self.natoms,3]
+        order = [1,0,2,3]  # nsets, nbeads, natoms, ndims
+        fcopy = np.transpose(np.reshape(f[:,self.indices3], shape), order)
+        if fqc is None:
+            fqc = np.zeros(f.shape[1])
+        shape.pop(0)
+        fqccopy = np.reshape(fqc[self.indices3], shape)
+        fqccopy = self._b2fc(fcopy, fqccopy)
+        fqc[self.indices3] = np.ravel(fqccopy)
+        return fqc
+
+    def get_g0(self):
+        """Calculate the gradients of the internal constraint functions
+           at the cached bead configuration self.q0
+        """
+        q0 = dstrip(self.q0)
+        g0 = np.zeros((len(self.internal),)+q0.shape)
+        for jac, func in zip(g0, self.internal):
+            jac = func(q0, jac)[1]
+        return g0

@@ -33,12 +33,13 @@ class QuasiCentroids(dobject):
     Attributes:
         beads: A beads object giving the atoms' configuration
         forces: A forces object giving the forces acting on each bead
-        nm: An object that performs normal-mode transformations
 
     Depend objects:
-        qc: The quasi-centroid configuration
-        pc: The quasi-centroid momenta
-        mc: The quasi-centroid masses
+        q: The quasi-centroid configuration
+        p: The quasi-centroid momenta
+        m: The atomic quasi-centroid masses (shape self.natoms)
+        m3: Array of masses conforming with p and q (shape 3*self.natoms)
+
         forces: QCForces object that emulates parts of Forces
 
     Methods:

@@ -46,8 +46,8 @@ class MinimalCG(dobject):
         external: An object enforcing the external constraints
 
     Depend objects:
-        qc: quasi-centroid coordinates
-        mc: quasi-centroid masses
+        qqc: quasi-centroid coordinates
+        mqc: quasi-centroid masses
         q: bead coordinates
         dynm3: dynamical bead masses
 
@@ -60,34 +60,61 @@ class MinimalCG(dobject):
         self.natoms = 3
         self.external = Eckart()
         self.b2qc = lambda: tri_b2qc(self)
-        self.b2fc = lambda f, fc: tri_b2fc(self, f, fc)
+        self._b2fc = lambda f, fc: tri_b2fc(self, f, fc)
 
-    def bind(self, q, m, qc=None, mc=None):
+    def bind(self, q, m, qqc=None, mqc=None):
         ncart, self.nbeads = q.shape
         self.nsets = ncart//(3*self.natoms)
+        # In this test-case, all atoms are in the constrained set
+        self.indices = list(range(self.nsets*self.natoms))
+        self.indices3 = [3*i+j for i in self.indices for j in range(3)]
         dself = dd(self)
         rpshape=(self.nsets, 3*self.natoms, self.nbeads)
         dself.q = depend_array(name="q",
                                value=np.zeros(rpshape))
         dself.dynm3 = depend_array(name="dynm3",
                                    value=np.zeros(rpshape))
-        dself.qc = depend_array(name="qc",
+        dself.qqc = depend_array(name="qqc",
                                 value=np.zeros((self.nsets, 3*self.natoms)))
-        dself.mc = depend_array(name="mc",
+        dself.mqc = depend_array(name="mqc",
                                 value=np.zeros((self.nsets, 3*self.natoms)))
         dself.q[:] = q.reshape(rpshape)
         dself.dynm3[:] = m.reshape(rpshape)
-        if qc is None:
+        if qqc is None:
             self.external.bind(dstrip(self.q).mean(axis=-1),
                                dstrip(self.dynm3)[...,0])
             self.b2qc()
         else:
-            dself.qc[:] = qc
-        if mc is None:
-            dself.mc = m.reshape(rpshape)[...,0]
+            dself.qqc[:] = qqc
+        if mqc is None:
+            dself.mqc = m.reshape(rpshape)[...,0]
         else:
-            dself.mc[:] = mc
-        self.external.bind(dstrip(self.qc), dstrip(self.mc))
+            dself.mqc[:] = mqc
+        self.external.bind(dstrip(self.qqc), dstrip(self.mqc))
+
+    def b2fc(self, f, fqc=None):
+        """
+        For the atoms involved in the group, convert the bead forces
+        into forces onto the quasi-centroids.
+
+        Args:
+            f (2d-ndarray): array of bead forces with shape (nbeads, 3*natoms)
+            fqc (1d-ndarray): array of quasi-centroid forces with shape (3*natoms)
+                              if not supplied, such an array is created and returned
+        Result:
+            fqc: if present then modified in-place
+        """
+
+        shape = [self.nbeads,self.nsets,self.natoms,3]
+        order = [1,0,2,3]  # nsets, nbeads, natoms, ndims
+        fcopy = np.transpose(np.reshape(f[:,self.indices3], shape), order)
+        if fqc is None:
+            fqc = np.zeros(f.shape[1])
+        shape.pop(0)
+        fqccopy = np.reshape(fqc[self.indices3], shape)
+        fqccopy = self._b2fc(fcopy, fqccopy)
+        fqc[self.indices3] = np.ravel(fqccopy)
+        return fqc
 
 
 def create_beads(fin):
@@ -299,21 +326,21 @@ def test_b2qc():
     cg = MinimalCG()
     cg.bind(q, m)
     # Test that the quasi-centroid internals have been calculated correctly
-    qc = dstrip(cg.qc).reshape((-1,3,3))
-    mc = dstrip(cg.mc).reshape((-1,3,3))
-    r1_qc, r2_qc, ct_qc = tri_internals(qc)[:3]
+    qqc = dstrip(cg.qqc).reshape((-1,3,3))
+    mqc = dstrip(cg.mqc).reshape((-1,3,3))
+    r1_qc, r2_qc, ct_qc = tri_internals(qqc)[:3]
     r1, r2, ct = tri_internals(dstrip(cg.q).reshape((-1,3,3,nbeads)), axes=(-2,-3))[:3]
     assert r1.mean(axis=-1) == pytest.approx(r1_qc)
     assert r2.mean(axis=-1) == pytest.approx(r2_qc)
     assert np.arccos(ct).mean(axis=-1) == pytest.approx(np.arccos(ct_qc))
     # Test that the externals have been calculated correctly
     q0 = dstrip(cg.q).mean(axis=-1).reshape((-1,3,3))
-    com0 = com(q0, mc)
-    comc = com(qc, mc)
+    com0 = com(q0, mqc)
+    comc = com(qqc, mqc)
     assert com0 == pytest.approx(comc)
-    assert eckart(qc, mc, q0) == pytest.approx(0.0)
-    # NOTE: to use the following need to comment out the external forces
-    #       in tri_b2fc
+    assert eckart(qqc, mqc, q0) == pytest.approx(0.0)
+    # NOTE: to use the following need to comment out
+    #       the external forces in tri_b2fc
 #    # Test that internal-only forces are reproduced correctly
 #    qref = np.transpose(
 #            np.reshape(q, (nsets, natoms, ndims, nbeads)),
@@ -326,11 +353,11 @@ def test_b2qc():
 #        for j, qmol in enumerate(qbeads):
 #            fref[i,j], fr1ref[i,j], fr2ref[i,j], ftref[i,j] = \
 #                tri_force(qmol)
-#    fref = np.transpose(fref, [0,2,3,1])
-#    fc = np.empty((nsets, 9))
-#    fc = cg.b2fc(fref, fc)
-#    fr1, fr2, ftheta = tri_cart2ba(qc.reshape((-1,3,3)),
-#                                   fc.reshape((-1,3,3)))
+#    fref = np.transpose(fref, [1,0,2,3]).reshape((nbeads,-1))
+#    fqc = np.empty(nsets*natoms*ndims)
+#    fqc = cg.b2fc(fref, fqc)
+#    fr1, fr2, ftheta = tri_cart2ba(qqc.reshape((-1,3,3)),
+#                                   fqc.reshape((-1,3,3)))
 #    assert fr1ref.mean(axis=-1) == pytest.approx(fr1)
 #    assert fr2ref.mean(axis=-1) == pytest.approx(fr2)
 #    assert ftref.mean(axis=-1) == pytest.approx(ftheta)
@@ -339,8 +366,8 @@ def test_b2qc():
     nbeads=1
     # Generate a new set of random geometries
     q = np.random.uniform(low=-1.5, high=1.5, size=(nsets*natoms*ndims,nbeads))
-    fref = np.random.uniform(low=-1.5, high=1.5, size=(nsets,natoms*ndims,nbeads))
-    fc = np.empty((nsets,natoms*ndims))
+    fref = np.random.uniform(low=-1.5, high=1.5, size=(nbeads,nsets*natoms*ndims,))
+    fc = np.empty(nsets*natoms*ndims)
     m = np.ones((nsets,natoms,ndims,nbeads)) * \
             np.array([15.999, 1.0078, 1.0078])[:,None,None]
     m.shape = q.shape
@@ -348,4 +375,3 @@ def test_b2qc():
     cg.bind(q, m)
     fc = cg.b2fc(fref, fc)
     assert fc.flatten() == pytest.approx(fref.flatten())
-
