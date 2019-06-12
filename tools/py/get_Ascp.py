@@ -108,8 +108,8 @@ def get_A(path2iipi):
             v_harm = vH0
             V0_harm = V0
             print "%23s %23s %23s %23s %23s %23s %23s" % (
-                "# ITERATION", "SCP FREE ENERGY", "SCP FREE ENERGY CORR",
-                "ERROR", "SCP INT ENERGY", "SCP INT ENERGY CORR ", "ERROR")
+                "# ITERATION", "A_SCP", "A_SCP-A_HARM",
+                "ERROR", "E_SCP", "E_SCP-E_HARM", "ERROR")
 
         # Initializes the average and the error in the difference between the physical
         # and the SCP potential.
@@ -177,7 +177,13 @@ def get_A(path2iipi):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description="Calculates the Helmholtz free enegry within the self consistent phonons approximation.")
+        description="""
+Calculates the Helmholtz free energy within the self consistent phonons
+approximation. The output contains the full self-consistent-phonon     
+energies, including the minimum energy potential. The center-of-mass   
+component is not included. The correction relative to the baseline     
+harmonic description is also reported.
+""")
     parser.add_argument("-i", "--input_xml", type=str, required=True, 
                         help="Path to the i-PI xml file that was used to run the SCP calculation.")
     args = parser.parse_args()
