@@ -731,15 +731,7 @@ class SCPhononator(DummyPhononator):
         Removes the translations and/or rotations depending on the asr mode.
         """
 
-#        if(self.dm.asr == "internal"):
-#
-#            self.dm.w2, self.dm.U = np.linalg.eigh(self.dm.dynmatrix)
-#            self.dm.V = self.dm.U.T[-(self.dm.dof - 5):]
-#            self.dm.v2 = self.dm.w2[-(self.dm.dof - 5):]
-#            self.dm.dynmatrix = np.dot(
-#                self.dm.V, np.dot(self.dm.dynmatrix, self.dm.V.T))
-
-        if(self.dm.asr == "molecule"):
+        if(self.dm.asr == "poly"):
 
             # Computes the centre of mass.
             com = np.dot(np.transpose(self.dm.beads.q.reshape(

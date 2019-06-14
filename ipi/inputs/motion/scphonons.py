@@ -48,7 +48,7 @@ class InputSCPhonons(InputDictionary):
                                 "help": "Prefix of the output files."
                                 }),
         "asr": (InputValue, {"dtype": str, "default": "none",
-                             "options": ["none", "crystal", "molecule" ],
+                             "options": ["none", "crystal", "poly" ],
                              "help": "The method used to project out zero modes coming from continuous symmetries: crystal removes the three translational modes; molecule removes the three rotational modes in addition to the translational ones. none keeps all the modes."
                              }),
         "random_type": (InputValue, {"dtype": str, "default": "pseudo",

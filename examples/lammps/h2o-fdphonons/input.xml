@@ -1,4 +1,4 @@
-<simulation mode='static' verbosity='high'>
+<simulation mode='static' verbosity='high' threading='false'>
   <output prefix='simulation'>
     <properties stride='10' filename='out'>  [ step, potential ] </properties>
   </output>
