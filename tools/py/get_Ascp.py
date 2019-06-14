@@ -48,7 +48,7 @@ def get_A(path2iipi):
     asr = simul.syslist[0].motion.asr
     if asr == "crystal":
         nz = 3
-    elif asr == "molecule":
+    elif asr == "poly":
         nz = 6
 
     iD_list = []
