@@ -144,62 +144,6 @@ class DynMatrixMover(Motion):
         outfile.close()
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class DummyPhononCalculator(dobject):
 
     """ No-op PhononCalculator """
