@@ -27,6 +27,7 @@ import os
 from ipi.engine.motion import Motion
 from ipi.utils.depend import *
 from ipi.utils import units
+from ipi.utils.phonontools import apply_asr
 from ipi.utils.softexit import softexit
 from ipi.utils.messages import verbosity, warning, info
 from ipi.utils.io import print_file
@@ -115,80 +116,6 @@ class NormalModeMover(Motion):
         """Executes one step of phonon computation. """
         self.calc.step(step)
 
-    def apply_asr(self, dm):
-        """
-        Removes the translations and/or rotations depending on the asr mode.
-        """
-        if(self.asr == "none"):
-            return dm
-
-        if(self.asr == "crystal"):
-            # Computes the centre of mass.
-            com = np.dot(np.transpose(self.beads.q.reshape((self.beads.natoms, 3))), self.m) / self.m.sum()
-            qminuscom = self.beads.q.reshape((self.beads.natoms, 3)) - com
-            # Computes the moment of inertia tensor.
-            moi = np.zeros((3, 3), float)
-            for k in range(self.beads.natoms):
-                moi -= np.dot(np.cross(qminuscom[k], np.identity(3)), np.cross(qminuscom[k], np.identity(3))) * self.m[k]
-
-            U = (np.linalg.eig(moi))[1]
-            R = np.dot(qminuscom, U)
-            D = np.zeros((3, 3 * self.beads.natoms), float)
-
-            # Computes the vectors along rotations.
-            D[0] = np.tile([1, 0, 0], self.beads.natoms) / self.ism
-            D[1] = np.tile([0, 1, 0], self.beads.natoms) / self.ism
-            D[2] = np.tile([0, 0, 1], self.beads.natoms) / self.ism
-
-            # Computes unit vecs.
-            for k in range(3):
-                D[k] = D[k] / np.linalg.norm(D[k])
-
-            # Computes the transformation matrix.
-            transfmatrix = np.eye(3 * self.beads.natoms) - np.dot(D.T, D)
-            r = np.dot(transfmatrix.T, np.dot(dm, transfmatrix))
-
-            # Sets the number of  zero modes.
-            self.nz = 3
-            return r
-
-        elif(self.asr == "poly"):
-            # Computes the centre of mass.
-            com = np.dot(np.transpose(self.beads.q.reshape((self.beads.natoms, 3))), self.m) / self.m.sum()
-            qminuscom = self.beads.q.reshape((self.beads.natoms, 3)) - com
-
-            # Computes the moment of inertia tensor.
-            moi = np.zeros((3, 3), float)
-            for k in range(self.beads.natoms):
-                moi -= np.dot(np.cross(qminuscom[k], np.identity(3)), np.cross(qminuscom[k], np.identity(3))) * self.m[k]
-
-            U = (np.linalg.eig(moi))[1]
-            R = np.dot(qminuscom, U)
-            D = np.zeros((6, 3 * self.beads.natoms), float)
-
-            # Computes the vectors along translations and rotations.
-            D[0] = np.tile([1, 0, 0], self.beads.natoms) / self.ism
-            D[1] = np.tile([0, 1, 0], self.beads.natoms) / self.ism
-            D[2] = np.tile([0, 0, 1], self.beads.natoms) / self.ism
-            for i in range(3 * self.beads.natoms):
-                iatom = i / 3
-                idof = np.mod(i, 3)
-                D[3, i] = (R[iatom, 1] * U[idof, 2] - R[iatom, 2] * U[idof, 1]) / self.ism[i]
-                D[4, i] = (R[iatom, 2] * U[idof, 0] - R[iatom, 0] * U[idof, 2]) / self.ism[i]
-                D[5, i] = (R[iatom, 0] * U[idof, 1] - R[iatom, 1] * U[idof, 0]) / self.ism[i]
-
-            # Computes unit vecs.
-            for k in range(6):
-                D[k] = D[k] / np.linalg.norm(D[k])
-
-            # Computes the transformation matrix.
-            transfmatrix = np.eye(3 * self.beads.natoms) - np.dot(D.T, D)
-            r = np.dot(transfmatrix.T, np.dot(dm, transfmatrix))
-
-            # Sets the number of zero modes. (Assumes poly-atomic molecules)
-            self.nz = 6
-            return r
-
 
 class DummyCalculator(dobject):
     """ No-op Calculator """
@@ -223,7 +150,7 @@ class IMF(DummyCalculator):
             self.imm.dynmatrix = self.imm.dynmatrix.reshape(((self.imm.beads.q.size, self.imm.beads.q.size)))
 
         # Applies ASR
-        self.imm.dynmatrix = self.imm.apply_asr(self.imm.dynmatrix)
+        self.imm.dynmatrix = self.imm.apply_asr(self.imm.asr, self.imm.dynmatrix, self.imm.beads)
 
         # Calculates normal mode directions.
         self.imm.w2, self.imm.U = np.linalg.eigh(self.imm.dynmatrix)

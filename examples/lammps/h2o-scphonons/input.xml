@@ -19,7 +19,7 @@
   <motion mode='scp'>
     <scp mode='qn'>
       <dynmat mode='file'> dynmat.data  </dynmat>
-      <asr> molecule </asr>
+      <asr> poly </asr>
       <max_steps> 50 </max_steps>
       <max_iter> 10 </max_iter>
       <tau> 10 </tau>

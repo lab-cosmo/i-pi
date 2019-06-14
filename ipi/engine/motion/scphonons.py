@@ -26,6 +26,7 @@ import numpy as np
 from ipi.engine.motion.motion import Motion
 from ipi.utils.depend import *
 from ipi.utils import units
+from ipi.utils.phonontools import apply_asr
 from ipi.utils.softexit import softexit
 from ipi.utils.messages import verbosity, warning, info
 from ipi.utils.mathtools import gaussian_inv
@@ -226,7 +227,7 @@ class SCPhononator(DummyPhononator):
         self.dm.avgPot = 0.
         self.dm.avgForce = np.zeros((1, self.dm.dof))
         self.dm.avgHessian = np.zeros((self.dm.dof, self.dm.dof))
-        self.apply_asr()
+        self.dm.dynmatrix = apply_asr(self.dm.asr, self.dm.dynmatrix, self.dm.beads)
         self.apply_hpf()
         self.get_KnD()
         self.iD[self.dm.isc] = self.dm.iD.copy()
@@ -400,7 +401,7 @@ class SCPhononator(DummyPhononator):
             # Applies acoustic sum rule to project out zero modes.
             # Applies a high pass filter to zero out low frequency modes.
             # Calculates the displacement correction matrix.
-            self.apply_asr()
+            self.dm.dynmatrix = apply_asr(self.dm.asr, self.dm.dynmatrix, self.dm.beads)
             self.apply_hpf()
             self.get_KnD()
 
@@ -425,7 +426,7 @@ class SCPhononator(DummyPhononator):
             # Applies acoustic sum rule to project out zero modes.
             # Applies a high pass filter to zero out low frequency modes.
             # Calculates the displacement correction matrix.
-            self.apply_asr()
+            self.dm.dynmatrix = apply_asr(self.dm.asr, self.dm.dynmatrix, self.dm.beads)
             self.apply_hpf()
             self.get_KnD()
 
@@ -449,7 +450,7 @@ class SCPhononator(DummyPhononator):
             # Applies acoustic sum rule to project out zero modes.
             # Applies a high pass filter to zero out low frequency modes.
             # Calculates the displacement correction matrix.
-            self.apply_asr()
+            self.dm.dynmatrix = apply_asr(self.dm.asr, self.dm.dynmatrix, self.dm.beads)
             self.apply_hpf()
             self.get_KnD()
 
@@ -533,7 +534,7 @@ class SCPhononator(DummyPhononator):
                 k = self.weighted_hessian()
                 self.dm.dynmatrix = np.dot(
                     self.dm.isqM, np.dot((k + k.T) / 2.0, self.dm.isqM))
-                self.apply_asr()
+                self.dm.dynmatrix = apply_asr(self.dm.asr, self.dm.dynmatrix, self.dm.beads)
                 self.apply_hpf()
                 self.get_KnD()
 
@@ -725,82 +726,6 @@ class SCPhononator(DummyPhononator):
         self.dm.D = np.dot(self.dm.isqM, np.dot(self.dm.tD, self.dm.isqM))
         self.dm.sqD = np.dot(self.dm.isqM, np.dot(self.dm.sqtD, self.dm.isqM))
         self.dm.iK = np.dot(self.dm.isqM, np.dot(self.dm.itK, self.dm.isqM))
-
-    def apply_asr(self):
-        """
-        Removes the translations and/or rotations depending on the asr mode.
-        """
-
-        if(self.dm.asr == "poly"):
-
-            # Computes the centre of mass.
-            com = np.dot(np.transpose(self.dm.beads.q.reshape(
-                (self.dm.beads.natoms, 3))), self.dm.m) / self.dm.m.sum()
-            qminuscom = self.dm.beads.q.reshape(
-                (self.dm.beads.natoms, 3)) - com
-            # Computes the moment of inertia tensor.
-            moi = np.zeros((3, 3), float)
-            for k in range(self.dm.beads.natoms):
-                moi -= np.dot(np.cross(qminuscom[k], np.identity(3)),
-                              np.cross(qminuscom[k], np.identity(3))) * self.dm.m[k]
-
-            U = (np.linalg.eig(moi))[1]
-            R = np.dot(qminuscom, U)
-            D = np.zeros((6, 3 * self.dm.beads.natoms), float)
-
-            # Computes the vectors along translations and rotations.
-            D[0] = np.tile([1, 0, 0], self.dm.beads.natoms) / self.dm.isqm3
-            D[1] = np.tile([0, 1, 0], self.dm.beads.natoms) / self.dm.isqm3
-            D[2] = np.tile([0, 0, 1], self.dm.beads.natoms) / self.dm.isqm3
-            for i in range(3 * self.dm.beads.natoms):
-                iatom = i / 3
-                idof = np.mod(i, 3)
-                D[3, i] = (R[iatom, 1] * U[idof, 2] - R[iatom, 2]
-                           * U[idof, 1]) / self.dm.isqm3[i]
-                D[4, i] = (R[iatom, 2] * U[idof, 0] - R[iatom, 0]
-                           * U[idof, 2]) / self.dm.isqm3[i]
-                D[5, i] = (R[iatom, 0] * U[idof, 1] - R[iatom, 1]
-                           * U[idof, 0]) / self.dm.isqm3[i]
-
-            # Computes unit vecs.
-            for k in range(6):
-                D[k] = D[k] / np.linalg.norm(D[k])
-
-            # Computes the transformation matrix.
-            transfmatrix = np.eye(3 * self.dm.beads.natoms) - np.dot(D.T, D)
-            self.dm.dynmatrix = np.dot(
-                transfmatrix.T, np.dot(self.dm.dynmatrix, transfmatrix))
-
-        if(self.dm.asr == "crystal"):
-
-            # Computes the centre of mass.
-            com = np.dot(np.transpose(self.dm.beads.q.reshape(
-                (self.dm.beads.natoms, 3))), self.dm.m) / self.dm.m.sum()
-            qminuscom = self.dm.beads.q.reshape(
-                (self.dm.beads.natoms, 3)) - com
-            # Computes the moment of inertia tensor.
-            moi = np.zeros((3, 3), float)
-            for k in range(self.dm.beads.natoms):
-                moi -= np.dot(np.cross(qminuscom[k], np.identity(3)),
-                              np.cross(qminuscom[k], np.identity(3))) * self.dm.m[k]
-
-            U = (np.linalg.eig(moi))[1]
-            R = np.dot(qminuscom, U)
-            D = np.zeros((3, 3 * self.dm.beads.natoms), float)
-
-            # Computes the vectors along translations and rotations.
-            D[0] = np.tile([1, 0, 0], self.dm.beads.natoms) / self.dm.isqm3
-            D[1] = np.tile([0, 1, 0], self.dm.beads.natoms) / self.dm.isqm3
-            D[2] = np.tile([0, 0, 1], self.dm.beads.natoms) / self.dm.isqm3
-
-            # Computes unit vecs.
-            for k in range(3):
-                D[k] = D[k] / np.linalg.norm(D[k])
-
-            # Computes the transformation matrix.
-            transfmatrix = np.eye(3 * self.dm.beads.natoms) - np.dot(D.T, D)
-            self.dm.dynmatrix = np.dot(
-                transfmatrix.T, np.dot(self.dm.dynmatrix, transfmatrix))
 
     def apply_hpf(self):
         """
