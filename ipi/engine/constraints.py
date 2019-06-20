@@ -768,7 +768,6 @@ class ConstraintGroup(dobject):
             self._b2qc()
             self.quasi.q[self.indices3] = np.ravel(self.qqc)
             dself.qqc.resume()
-        self.external.bind(dstrip(self.qqc), dstrip(self.mqc))
         # Create local normal-mode transform object
         if isinstance(self.nm.transform, nmtransform.nm_noop):
             self.nmtransform = self.nm.transform
@@ -788,9 +787,15 @@ class ConstraintGroup(dobject):
         dself.g0 = depend_array(name="g0", value=np.zeros(shape,float),
                                dependencies=[dself.q0],
                                func=self.get_g0)
-        #!! TODO: create dself.mg0
-        #!! TODO: create an array of internal "targets", s.t. the func has the
-        # side-effect of updating reference coords in externals
+        # Cache constraint gradient pre-multiplied by the inverse mass tensor
+        dself.mg0 = depend_array(name="mg0", value=np.zeros(shape,float),
+                                 dependencies=[dself.g0, dself.dynm3],
+                                 func=self.get_mg0)
+        # Set up target values for internal constraints
+        dself.targets = depend_array(name="targets",
+                                     value=np.zeros(len(self.internal), float),
+                                     dependencies=[dself.qqc, dself.mqc],
+                                     func=self.get_targets)
 
     def b2fc(self, f, fqc=None):
         """
@@ -825,3 +830,40 @@ class ConstraintGroup(dobject):
         for jac, func in zip(g0, self.internal):
             jac = func(q0, jac)[1]
         return g0
+
+    def get_mg0(self):
+        """Calculate the gradients of the internal constraint functions
+           at configuration self.q0, left-multiplied by the inverse mass
+           tensor.
+        """
+        temp = np.empty((self.nbeads, 3*self.nsets*self.natoms))
+        mg0 = np.empty((len(self.external), self.nsets, 3*self.natoms, self.nbeads))
+        m3 = np.reshape(
+                dstrip(self.dynm3), (-1, self.nbeads)
+                ).T
+        for i in range(len(self.internal)):
+            temp[:] = self.nmtransform.b2nm(
+                    np.reshape(self.g0[i], (-1, self.nbeads)).T
+                    )
+            temp /= m3
+            mg0[i] = np.reshape(
+                    self.nmtransform.nm2b(temp).T,
+                    (self.nsets, 3*self.natoms, self.nbeads)
+                    )
+        return mg0
+
+    def get_targets(self):
+        """Calculate the target values of the internal constraint
+           functions. Has the side-effect of binding quasi-centroid
+           positions and masses to the external constraints.
+        """
+
+        qqc = dstrip(self.qqc)
+        mqc = dstrip(self.mqc)
+        self.external.bind(qqc, mqc)
+        targets = np.empty(len(self.internal), float)
+        qqc = np.reshape(qqc, qqc.shape+(1,))
+        tmp = np.zeros_like(qqc)
+        for i,func in enumerate(self.internal):
+            targets[i] = func(qqc, tmp)[0]
+        return targets
