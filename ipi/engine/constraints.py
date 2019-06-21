@@ -265,7 +265,7 @@ class Eckart(ExternalConstraint):
         # Get the current CoM of the system and shift to CoM frame
         init_shape = q.shape
         q.shape = self.qref.shape
-        CoM = np.sum(self.mref[nc] * q, axis=-2)/self.mtot[nc]
+        CoM = np.sum(self.mref[nc] * q[nc], axis=-2)/self.mtot[nc]
         q[nc] -= CoM[:,None,:]
         # Calculate the Eckart product
         sigmas = self._eckart_prod(q, nc)
@@ -655,14 +655,15 @@ class ConstraintGroup(dobject):
         rattle: Enforce the constraints on the bead momenta
     """
 
-    def __init__(self, name, indices, tol=1.0e-06, maxcycle=100):
+    def __init__(self, name, indices, tol=1.0e-06, maxcycle=100, qdt=1.0, pdt=1.0):
 
         self.name = name.lower()
         self.tol = tol
         self.maxcycle = maxcycle
         self.indices = indices
         self.indices3 = [3*i+j for i in self.indices for j in range(3)]
-        #!! TODO: in future add diatomic and trigonal pyramid (ammonia)
+        self._msg = "" # Error message
+        #!! TODO: in future add diatomic and trigonal pyramid (ammonia-like)
         if self.name == "triatomic":
             self.natoms = 3
             self.internal = [BondLength(indices=[0,1]),
@@ -687,13 +688,15 @@ class ConstraintGroup(dobject):
                     "is inconsistent with partitioning into sets "+
                     "of size {:d}.".format(self.natoms))
         self.nsets = len(self.indices)//self.natoms
+        dself = dd(self)
+        dself.qdt = depend_value(value=qdt, name='qdt')
+        dself.pdt = depend_value(value=pdt, name='pdt')
 
     def bind(self, quasi=None):
         """Binds the appropriate degrees of freedom to the constraint group.
 
         This takes a quasi-centroids object and makes a local copy of the
         bead positions and momenta involved in the constraint group.
-        This copy is to be updated manually during propagation.
         The method also extracts the information required to create a
         local normal-mode transform specifically for the constrained subset.
         If quasi-centroid positions are initialised, a local reference to those
@@ -733,7 +736,7 @@ class ConstraintGroup(dobject):
         dself.dynm3 = depend_array(name="dynm3", value=np.zeros(shape, float),
                                    dependencies=[dnm.dynm3], func=(
                                    lambda: np.reshape(
-                                           dstrip(self.nm.q)[:,self.indices3].T,
+                                           dstrip(self.nm.dynm3)[:,self.indices3].T,
                                            (self.nsets, 3*self.natoms, self.nbeads))
                                    ))
         shape = (self.nsets, 3*self.natoms)
@@ -852,6 +855,18 @@ class ConstraintGroup(dobject):
                     )
         return mg0
 
+    def _times_m(self, arr):
+        """Multiply the input array, assumed to have the same shape as
+           self.q, by the mass tensor self.dynm3
+        """
+        m3 = np.reshape(dstrip(self.dynm3), (-1, self.nbeads)).T
+        temp = self.nmtransform.b2nm(np.reshape(arr, (-1, self.nbeads)).T)
+        temp *= m3
+        ans = np.reshape(
+                    self.nmtransform.nm2b(temp).T, arr.shape
+                    )
+        return ans
+
     def get_targets(self):
         """Calculate the target values of the internal constraint
            functions. Has the side-effect of binding quasi-centroid
@@ -867,3 +882,101 @@ class ConstraintGroup(dobject):
         for i,func in enumerate(self.internal):
             targets[i] = func(qqc, tmp)[0]
         return targets
+
+    def shake(self):
+        """Enforce the quasi-centroid constraint onto the bead coordinates.
+        """
+        # Make a copy of the bead coordinates
+        temp = dstrip(self.q).copy()
+        qc_init = np.zeros((self.nsets, 3*self.natoms), float)
+        qc_fin = np.zeros_like(qc_init)
+        # Get the target values for internal coordinates and mass-weighted
+        # constraint gradients for the previous configuration
+        targets = dstrip(self.targets)
+        mg0 = dstrip(self.mg0)
+        # Initialise arrays flagging convergence
+        # "not satisfied" - a boolean per constraint
+        ns = np.ones((len(self.internal)+1, self.nsets), dtype=np.bool)
+        # "not converged" - one boolean for entire set
+        nc = np.ones(self.nsets, dtype=np.bool)
+        # Set up arrays to hold current values of constraint functions
+        # and their gradients
+        sigmas = np.zeros_like(ns, dtype=float)
+        grads = np.zeros_like(mg0)
+        # Cycle over constraints until convergence
+        ncycle = 1
+        while True:
+            if (ncycle > self.maxcycle):
+                self._msg = "Maximum number of iterations exceeded in SHAKE."
+                raise ValueError(self._msg)
+            for i,fxn in enumerate(self.internal):
+                sigmas[i,nc], grads[i,nc,:,:] = \
+                    fxn(temp[nc,:,:], grads[i,nc,:,:])
+                sigmas[i,nc] -= targets[i,nc]
+                ns[i,:] = np.abs(sigmas[i]) > self.tol
+                dlambda = -sigmas[i,ns[i]] / np.sum(
+                        grads[i,ns[i],:,:]*mg0[i,ns[i],:,:],
+                        axis=(-1,-2))
+                temp[ns[i]] += dlambda[:,None,None] * mg0[i,ns[i]]
+            # Apply external constraints to the centroids
+            qc_init[:] = np.mean(temp, axis=-1)
+            qc_fin[:] = qc_init
+            self.external.enforce_q(qc_fin, self.tol, nc, ns[-1])
+            qc_fin -= qc_init
+            temp += qc_fin[...,None]
+            # Update the convergence status
+            nc[:] = np.any(ns, axis=0) # not converged if any not satisfied
+            if np.all(np.logical_not(nc)):
+                # If all "not not converged" end cycle
+                break
+            ncycle += 1
+        # Update the positions
+        self.q = temp
+        # Update the momenta
+        self.p += self._times_m(temp - dstrip(self.q0))/self.qdt
+        # Store local copy for backup
+        self.q0 = temp
+
+    def rattle(self):
+        """
+        Set quasi-centroid velocities to zero.
+        """
+        # Make a copy of the bead momentas
+        temp = dstrip(self.p).copy()
+        pc_init = np.zeros((self.nsets, 3*self.natoms), float)
+        pc_fin = np.zeros_like(qc_init)
+        qc = dstrip(self.qc)
+        # Calculate the diagonal elements of the Jacobian matrix
+        g0 = dstrip(self.g0)
+        mg0 = dstrip(self.mg0)
+        gmg = np.sum(g0*mg0, axis=(-1,-2))
+        # Initialise arrays flagging convergence
+        ns = np.ones((len(self.internal)+1, self.nsets), dtype=np.bool)
+        nc = np.ones(self.nsets, dtype=np.bool)
+        # Set up array for constraint time-derivatives
+        sdots = np.zeros_like(ns, dtype=np.float)
+        # Cycle until convergence
+        ncycle = 1
+        while True:
+            if (ncycle > self.maxcycle):
+                self._msg = "Maximum number of iterations exceeded in RATTLE."
+                raise ValueError(self._msg)
+            for i,fxn in enumerate(self.internal):
+                sdots[i,nc] = np.sum(temp[nc]*mg0[i,nc], axis=(-1,-2))
+                ns[i,:] = np.abs(sdots[i,:]) > self.tol
+                dmu = -sdots[i,ns[i]] / gmg[i,ns[i]]
+                temp[ns[i],:,:] += dmu[:,None,None] * g0[i,ns[i]]
+            # Apply the external constraints
+            pc_init[:] = np.mean(temp, axis=-1)
+            pc_fin[:] = pc_init
+            self.external.enforce_p(pc_fin, qc, self.tol, nc, ns[-1])
+            pc_fin -= pc_init
+            temp += pc_fin[...,None]
+            # Update the convergence status
+            nc[:] = np.any(ns, axis=0) # not converged if any not satisfied
+            if np.all(np.logical_not(nc)):
+                # If all "not not converged" end cycle
+                break
+            ncycle += 1
+        # Update the momenta
+        self.p = temp
