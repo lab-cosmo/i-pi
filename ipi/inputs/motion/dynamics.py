@@ -7,10 +7,12 @@
 import numpy as np
 import ipi.engine.thermostats
 import ipi.engine.barostats
+import ipi.engine.quasicentroids
 from ipi.utils.inputvalue import InputDictionary, InputAttribute, InputValue, InputArray, input_default
 from ipi.inputs.barostats import InputBaro
 from ipi.inputs.thermostats import InputThermo
-from ipi.inputs.constraints import InputConst
+from ipi.inputs.constraints import InputConst # TODO: to bre retired
+from ipi.inputs.quasicentroids import InputQuasiCentroids
 
 
 __all__ = ['InputDynamics']
@@ -55,6 +57,9 @@ class InputDynamics(InputDictionary):
         "constraints": (InputConst, {
                 "default": input_default(factory=ipi.engine.constraints.Constraints),
                 "help": InputConst.default_help}),
+        "quasicentroids": (InputQuasiCentroids, {
+                "default": input_default(factory=ipi.engine.quasicentroids.QuasiCentroids),
+                "help": InputQuasiCentroids.default_help}),
         "timestep": (InputValue, {"dtype": float,
                                   "default": 1.0,
                                   "help": "The time step.",
@@ -84,6 +89,7 @@ class InputDynamics(InputDictionary):
         self.thermostat.store(dyn.thermostat)
         self.barostat.store(dyn.barostat)
         self.constraints.store(dyn.constraints)
+        self.quasicentroids.store(dyn.quasicentroids)
         self.nmts.store(dyn.nmts)
         self.splitting.store(dyn.splitting)
 

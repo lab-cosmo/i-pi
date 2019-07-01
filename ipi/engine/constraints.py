@@ -543,7 +543,7 @@ def tri_b2qc(self):
     ns = nc.copy()
     self.external.enforce_q(qqc, 0.0, nc, ns)
     qqc.shape = (self.nsets, -1)
-    self.qqc[:] = qqc
+    return qqc
 
 def tri_b2fc(self, f, fqc):
     """
@@ -621,8 +621,10 @@ class ConstraintGroup(dobject):
                   (to filter e.g. the last dimension of beads.q)
         nsets: The number of sets of atoms subject to the same constraint
         nbeads: The number of beads
-        tol: Tolerance threshold for RATTLE
-        maxcycle: Maximum number of cycles in RATTLE
+        tol: Tolerance threshold for SHAKE/RATTLE
+        maxcycle: Maximum number of cycles in SHAKE/RATTLE
+        qdt: Integration time-step for SHAKE
+        pdt: Integration time-step for RATTLE
         internal: List of internal constraint objects
         external: An object enforcing the external constraints
 
@@ -655,12 +657,18 @@ class ConstraintGroup(dobject):
         rattle: Enforce the constraints on the bead momenta
     """
 
-    def __init__(self, name, indices, tol=1.0e-06, maxcycle=100, qdt=1.0, pdt=1.0):
+    def __init__(self, name, indices, tol=1.0e-06, maxcycle=100, qdt=1.0):
 
         self.name = name.lower()
         self.tol = tol
         self.maxcycle = maxcycle
         self.indices = indices
+        # Raise error if any indices are negative
+        if len(indices) == 0:
+            raise ValueError(
+                    "The indices have not been specified properly for "+
+                    "quasi-centroid group of type '{:s}' ".format(self.name)
+                    )
         self.indices3 = [3*i+j for i in self.indices for j in range(3)]
         self._msg = "" # Error message
         #!! TODO: in future add diatomic and trigonal pyramid (ammonia-like)
@@ -690,7 +698,6 @@ class ConstraintGroup(dobject):
         self.nsets = len(self.indices)//self.natoms
         dself = dd(self)
         dself.qdt = depend_value(value=qdt, name='qdt')
-        dself.pdt = depend_value(value=pdt, name='pdt')
 
     def bind(self, quasi=None):
         """Binds the appropriate degrees of freedom to the constraint group.
@@ -708,8 +715,8 @@ class ConstraintGroup(dobject):
                    corresponding masses and geometry
         """
 
-        #from quasicentroids import QuasiCentroids
-        if quasi is None:# or not issubclass(QuasiCentroids):
+        from quasicentroids import QuasiCentroids
+        if quasi is None or not isinstance(quasi, QuasiCentroids):
             raise TypeError("ConstraintGroup.bind expects a quasi-centroids object")
         self.nbeads = quasi.beads.nbeads
         self.beads = quasi.beads
@@ -766,11 +773,9 @@ class ConstraintGroup(dobject):
                                 ))
         # If qqc not initialised, generate a consistent configuration
         if np.any(np.isnan(dstrip(self.qqc))):
-            dself.qqc.hold()
             self.external.bind(dstrip(self.qc), dstrip(self.mqc))
-            self._b2qc()
-            self.quasi.q[self.indices3] = np.ravel(self.qqc)
-            dself.qqc.resume()
+            qqc = self._b2qc()
+            self.quasi.q[self.indices3] = np.ravel(qqc)
         # Create local normal-mode transform object
         if isinstance(self.nm.transform, nmtransform.nm_noop):
             self.nmtransform = self.nm.transform
@@ -944,7 +949,7 @@ class ConstraintGroup(dobject):
         # Make a copy of the bead momentas
         temp = dstrip(self.p).copy()
         pc_init = np.zeros((self.nsets, 3*self.natoms), float)
-        pc_fin = np.zeros_like(qc_init)
+        pc_fin = np.zeros_like(pc_init)
         qc = dstrip(self.qc)
         # Calculate the diagonal elements of the Jacobian matrix
         g0 = dstrip(self.g0)

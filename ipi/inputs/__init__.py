@@ -5,6 +5,7 @@
 # See the "licenses" directory for full license information.
 
 
-__all__ = ['barostats', 'cell', 'ensembles', 'thermostats', 'motion',
-           'interface', 'forces', 'forcefields', 'atoms', 'beads', 'prng', 'outputs',
+__all__ = ['barostats', 'cell', 'constraints', 'ensembles', 'thermostats', 'motion',
+           'interface', 'forces', 'forcefields', 'atoms', 'beads', 'prng',
+           'quasicentroids', 'outputs',
            'normalmodes', 'initializer', 'system', 'simulation']

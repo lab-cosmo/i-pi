@@ -22,6 +22,7 @@ from ipi.utils.depend import *
 from ipi.engine.constraints import BondLength, BondAngle, _Eckart, Constraints
 from ipi.engine.thermostats import Thermostat
 from ipi.engine.barostats import Barostat
+from ipi.engine.quasicentroids import QuasiCentroids
 from ipi.utils.softexit import softexit
 
 
@@ -53,8 +54,10 @@ class Dynamics(Motion):
             effective classical temperature.
     """
 
+   # TODO: constraints are to be retired
     def __init__(self, timestep, mode="nve", splitting="obabo",
-                 thermostat=None, barostat=None, constraints=None,
+                 thermostat=None, barostat=None,
+                 constraints=None, quasicentroids=None,
                  fixcom=False, fixatoms=None, nmts=None):
         """Initialises a "dynamics" motion object.
 
@@ -80,6 +83,11 @@ class Dynamics(Motion):
         else:
             self.constraints = constraints
 
+        if quasicentroids is None:
+            self.quasicentroids = QuasiCentroids()
+        else:
+            self.quasicentroids = quasicentroids
+
         if nmts is None or len(nmts) == 0:
             dd(self).nmts = depend_array(name="nmts", value=np.asarray([1], int))
         else:
@@ -103,7 +111,7 @@ class Dynamics(Motion):
         elif self.enstype == "scnpt":
             self.integrator = SCNPTIntegrator()
         elif self.enstype == "qcmd":
-            self.integrator = QCMDWaterIntegrator()
+            self.integrator = QCMDIntegrator()
         else:
             self.integrator = DummyIntegrator()
 
@@ -198,15 +206,6 @@ class Dynamics(Motion):
                 if np.trace(self.ensemble.stressext) < 0:
                     raise ValueError("Negative or unspecified stress for a constant-s integrator")
 
-            elif self.enstype == "qcmd":
-                if self.constraints.maxcycle < 1:
-                    raise ValueError("Negative or zero value of maximum number of iterations in RATTLE.")
-                if self.constraints.tol < 0:
-                    raise ValueError("Negative RATTLE convergence threshold.")
-
-                if self.constraints.nfree < 1:
-                    raise ValueError("Negative or zero value for splitting free constrained RP propagation")
-
     def get_ntemp(self):
         """Returns the PI simulation temperature (P times the physical T)."""
 
@@ -254,13 +253,16 @@ class DummyIntegrator(dobject):
         self.nm = motion.nm
         self.thermostat = motion.thermostat
         self.barostat = motion.barostat
-        self.constraints = motion.constraints
+        self.constraints = motion.constraints # remove
+        self.quasicentroids = motion.quasicentroids
         self.fixcom = motion.fixcom
         self.fixatoms = motion.fixatoms
         self.enstype = motion.enstype
 
         dself = dd(self)
         dmotion = dd(motion)
+        dbeads = dd(self.beads)
+        dquasi = dd(self.quasicentroids)
 
         # no need to dpipe these are really just references
         dself.splitting = dmotion.splitting
@@ -287,6 +289,14 @@ class DummyIntegrator(dobject):
             self.coeffsc = np.ones((self.beads.nbeads, 3 * self.beads.natoms), float)
             self.coeffsc[::2] /= -3.
             self.coeffsc[1::2] /= 3.
+        if motion.enstype == "qcmd":
+            dpipe(dbeads.names, dquasi.names)
+            dpipe(dbeads.m, dquasi.m)
+            dpipe(dself.qdt, dquasi.dt)
+            dpipe(dself.tdt, dd(self.quasicentroids.thermostat).dt)
+            self.quasicentroids.bind(self.ensemble, self.beads,
+                                     self.nm, self.forces,
+                                     self.prng)
 
     def pstep(self):
         """Dummy momenta propagator which does nothing."""
@@ -689,7 +699,7 @@ class SCNPTIntegrator(SCIntegrator):
             self.barostat.pscstep()
             self.beads.p += dstrip(self.forces.fsc_part_2) * self.dt * 0.5
 
-class QCMDWaterIntegrator(NVTIntegrator):
+class QCMDIntegrator(NVTIntegrator):
     """Integrator for a constant temperature simulation of water subject
        to quasi-centroid constraints.
 
@@ -704,6 +714,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
 
     """
 
+    # TODO: the following to getters are to be removed
     def get_fpdt(self):
         return 0.5 * self.dt / (self.inmts * self.constraints.nfree)
 
@@ -723,10 +734,10 @@ class QCMDWaterIntegrator(NVTIntegrator):
                   are stored consecutively, and that the central atom is at the
                   beginning of each group of three.
         """
-
-        super(QCMDWaterIntegrator, self).bind(motion)
+        super(QCMDIntegrator, self).bind(motion)
+        # TODO: all this is to be removed
         dself = dd(self)
-        dconst = dd(self.constraints)
+        dconst = dd(self.constraints) # TODO: remove
         # Time-step for constrained free ring-polymer propagation (positions)
         dself.fqdt = depend_value(name="fqdt", func=self.get_fqdt,
                                   dependencies=[dself.splitting, dself.dt,
@@ -736,7 +747,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
                                                 dconst.nfree])
 
         if (self.beads.natoms%3 != 0):
-            raise ValueError("QCMDWaterIntegrator received a total "+
+            raise ValueError("QCMDIntegrator received a total "+
                              "of {:d} atoms. ".format(self.beads.natoms)+
                              "This is inconsistent with a set of triatomics.")
         # Create a workspace array with continuous storage of replicas corresponding
@@ -762,6 +773,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
         self._ethermo = False
         self._msg = ""
 
+    # TODO remove
     def _mtensor(self, arrin):
         """ Multiply an array by the mass tensor.
 
@@ -776,6 +788,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
         wkspace *= dstrip(self.nm.dynm3)
         return np.reshape(self.nm.transform.nm2b(wkspace).T, init_shape)
 
+    # TODO remove
     def _minv(self, arrin):
         """ Multiply an array by the inverse of the mass tensor.
 
@@ -790,6 +803,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
         wkspace /= dstrip(self.nm.dynm3)
         return np.reshape(self.nm.transform.nm2b(wkspace).T, init_shape)
 
+    # TODO replace with call to self.quasicentroids.shake()
     def qconstraints(self):
         """This applies SHAKE to the positions and momenta.
 
@@ -864,6 +878,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
         for g, mg in zip(self.grads, self.mgrads):
             mg[...] = self._minv(g)
 
+    # TODO: replace with call to self.quasicentroids.rattle
     def pconstraints(self):
         """This applies RATTLE to the momenta and returns the change in the
         total kinetic energy that arises from applying the constraint. This
@@ -976,7 +991,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
         """
 
         self._ethermo = True
-        super(QCMDWaterIntegrator,self).tstep()
+        super(QCMDIntegrator,self).tstep()
 
     def free_qstep_ba(self):
         """Override the exact normal mode propagator for the free ring-polymer
@@ -1014,7 +1029,7 @@ class QCMDWaterIntegrator(NVTIntegrator):
         """Does one simulation time step."""
 
         try:
-            super(QCMDWaterIntegrator, self).step()
+            super(QCMDIntegrator, self).step()
         except:
             softexit.trigger(self._msg)
             raise
