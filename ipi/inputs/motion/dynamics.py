@@ -11,7 +11,7 @@ import ipi.engine.quasicentroids
 from ipi.utils.inputvalue import InputDictionary, InputAttribute, InputValue, InputArray, input_default
 from ipi.inputs.barostats import InputBaro
 from ipi.inputs.thermostats import InputThermo
-from ipi.inputs.constraints import InputConst # TODO: to bre retired
+#from ipi.inputs.constraints import InputConst # TODO: to bre retired
 from ipi.inputs.quasicentroids import InputQuasiCentroids
 
 
@@ -54,9 +54,9 @@ class InputDynamics(InputDictionary):
                                      "help": "The thermostat for the atoms, keeps the atom velocity distribution at the correct temperature."}),
         "barostat": (InputBaro, {"default": input_default(factory=ipi.engine.barostats.Barostat),
                                  "help": InputBaro.default_help}),
-        "constraints": (InputConst, {
-                "default": input_default(factory=ipi.engine.constraints.Constraints),
-                "help": InputConst.default_help}),
+#        "constraints": (InputConst, {
+#                "default": input_default(factory=ipi.engine.constraints.Constraints),
+#                "help": InputConst.default_help}),
         "quasicentroids": (InputQuasiCentroids, {
                 "default": input_default(factory=ipi.engine.quasicentroids.QuasiCentroids),
                 "help": InputQuasiCentroids.default_help}),
@@ -88,7 +88,7 @@ class InputDynamics(InputDictionary):
         self.timestep.store(dyn.dt)
         self.thermostat.store(dyn.thermostat)
         self.barostat.store(dyn.barostat)
-        self.constraints.store(dyn.constraints)
+        #self.constraints.store(dyn.constraints)
         self.quasicentroids.store(dyn.quasicentroids)
         self.nmts.store(dyn.nmts)
         self.splitting.store(dyn.splitting)

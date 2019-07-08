@@ -13,8 +13,8 @@ doc/manual.xml
 \#*
 *.orig
 regtest-ref
-examples/regtest/integrators/*-qcmd_nvt/**/*.xyz
-!examples/regtest/integrators/*-qcmd_nvt/**/init.xyz
-examples/regtest/integrators/*-qcmd_nvt/**/log.txt
-examples/regtest/integrators/*-qcmd_nvt/**/script
-examples/regtest/integrators/*-qcmd_nvt/**/input.xml
+examples/qcmd/*_nvt/**/*.xyz
+!examples/qcmd/*_nvt/**/init.xyz
+examples/qcmd/*_nvt/**/log.txt
+examples/qcmd/*_nvt/**/script
+examples/qcmd/*_nvt/**/input.xml

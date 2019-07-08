@@ -151,3 +151,19 @@ class QuasiCentroids(dobject):
         for cgp in self.qclist:
             dpipe(dself.qdt, dd(cgp).qdt)
             cgp.bind(self)
+            
+    def shake(self):
+        """Cycle over constraint groups and enforce the holonomic constraints
+           using SHAKE
+        """
+        
+        for cgp in self.qclist:
+            cgp.shake()
+    
+    def rattle(self):
+        """Cycle over constraint groups and enforce the holonomic constraints
+           onto the momenta using RATTLE
+        """
+        
+        for cgp in self.qclist:
+            cgp.rattle()

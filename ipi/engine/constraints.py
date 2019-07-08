@@ -781,7 +781,7 @@ class ConstraintGroup(dobject):
             self.nmtransform = self.nm.transform
         else:
             if self.nm.transform._open != []:
-                raise ValueError("QCMD not permitted with open paths")
+                raise ValueError("QCMD not implemented for open paths")
             if isinstance(self.nm.transform, nmtransform.nm_trans):
                 self.nmtransform = self.nm.transform
             elif isinstance(self.nm.transform, nmtransform.nm_fft):
@@ -936,9 +936,11 @@ class ConstraintGroup(dobject):
                 break
             ncycle += 1
         # Update the positions
-        self.q = temp
+        self.beads.q[:,self.indices3] = np.reshape(temp,(-1,self.nbeads)).T
         # Update the momenta
-        self.p += self._times_m(temp - dstrip(self.q0))/self.qdt
+        self.beads.p[:,self.indices3] += np.reshape(
+                self._times_m(temp - dstrip(self.q0))/self.qdt,
+                (-1,self.nbeads)).T
         # Store local copy for backup
         self.q0 = temp
 
@@ -984,4 +986,4 @@ class ConstraintGroup(dobject):
                 break
             ncycle += 1
         # Update the momenta
-        self.p = temp
+        self.beads.p[:,self.indices3] = np.reshape(temp,(-1,self.nbeads)).T
