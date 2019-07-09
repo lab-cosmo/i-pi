@@ -283,10 +283,10 @@ class Eckart(ExternalConstraint):
             arr.shape = self.qref.shape
         # Get CoM velocity and set to zero
         v = np.sum(p[nc], axis=-2)/self.mtot[nc]
-        p[nc] -= self.mref[nc]*v[nc,None,:]
+        p[nc] -= self.mref[nc]*v[:,None,:]
         L = np.zeros((len(p),3))
         L[nc,:] = np.cross(self.qref_rel[nc], p[nc],axis=-1).sum(axis=-2)
-        sdots = np.sqrt(np.sum(L**2, axis=-1))/self.mtot.reshape((-1,))[nc]
+        sdots = (np.sqrt(np.sum(L**2,axis=-1))/self.mtot.reshape(-1))[nc]
         ns[nc] = sdots > tol
         # Enforce the rotational constraint as required
         p[ns] = mathtools.eckspin(p[ns], q[ns], self.mref[ns],
