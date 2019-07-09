@@ -19,7 +19,6 @@ from ipi.engine.motion import Motion
 from ipi.utils import mathtools
 from ipi.utils import nmtransform
 from ipi.utils.depend import *
-#from ipi.engine.constraints import BondLength, BondAngle, _Eckart, Constraints
 from ipi.engine.thermostats import Thermostat
 from ipi.engine.barostats import Barostat
 from ipi.engine.quasicentroids import QuasiCentroids
@@ -54,7 +53,6 @@ class Dynamics(Motion):
             effective classical temperature.
     """
 
-   # TODO: constraints are to be retired
     def __init__(self, timestep, mode="nve", splitting="obabo",
                  thermostat=None, barostat=None,
                  quasicentroids=None, fixcom=False, 
@@ -77,11 +75,6 @@ class Dynamics(Motion):
             self.thermostat = Thermostat()
         else:
             self.thermostat = thermostat
-
-#        if constraints is None:
-#            self.constraints = Constraints()
-#        else:
-#            self.constraints = constraints
 
         if quasicentroids is None:
             self.quasicentroids = QuasiCentroids()
@@ -253,7 +246,6 @@ class DummyIntegrator(dobject):
         self.nm = motion.nm
         self.thermostat = motion.thermostat
         self.barostat = motion.barostat
-        #self.constraints = motion.constraints # remove
         self.quasicentroids = motion.quasicentroids
         self.fixcom = motion.fixcom
         self.fixatoms = motion.fixatoms
@@ -717,18 +709,6 @@ class QCMDIntegrator(NVTIntegrator):
     def get_qdt(self):
         return self.dt * 0.5 / (self.inmts * self.quasicentroids.nfree)
 
-#    # TODO: the following to getters are to be removed
-#    def get_fpdt(self):
-#        return 0.5 * self.dt / (self.inmts * self.constraints.nfree)
-#
-#    def get_fqdt(self):
-#        if self.splitting == "obabo":
-#            return self.dt / (self.inmts * self.constraints.nfree)
-#        elif self.splitting == "baoab":
-#            return 0.5 * self.dt / (self.inmts * self.constraints.nfree)
-#        else:
-#            raise ValueError("Invalid splitting requested. Only OBABO and BAOAB are supported.")
-
     def bind(self, motion):
         """ Reference all the variables for simpler access and initialise
             local storage of coordinates and associated constraints.
@@ -738,151 +718,21 @@ class QCMDIntegrator(NVTIntegrator):
                   beginning of each group of three.
         """
         super(QCMDIntegrator, self).bind(motion)
-#        dself = dd(self)
-#        dconst = dd(self.constraints) # TODO: remove
-#        # Time-step for constrained free ring-polymer propagation (positions)
-#        dself.fqdt = depend_value(name="fqdt", func=self.get_fqdt,
-#                                  dependencies=[dself.splitting, dself.dt,
-#                                                dself.inmts, dconst.nfree])
-#        dself.fpdt = depend_value(name="fpdt", func=self.get_fpdt,
-#                                  dependencies=[dself.dt, dself.inmts,
-#                                                dconst.nfree])
-#
-#        if (self.beads.natoms%3 != 0):
-#            raise ValueError("QCMDIntegrator received a total "+
-#                             "of {:d} atoms. ".format(self.beads.natoms)+
-#                             "This is inconsistent with a set of triatomics.")
-#        # Create a workspace array with continuous storage of replicas corresponding
-#        # to the same degree of freedom
-#        self._temp = np.zeros((self.beads.natoms//3,9,self.beads.nbeads))
-#        # Initialise the constraints
-#        self.clist = [BondLength(indices=[0,1]),
-#                      BondLength(indices=[0,2]),
-#                      BondAngle(indices=[0,1,2])]
-#        qc = dstrip(self.beads.qc[:]).reshape(self._temp.shape[:-1])
-#        mc = dstrip(self.beads.m3[0]).reshape(qc.shape)
-#        self.eckart = _Eckart([], qref = qc, mref = mc)
-#        # Set up arrays for storing constraint targets and gradients
-#        self.targetvals = np.zeros((len(self.clist),self.beads.natoms//3))
-#        self.grads = np.zeros( (len(self.clist),)+self._temp.shape )
-#        self.mgrads = np.zeros_like(self.grads)
-#        # Initialise the gradients
-#        self._temp[...] = np.reshape(dstrip(self.beads.q).T, self._temp.shape)
-#        for c, t, g, mg in zip(self.clist, self.targetvals,
-#                               self.grads, self.mgrads):
-#            t[:], g = c(self._temp, g)
-#            mg[...] = self._minv(g)
-#        self._ethermo = False
-#        self._msg = ""
+        self._ethermo = False
+        self._msg = ""
 
-#    # TODO remove
-#    def _mtensor(self, arrin):
-#        """ Multiply an array by the mass tensor.
-#
-#        Args:
-#            arrin .............. input 2d array, same size as beads.q
-#        """
-#
-#        init_shape = arrin.shape
-#        wkspace = self.nm.transform.b2nm(
-#                arrin.reshape((-1, self.beads.nbeads)).T
-#                )
-#        wkspace *= dstrip(self.nm.dynm3)
-#        return np.reshape(self.nm.transform.nm2b(wkspace).T, init_shape)
-#
-#    # TODO remove
-#    def _minv(self, arrin):
-#        """ Multiply an array by the inverse of the mass tensor.
-#
-#        Args:
-#            arrin .............. input 2d array, same size as beads.q
-#        """
-#
-#        init_shape = arrin.shape
-#        wkspace = self.nm.transform.b2nm(
-#                arrin.reshape((-1, self.beads.nbeads)).T
-#                )
-#        wkspace /= dstrip(self.nm.dynm3)
-#        return np.reshape(self.nm.transform.nm2b(wkspace).T, init_shape)
-
-    # TODO replace with call to self.quasicentroids.shake()
     def qconstraints(self):
         """This applies SHAKE to the positions and momenta.
 
         Args:
            dt: integration time-step for SHAKE/RATTLE
-        """
-        
-        self.quasicentroids.shake()
-        
-#        # Copy the current ring-polymer configuration into workspace array
-#        self._temp[...] = np.reshape(dstrip(self.beads.q).T,self._temp.shape)
-#        q_init = self._temp.copy()
-#        # Initialise arrays flagging convergences
-#        nc = np.ones(len(self._temp), dtype=np.bool) # "not converged"
-#        ns = np.ones((len(self.clist)+1, len(self._temp)), dtype=np.bool) # "not satisfied"
-#        # Initialise the current values of constraint fxns and grads
-#        sigmas = np.zeros_like(ns, dtype=np.float)
-#        grads = np.zeros_like(self.grads)
-#        qc_init = np.zeros_like(self.eckart.qref)
-#        qc_fin = np.zeros_like(qc_init)
-#        mtot = np.sum(self.eckart.mref[...,0:1], axis=-2)
-#        # Cycle over constraints until convergence
-#        ncycle = 1
-#        while True:
-#            if (ncycle > self.constraints.maxcycle):
-#                self._msg = "Maximum number of iterations exceeded in SHAKE."
-#                raise ValueError(self._msg)
-#            for i in range(len(self.clist)):
-#                sigmas[i,nc], grads[i,nc,:,:] = \
-#                    self.clist[i](self._temp[nc,:,:], grads[i,nc,:,:])
-#                sigmas[i,nc] -= self.targetvals[i,nc]
-#                ns[i,:] = np.abs(sigmas[i]) > self.constraints.tol
-#                dlambda = -sigmas[i,ns[i]] / np.sum(
-#                        grads[i,ns[i],:,:]*self.mgrads[i,ns[i],:,:],
-#                        axis=(-1,-2))
-#                self._temp[ns[i],:,:] += dlambda[:,None,None] * \
-#                                         self.mgrads[i,ns[i],:,:]
-#            # Get the centoids
-#            qc_init[nc] = self._temp[nc].mean(axis=-1).reshape(qc_init[nc].shape)
-#            CoM = np.sum(
-#                    self.eckart.mref[nc] * qc_init[nc], axis=-2
-#                    )/mtot[nc]
-#            # Shift to CoM
-#            qc_fin[nc] = qc_init[nc]-CoM[:,None,:]
-#            # Calculate the Eckart product
-#            sigmas[-1,nc] = self.eckart(qc_fin, nc)
-#            ns[-1,:] = np.abs(sigmas[-1]) > self.constraints.tol
-#            # Rotate to Eckart frame
-#            qc_fin[ns[-1]] = mathtools.eckrot(
-#                    qc_fin[ns[-1]],
-#                    self.eckart.mref[ns[-1]],
-#                    self.eckart.qref_rel[ns[-1]]
-#                  )
-#            # Shift to CoM of reference
-#            qc_fin[nc] += self.eckart.qref_com[nc,None,:]
-#            # Calculate the change
-#            qc_fin[nc] -= qc_init[nc]
-#            self._temp[nc,:,:] += np.reshape(qc_fin,
-#                      (len(self._temp),-1))[nc,:,None]
-#            # Update the convergence status
-#            nc[:] = np.any(ns, axis=0) # not converged if any not satisfied
-#            if np.all(np.logical_not(nc)):
-#                # If all converged end cycle
-#                break
-#            ncycle += 1
-#        # Copy the coordinates back into beads
-#        self.beads.q[...] = self._temp.reshape((-1,self.beads.nbeads)).T
-#        # Update the momenta
-#        self._temp -= q_init # Change in positions
-#        self._temp[...] = self._mtensor(self._temp)/self.fqdt
-#        self.beads.p += self._temp.reshape((-1,self.beads.nbeads)).T
-#        # Update the constraint gradients
-#        self.grads[...] = grads
-#        for g, mg in zip(self.grads, self.mgrads):
-#            mg[...] = self._minv(g)
-
-    # TODO: replace with call to self.quasicentroids.rattle
+        """    
+        try:
+            self.quasicentroids.shake()
+        except:
+            self._msg = self.quasicentroids._msg
+            raise
+    
     def pconstraints(self):
         """This applies RATTLE to the momenta and returns the change in the
         total kinetic energy that arises from applying the constraint. This
@@ -893,79 +743,17 @@ class QCMDIntegrator(NVTIntegrator):
         The propagator raises an error if the centre-of-mass of the
         cell or any atoms are fixed.
         """
-
-        if len(self.fixatoms) > 0:
-            raise ValueError("Cannot explicitly fix atoms in a constrained simulation")
-        # Copy the current ring-polymer momenta into workspace array
+        
         if self._ethermo:
             p = dstrip(self.nm.pnm)
             m = dstrip(self.nm.dynm3)
             self.ensemble.eens += 0.5*np.sum(p**2/m)
-        self.quasicentroids.rattle()
-#
-#        self._temp[...] = np.reshape(dstrip(self.beads.p).T,self._temp.shape)
-#        # Calculate the diagonal elements of the Jacobian matrix
-#        gmg = np.sum(self.grads*self.mgrads, axis=(-1,-2))
-#        # Initialise arrays flagging convergences
-#        nc = np.ones(len(self._temp), dtype=np.bool) # "not converged"
-#        ns = np.ones((len(self.clist)+1, len(self._temp)), dtype=np.bool) # "not satisfied"
-#        # Initialise the constraint time-derivatives
-#        sdots = np.zeros_like(ns, dtype=np.float)
-#        pc_init = np.zeros_like(self.eckart.qref)
-#        pc_fin = np.zeros_like(pc_init)
-#        L = np.zeros((len(pc_init),3))
-#        v = np.zeros_like(L)
-#        mtot = np.sum(self.eckart.mref[...,0:1], axis=-2)
-#        qc = dstrip(self.beads.qc[:]).reshape(self.eckart.qref.shape)
-#        CoM = np.sum(self.eckart.mref * qc, axis=-2)/mtot
-#        qc = qc - CoM[:,None,:]
-#        # Cycle over constraints until convergence
-#        ncycle = 1
-#        while True:
-#            if (ncycle > self.constraints.maxcycle):
-#                #!! TODO: this currently quits mid-step, need to think of a better
-#                # way in future.
-#                raise ValueError("Maximum number of iterations exceeded in RATTLE.")
-#            for i in range(len(self.clist)):
-#                sdots[i,nc] = np.sum(self._temp[nc,:,:]*self.mgrads[i,nc,:,:],
-#                                      axis=(-1,-2))
-#                ns[i,:] = np.abs(sdots[i,:]) > self.constraints.tol
-#                dmu = -sdots[i,ns[i]] / gmg[i,ns[i]]
-#                self._temp[ns[i],:,:] += dmu[:,None,None] * \
-#                                         self.grads[i,ns[i],:,:]
-#            # Get centroid momenta
-#            pc_init[nc] = self._temp[nc].mean(axis=-1).reshape(pc_init[nc].shape)
-#            # Set CoM momentum to zero
-#            v[nc] = np.sum(pc_init[nc], axis=-2)/mtot[nc] # CoM velocity
-#            pc_fin[nc] = pc_init[nc] - self.eckart.mref[nc]*v[nc,None,:]
-#            # Calculate time-derivative or the rotational constraint
-#            L[nc,:] = np.cross(
-#                    self.eckart.qref_rel[nc],
-#                    pc_fin[nc],
-#                    axis=-1).sum(axis=-2)
-#            sdots[-1,nc] = np.sqrt(
-#                    np.sum(L[nc]**2, axis=-1)
-#                    )/mtot.reshape((-1,))[nc]
-#            ns[-1,:] = np.abs(sdots[-1,:]) > self.constraints.tol
-#            # Enforce the rotational constraint where not satisfied
-#            pc_fin[ns[-1]] = mathtools.eckspin(
-#                    pc_fin[ns[-1]], qc[ns[-1]],
-#                    self.eckart.mref[ns[-1]],
-#                    self.eckart.qref_rel[ns[-1]],
-#                    L[ns[-1]]
-#                    )
-#            # Calculate change in bead momenta
-#            pc_fin[nc] -= pc_init[nc]
-#            self._temp[nc,:,:] += np.reshape(pc_fin,
-#                      (len(self._temp),-1))[nc,:,None]
-#            # Update the convergence status
-#            nc[:] = np.any(ns, axis=0) # not converged if any not satisfied
-#            if np.all(np.logical_not(nc)):
-#                # If all converged end cycle
-#                break
-#            ncycle += 1
-#        # Copy the coordinates back into beads
-#        self.beads.p[...] = self._temp.reshape((-1,self.beads.nbeads)).T
+        try:
+            self.quasicentroids.rattle()
+        except: 
+            self._msg = self.quasicentroids._msg
+            raise
+            
         if self._ethermo:
             p = dstrip(self.nm.pnm)
             self.ensemble.eens -= 0.5*np.sum(p**2/m)
@@ -976,7 +764,6 @@ class QCMDIntegrator(NVTIntegrator):
         """Velocity Verlet momentum propagator with ring-polymer spring forces,
            followed by RATTLE.
         """
-
         
         self.nm.pnm += dstrip(self.nm.fspringnm)*self.qdt
         self.pconstraints() # RATTLE
@@ -985,6 +772,7 @@ class QCMDIntegrator(NVTIntegrator):
         """Velocity Verlet position propagator with ring-polymer spring forces,
            followed by SHAKE.
         """
+        
         self.nm.qnm += dstrip(self.nm.pnm)/dstrip(self.nm.dynm3)*self.qdt
         self.qconstraints()
         self.pconstraints()
@@ -1003,10 +791,11 @@ class QCMDIntegrator(NVTIntegrator):
         """Override the exact normal mode propagator for the free ring-polymer
            with a sequence of RATTLE/SHAKE steps.
         """
+        
         for i in range(self.quasicentroids.nfree//2):
+            
             self.free_p() # B
             self.free_q() # A
-            #if self.splitting == "baoab":
             self.free_q() # A
             self.free_p() # B
 
@@ -1018,16 +807,15 @@ class QCMDIntegrator(NVTIntegrator):
         """Override the exact normal mode propagator for the free ring-polymer
            with a sequence of RATTLE/SHAKE steps.
         """
-
+        
         if (self.quasicentroids.nfree%2 == 1):
-            #if self.splitting == "baoab":
+            
             self.free_q() # A
             self.free_p() # B
 
         for i in range(self.quasicentroids.nfree//2):
             self.free_p() # B
             self.free_q() # A
-            #if self.splitting == "baoab":
             self.free_q() # A
             self.free_p() # B
 
@@ -1035,7 +823,7 @@ class QCMDIntegrator(NVTIntegrator):
         """Does one simulation time step."""
 
         try:
-            super(QCMDIntegrator, self).step()
+            super(QCMDIntegrator, self).step(step)
         except:
             softexit.trigger(self._msg)
             raise

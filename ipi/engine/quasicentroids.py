@@ -74,6 +74,7 @@ class QuasiCentroids(dobject):
         else:
             self.thermostat = thermostat
         self.qclist = qclist
+        self._msg = ""
         natoms = 0
         indices = []
         # Cycle over the groups of constraints
@@ -158,7 +159,11 @@ class QuasiCentroids(dobject):
         """
         
         for cgp in self.qclist:
-            cgp.shake()
+            try:
+                cgp.shake()
+            except: 
+                self._msg = cgp._msg
+                raise
     
     def rattle(self):
         """Cycle over constraint groups and enforce the holonomic constraints

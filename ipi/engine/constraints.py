@@ -17,7 +17,7 @@ from ipi.engine.normalmodes import NormalModes
 
 __all__ = ['Constraints','ConstraintGroup','BondLength','BondAngle','_Eckart']
 
-class HolonomicConstraint(object):
+class InternalConstraint(object):
     """Base holonomic constraints class.
 
     Specifies the standard methods and attributes common to all holonomic
@@ -41,7 +41,7 @@ class HolonomicConstraint(object):
         """
         if (cls._natoms == 0):
             raise TypeError("Trying to get the number of atoms "+
-                            "from base HolonomicConstraint class")
+                            "from base InternalConstraint class")
         return cls._natoms
 
     def __init__(self, indices, **kwargs):
@@ -66,7 +66,7 @@ class HolonomicConstraint(object):
         pass
 
 #------------- Specialisations of the Holonomic Constraint class -----------#
-class BondLength(HolonomicConstraint):
+class BondLength(InternalConstraint):
     """Constraint on the length of a bond between two atoms,
        averaged over the replicas.
     """
@@ -91,7 +91,7 @@ class BondLength(HolonomicConstraint):
         jac[...,slcA,:] = -jac[...,slcB,:]
         return sigma, jac
 
-class BondAngle(HolonomicConstraint):
+class BondAngle(InternalConstraint):
     """Constraint on the A--X--B bond-angle, averaged over the replicas.
        The indices of the coordinates of the central atom X are supplied
        first, followed by A and B.
@@ -138,6 +138,7 @@ class BondAngle(HolonomicConstraint):
         jac[...,slcX,:] = -(jac[...,slcA,:]+jac[...,slcB,:])
         return sigma, jac
 
+#----------------------- External Constraint class -----------------#
 class ExternalConstraint(object):
     """Base external constraints class.
 
@@ -321,108 +322,6 @@ class FixCoM(ExternalConstraint):
         p[nc] -= self.mref[nc]*v[nc,None,:]
         ns[nc] = False
         p.shape = init_shape
-
-#!! TODO: This is to be retired and replaced by Eckart defined above.
-class _Eckart(HolonomicConstraint):
-    """Rotational Eckart constraint.
-
-       NOTE: this is different to the other HolonomicConstraint objects
-       in that it does not calculate the Jacobian, and is initialised
-       with additional paramters (particle mass and reference config.)
-    """
-
-    # Number of DoFs determined upon initialisation
-    _ndof = -1
-
-    def __init__(self, indices, qref=None, mref=None):
-        """Initialise the holonomic constraint.
-           Args:
-               indices: a list of integer indices identifying the constrained atoms (this is ignored)
-               qref(ndarray): the reference configuration stored as
-                              an ngp-by-ncart array, where ngp is the
-                              number of molecules/groups of atoms
-                              individually subject to the Eckart
-                              constraint, and ncart is the number
-                              of Cartesian DoFs in each such group
-               mref(ndarray): a conforming array of atomic masses
-
-        """
-        if qref is None:
-            raise ValueError(
-                    "EckartRot must be given a reference configuratiom.")
-        if mref is None:
-            raise ValueError(
-                    "EckartRot must be given the atomic masses.")
-        self.__qref = None
-        self.mref = mref
-        self.qref = qref
-
-    @property
-    def mref(self):
-        return self.__mref
-    @mref.setter
-    def mref(self, val):
-        init_shape = val.shape
-        self.__mref = val.reshape(init_shape[:-1]+(init_shape[-1]//3, 3))
-        if self.__qref is not None:
-            self._update_config()
-    @property
-    def qref(self):
-        return self.__qref
-    @qref.setter
-    def qref(self, val):
-        init_shape = val.shape
-        self.__qref = val.reshape(init_shape[:-1]+(init_shape[-1]//3, 3))
-        self._update_config()
-
-    def _update_config(self):
-        """Re-calculate the CoM of the reference configuration
-           and its coordinates relative to the CoM
-        """
-        mtot = np.sum(self.mref[...,0:1], axis=-2)
-        # CoM of reference
-        self.qref_com = np.sum(
-                self.qref*self.mref, axis=-2
-                )/mtot
-        # Reference coords relative to CoM
-        self.qref_rel = self.qref-self.qref_com[...,None,:]
-        # The above, mass-weighted
-        self.mqref_rel = self.qref_rel*self.mref/mtot[...,None,:]
-
-    def __call__(self, q, nc):
-        """Return the norm of the sum of cross-products
-               SUM[m_a*qref_a x (q_a - qref_a), a] / mtot
-            Args:
-                q(ndarray): an ngp-by-ncart array of atomic configurations
-                nc(ndarray): an array of booleans indicating which rows of
-                             q are to be used for calculation.
-        """
-        qarr = q.reshape(self.qref_rel.shape)[nc]
-        ans = np.cross(self.mqref_rel[nc], (qarr-self.qref_rel[nc]),
-                       axis=-1).sum(axis=-2)
-        return np.sqrt(np.sum(ans**2, axis=-1))
-
-
-#!! TODO: the Constraints is to be retired and replaced by ConstrainGroup
-class Constraints(dobject):
-
-    """
-    Holds parameters used in cosnstrained propagation.
-
-    Attributes:
-       tol: Tolerance threshold for RATTLE
-       maxcycle: Maximum number of cycles in RATTLE
-       nfree: Number of steps into which ring-polymer propagation
-              under spring forces is split at the inner-most mts level.
-
-    """
-
-    def __init__(self, tol=1.0e-06, maxcycle=100, nfree=1):
-
-        dself = dd(self)
-        dself.tol = depend_value(name='tol', value=tol)
-        dself.maxcycle = depend_value(name='maxcycle', value=maxcycle)
-        dself.nfree = depend_value(name='nfree', value=nfree)
 
 #------------ FUNCTIONS FOR CONVERTING TO QUASI-CENTROID COORDS ------------#
 ## MONATOMIC
@@ -801,7 +700,7 @@ class ConstraintGroup(dobject):
                                  func=self.get_mg0)
         # Set up target values for internal constraints
         dself.targets = depend_array(name="targets",
-                                     value=np.zeros(len(self.internal), float),
+                                     value=np.zeros((len(self.internal),self.nsets),float),
                                      dependencies=[dself.qqc, dself.mqc],
                                      func=self.get_targets)
 
@@ -845,10 +744,8 @@ class ConstraintGroup(dobject):
            tensor.
         """
         temp = np.empty((self.nbeads, 3*self.nsets*self.natoms))
-        mg0 = np.empty((len(self.external), self.nsets, 3*self.natoms, self.nbeads))
-        m3 = np.reshape(
-                dstrip(self.dynm3), (-1, self.nbeads)
-                ).T
+        mg0 = np.empty((len(self.internal), self.nsets, 3*self.natoms, self.nbeads))
+        m3 = np.reshape(dstrip(self.dynm3), (-1, self.nbeads)).T
         for i in range(len(self.internal)):
             temp[:] = self.nmtransform.b2nm(
                     np.reshape(self.g0[i], (-1, self.nbeads)).T
@@ -867,9 +764,7 @@ class ConstraintGroup(dobject):
         m3 = np.reshape(dstrip(self.dynm3), (-1, self.nbeads)).T
         temp = self.nmtransform.b2nm(np.reshape(arr, (-1, self.nbeads)).T)
         temp *= m3
-        ans = np.reshape(
-                    self.nmtransform.nm2b(temp).T, arr.shape
-                    )
+        ans = np.reshape(self.nmtransform.nm2b(temp).T, arr.shape)
         return ans
 
     def get_targets(self):
@@ -881,7 +776,7 @@ class ConstraintGroup(dobject):
         qqc = dstrip(self.qqc)
         mqc = dstrip(self.mqc)
         self.external.bind(qqc, mqc)
-        targets = np.empty(len(self.internal), float)
+        targets = np.empty((len(self.internal),self.nsets), float)
         qqc = np.reshape(qqc, qqc.shape+(1,))
         tmp = np.zeros_like(qqc)
         for i,func in enumerate(self.internal):
@@ -891,6 +786,7 @@ class ConstraintGroup(dobject):
     def shake(self):
         """Enforce the quasi-centroid constraint onto the bead coordinates.
         """
+        
         # Make a copy of the bead coordinates
         temp = dstrip(self.q).copy()
         qc_init = np.zeros((self.nsets, 3*self.natoms), float)
@@ -935,14 +831,14 @@ class ConstraintGroup(dobject):
                 # If all "not not converged" end cycle
                 break
             ncycle += 1
-        # Update the positions
-        self.beads.q[:,self.indices3] = np.reshape(temp,(-1,self.nbeads)).T
         # Update the momenta
         self.beads.p[:,self.indices3] += np.reshape(
-                self._times_m(temp - dstrip(self.q0))/self.qdt,
+                self._times_m(temp - dstrip(self.q))/self.qdt,
                 (-1,self.nbeads)).T
-        # Store local copy for backup
-        self.q0 = temp
+        # Update the positions
+        self.beads.q[:,self.indices3] = np.reshape(temp,(-1,self.nbeads)).T
+        # Store local copy
+        self.q0[:] = temp
 
     def rattle(self):
         """

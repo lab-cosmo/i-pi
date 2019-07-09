@@ -18,3 +18,4 @@ examples/qcmd/*_nvt/**/*.xyz
 examples/qcmd/*_nvt/**/log.txt
 examples/qcmd/*_nvt/**/script
 examples/qcmd/*_nvt/**/input.xml
+examples/qcmd/*_nvt/**/submit.sh
