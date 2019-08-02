@@ -18,13 +18,7 @@ from ipi.engine.thermostats import Thermostat
 from ipi.engine.atoms import Atoms
 from constraints import ConstraintGroup
 
-class QCForces(dobject):
-    """
-    A minimal quasi-centroid force object that deals with the conversion
-    of bead forces.
-    """
-    pass
-
+        
 class QuasiCentroids(dobject):
 
     """Handles the ring-polymer quasi-centroids.
@@ -40,9 +34,9 @@ class QuasiCentroids(dobject):
         q: The quasi-centroid configuration
         p: The quasi-centroid momenta
         m: The atomic quasi-centroid masses (shape self.natoms)
+        f: The total force acting on the quasi-centroid
         m3: Array of masses conforming with p and q (shape 3*self.natoms)
-
-        forces: QCForces object that emulates parts of Forces
+        bforce: The Forces object of the beads underlying the quasi-centroids.
 
     Methods:
 #        scatter: scatter an array into disjoint sets grouped by
@@ -134,12 +128,14 @@ class QuasiCentroids(dobject):
         self.ensemble = ens
         self.beads = beads
         self.nm = nm
-        self.forces = bforce
+        self.bforce = bforce
+        self.bbias = ens.bias
         self.prng = prng
         dself = dd(self)
         dthrm = dd(self.thermostat)
         dens = dd(self.ensemble)
-        if self.natoms not in [beads.natoms, 0]:
+        dbforce = dd(self.bforce)
+        if self.natoms != beads.natoms:
             raise ValueError("Number of quasi-centroid and bead atoms is inconsistent.")
         # Make sure thermostat has correct temperature
         dpipe(dens.temp, dthrm.temp)
@@ -152,18 +148,17 @@ class QuasiCentroids(dobject):
         for cgp in self.qclist:
             dpipe(dself.qdt, dd(cgp).qdt)
             cgp.bind(self)
-            
+        dself.f = depend_array(name="f", value=np.zeros(3*self.natoms), 
+                               func=self.f_combine,
+                               dependencies=[dbforce.f])
+    
     def shake(self):
         """Cycle over constraint groups and enforce the holonomic constraints
            using SHAKE
         """
         
         for cgp in self.qclist:
-            try:
-                cgp.shake()
-            except: 
-                self._msg = cgp._msg
-                raise
+            cgp.shake()
     
     def rattle(self):
         """Cycle over constraint groups and enforce the holonomic constraints
@@ -172,3 +167,30 @@ class QuasiCentroids(dobject):
         
         for cgp in self.qclist:
             cgp.rattle()
+            
+    def forces_mts(self, level):
+        """ Fetches the forces associated with a given MTS level."""
+        
+        fk = np.zeros(3*self.natoms)
+        bfk = self.bforce.forces_mts(level)
+        for cgp in self.qclist:
+            cgp.b2fc(bfk, fqc=fk)
+        return fk
+    
+    def bias(self):
+        """ Returns the bias force"""
+        
+        fk = np.zeros(3*self.natoms)
+        bfk = dstrip(self.bbias.f)
+        for cgp in self.qclist:
+            cgp.b2fc(bfk, fqc=fk)
+        return fk
+    
+    def f_combine(self):
+        """Obtains the total force vector."""
+
+        rf = np.zeros((3 * self.natoms), float)
+        bf = dstrip(self.bforce.f)
+        for cgp in self.qclist:
+            cgp.b2fc(bf, fqc=rf)
+        return rf

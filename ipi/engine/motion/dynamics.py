@@ -727,11 +727,7 @@ class QCMDIntegrator(NVTIntegrator):
         Args:
            dt: integration time-step for SHAKE/RATTLE
         """    
-        try:
-            self.quasicentroids.shake()
-        except:
-            self._msg = self.quasicentroids._msg
-            raise
+        self.quasicentroids.shake()
     
     def pconstraints(self):
         """This applies RATTLE to the momenta and returns the change in the
@@ -744,27 +740,72 @@ class QCMDIntegrator(NVTIntegrator):
         cell or any atoms are fixed.
         """
         
+        # Apply CoM constraint to quasi-centroids
+        if (self.fixcom):
+            na3 = self.quasicentroids.natoms * 3
+            p = dstrip(self.quasicentroids.p)
+            m = dstrip(self.quasicentroids.m3)[0:na3:3]
+            M = self.quasicentroids.atoms.M
+
+            dens = 0
+            for i in range(3):
+                pcom = p[i:na3:3].sum()
+                dens += pcom**2
+                pcom /= M
+                self.quasicentroids.p[i:na3:3] -= m * pcom
+
+            self.ensemble.eens += dens * 0.5 / M
+  
+        # Fix the select quasi-centroids 
+        if len(self.fixatoms) > 0:
+            m = dstrip(self.quasicentroids.m)
+            bp = self.quasicentroids.p
+            self.ensemble.eens += 0.5 * np.dot(bp[self.fixatoms * 3], 
+                                               bp[self.fixatoms * 3] / 
+                                               m[self.fixatoms])
+            self.ensemble.eens += 0.5 * np.dot(bp[self.fixatoms * 3 + 1], 
+                                               bp[self.fixatoms * 3 + 1] / 
+                                               m[self.fixatoms])
+            self.ensemble.eens += 0.5 * np.dot(bp[self.fixatoms * 3 + 2], 
+                                               bp[self.fixatoms * 3 + 2] / 
+                                               m[self.fixatoms])
+            bp[self.fixatoms * 3] = 0.0
+            bp[self.fixatoms * 3 + 1] = 0.0
+            bp[self.fixatoms * 3 + 2] = 0.0
+        
+        # Apply the momentum constraint to the underlying beads
         if self._ethermo:
             p = dstrip(self.nm.pnm)
             m = dstrip(self.nm.dynm3)
             self.ensemble.eens += 0.5*np.sum(p**2/m)
-        try:
-            self.quasicentroids.rattle()
-        except: 
-            self._msg = self.quasicentroids._msg
-            raise
-            
+        self.quasicentroids.rattle()    
         if self._ethermo:
             p = dstrip(self.nm.pnm)
             self.ensemble.eens -= 0.5*np.sum(p**2/m)
             self._ethermo = False
         return
+    
+    def pstep(self, level=0):
+        """Velocity Verlet monemtum propagator."""
+
+        """
+        # halfdt/alpha
+        self.beads.p += self.forces.forces_mts(level) * self.pdt[level]
+        if level == 0:  # adds bias in the outer loop
+            self.beads.p += dstrip(self.bias.f) * self.pdt[level]
+        """
+        
+        self.quasicentroids.p += self.quasicentroids.forces_mts(level) * self.pdt[level]
+        if level == 0:  # adds bias in the outer loop
+            self.quasicentroids.p += self.quasicentroids.bias() * self.pdt[level]
+        super(QCMDIntegrator, self).pstep()
 
     def free_p(self):
         """Velocity Verlet momentum propagator with ring-polymer spring forces,
            followed by RATTLE.
         """
         
+        # NOTE: no spring contributions for quasi-centroids
         self.nm.pnm += dstrip(self.nm.fspringnm)*self.qdt
         self.pconstraints() # RATTLE
 
@@ -773,6 +814,10 @@ class QCMDIntegrator(NVTIntegrator):
            followed by SHAKE.
         """
         
+        # Move quasi-centroids first
+        self.quasicentroids.q += (dstrip(self.quasicentroids.p) /
+                                  dstrip(self.quasicentroids.m3))*self.qdt
+        # Then the beads
         self.nm.qnm += dstrip(self.nm.pnm)/dstrip(self.nm.dynm3)*self.qdt
         self.qconstraints()
         self.pconstraints()
@@ -785,6 +830,7 @@ class QCMDIntegrator(NVTIntegrator):
         """
 
         self._ethermo = True
+        self.quasicentroids.thermostat.step()
         super(QCMDIntegrator,self).tstep()
 
     def free_qstep_ba(self):

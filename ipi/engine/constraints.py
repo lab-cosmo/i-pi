@@ -12,10 +12,10 @@ import numpy as np
 from ipi.utils.depend import depend_value, depend_array, dd, dobject, dstrip
 from ipi.utils import mathtools
 from ipi.utils import nmtransform
-from ipi.engine.beads import Beads
-from ipi.engine.normalmodes import NormalModes
+#from ipi.engine.beads import Beads
+#from ipi.engine.normalmodes import NormalModes
 
-__all__ = ['Constraints','ConstraintGroup','BondLength','BondAngle','_Eckart']
+__all__ = ['ConstraintGroup','BondLength','BondAngle','Eckart','FixCoM']
 
 class InternalConstraint(object):
     """Base holonomic constraints class.
