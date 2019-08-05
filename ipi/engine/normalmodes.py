@@ -410,6 +410,19 @@ class NormalModes(dobject):
                 sk = self.omegak[b] / self.nm_freqs[0]
                 info(" ".join(["NM FACTOR", str(b), str(sk), str(self.omegak[b]), str(self.nm_freqs[0])]), verbosity.medium)
                 dmf[b] = sk**2
+        elif self.mode == "pa-qcmd":
+            if len(self.nm_freqs) > 1:
+                warning("Only the first element in nm.frequencies will be considered for PA-QCMD mode.", verbosity.low)
+            if len(self.nm_freqs) == 0:
+                raise ValueError("PA-QCMD mode requires the target frequency of all the internal modes.")
+            # Centroid treated differently as self.omegak[0] = 0
+            sk = self.omegan / self.nm_freqs[0]
+            info(" ".join(["NM FACTOR", str(0), str(sk), str(self.omegan), str(self.nm_freqs[0])]), verbosity.medium)
+            dmf[0] = sk**2
+            for b in range(1, self.nbeads):
+                sk = self.omegak[b] / self.nm_freqs[0]
+                info(" ".join(["NM FACTOR", str(b), str(sk), str(self.omegak[b]), str(self.nm_freqs[0])]), verbosity.medium)
+                dmf[b] = sk**2
         elif self.mode == "wmax-cmd":
             if len(self.nm_freqs) > 2:
                 warning("Only the first two element in nm.frequencies will be considered for WMAX-CMD mode.", verbosity.low)

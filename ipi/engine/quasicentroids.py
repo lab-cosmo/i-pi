@@ -16,7 +16,8 @@ import numpy as np
 from ipi.utils.depend import depend_value, depend_array, dd, dobject, dpipe, dstrip
 from ipi.engine.thermostats import Thermostat
 from ipi.engine.atoms import Atoms
-from constraints import ConstraintGroup
+from ipi.engine.constraints import ConstraintGroup
+from ipi.utils.units import Constants
 
         
 class QuasiCentroids(dobject):
@@ -92,8 +93,8 @@ class QuasiCentroids(dobject):
                                                        dstrip(self.m)[:,None])),
                                 dependencies=[dself.m])
         # Quasi-centroid positions and momenta
-        dself.q = depend_array(name="q", value=np.nan*np.zeros((3 * self.natoms), float))
-        dself.p = depend_array(name="p", value=np.ones((3 * self.natoms), float))
+        dself.q = depend_array(name="q", value=np.nan*np.ones((3 * self.natoms), float))
+        dself.p = depend_array(name="p", value=np.nan*np.ones((3 * self.natoms), float))
         # Access quasi-centroids as Atoms object
         self.atoms = Atoms(self.natoms, _prebind=(self.q, self.p, self.m, self.names))
         datoms = dd(self.atoms)
@@ -140,14 +141,21 @@ class QuasiCentroids(dobject):
         # Make sure thermostat has correct temperature
         dpipe(dens.temp, dthrm.temp)
         self.thermostat.bind(beads=self, prng=prng)
-        # Add conserved quantity to thermostat
+        # Add quasicentroid thermostat conserved quantity to ensemble
         self.ensemble.add_econs(dthrm.ethermo)
+        # Add quasicentroid kinetic energy to ensemble
         self.ensemble.add_econs(dself.kin)
         self.ensemble.add_xlkin(dself.kin)
-        # Set up the constraint groups
+        # Set up the constraint groups; unless already supplied, the quasi-centroid
+        # positions are initialised here
         for cgp in self.qclist:
             dpipe(dself.qdt, dd(cgp).qdt)
             cgp.bind(self)
+        # Initialise the quasicentroid momenta here, unless already supplied
+        if np.any(np.isnan(dstrip(self.p))):
+            self.p = self.prng.gvec(3*self.natoms) * np.sqrt(dstrip(self.m3) *
+                                                             Constants.kb *
+                                                             self.ensemble.temp)
         dself.f = depend_array(name="f", value=np.zeros(3*self.natoms), 
                                func=self.f_combine,
                                dependencies=[dbforce.f])

@@ -381,7 +381,7 @@ class NVEIntegrator(DummyIntegrator):
     def qcstep(self):
         """Velocity Verlet centroid position propagator."""
         # dt/inmts
-        self.nm.qnm[0, :] += dstrip(self.nm.pnm)[0, :] / dstrip(self.beads.m3)[0] * self.qdt
+        self.nm.qnm[0, :] += dstrip(self.nm.pnm)[0, :] / dstrip(self.nm.dynm3)[0] * self.qdt
 
     def free_qstep_ba(self):
         """Exact normal mode propagator for the free ring polymer, which combines
