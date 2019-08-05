@@ -2222,7 +2222,20 @@ class Trajectories(dobject):
                                "help": """Scaled-coordinates isotope fractionation direct estimator in the form of ratios of partition functions. Takes two arguments, 'alpha' , which gives the
                       scaled mass parameter and default to '1.0', and 'atom', which is the label or index of a type of atoms. All the atoms but the selected ones
                       will have zero output""",
-                               'func': self.get_isotope_zetasc}
+                               'func': self.get_isotope_zetasc},
+            "x_quasi": {"dimension": "length",
+                        "help": "The quasicentroid coordinates.",
+                        'func': (lambda: 1.0 * self.system.beads.quasicentroids.q)},
+            "v_quasi": {"dimension": "velocity",
+                        "help": "The quasicentroid velocity.",
+                        'func': (lambda: self.system.beads.quasicentroids.p / 
+                                         self.system.beads.quasicentroids.m3)},
+            "p_quasi": {"dimension": "momentum",
+                        "help": "The quasicentroid momentum.",
+                        'func': (lambda: 1.0*self.system.beads.quasicentroids.p)},
+            "f_quasi": {"dimension": "force",
+                        "help": "The quasicentroid force.",
+                        'func': (lambda: 1.0*self.system.beads.quasicentroids.f)},
         }
 
     def bind(self, system):

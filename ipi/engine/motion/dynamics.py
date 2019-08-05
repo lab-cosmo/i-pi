@@ -139,6 +139,11 @@ class Dynamics(Motion):
         """
 
         super(Dynamics, self).bind(ens, beads, nm, cell, bforce, prng, omaker)
+        
+        # Bind the quasicentroids to the beads
+        if hasattr(self.beads, "quasicentroids"):
+            raise AttributeError("Conflicting definitions of bead quasicentroids")
+        self.beads.quasicentroids = self.quasicentroids
 
         # Checks if the number of mts levels is equal to the dimensionality of the mts weights.
         if (len(self.nmts) != self.forces.nmtslevels):
