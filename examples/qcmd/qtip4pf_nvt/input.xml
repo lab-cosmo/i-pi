@@ -1,0 +1,68 @@
+<simulation verbosity="high">
+  <output prefix="300K_64mol_032N_qcmd">
+      <properties stride="8" filename="out"> [time{picosecond}, conserved, temperature{kelvin}, potential, kinetic_md, spring] </properties>
+      <trajectory filename='xc' stride='64' format='xyz'> x_centroid{angstrom} </trajectory>
+      <trajectory filename='xq' stride='64' format='xyz'> x_quasi{angstrom} </trajectory>
+      <trajectory filename='pq' stride='64' format='xyz'> p_quasi </trajectory>
+      <trajectory filename='pos' stride='64' format='xyz'> positions{angstrom} </trajectory>
+  </output>
+  <total_steps>32000</total_steps>
+  <prng>
+    <seed>87549</seed>
+  </prng>
+  <ffsocket name="driver" mode="unix" pbc="false">
+    <address>qtip4pf</address>
+  </ffsocket>
+  <system>
+    <initialize nbeads="32">
+      <file mode="xyz"> init.xyz </file>
+      <velocities mode="thermal" units="kelvin"> 300 </velocities>
+    </initialize>
+    <forces>
+            <force forcefield='driver'/>
+    </forces>
+    <ensemble>
+      <temperature units="kelvin">300</temperature>
+    </ensemble>
+    <normal_modes>
+        <frequencies style="pa-qcmd" units="inversecm"> [200000.]  </frequencies>
+    </normal_modes>
+   <motion mode="multi">
+    <motion mode="dynamics">
+      <dynamics mode='qcmd' splitting="baoab">
+    	<thermostat mode="pile_l">
+           <tau units="femtosecond">100</tau>
+           <pile_lambda> 0.5 </pile_lambda>
+        </thermostat>
+    <quasicentroids nfree="1">
+        <thermostat mode="svr">
+                <tau units="femtosecond">100</tau>
+        </thermostat>
+        <quasicentroid name="triatomic">
+            <tol>1.0e-06</tol>
+            <maxcycle>100</maxcycle>
+            <indices>
+                [   0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+                    17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+                    32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+                    47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61,
+                    62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76,
+                    77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91,
+                    92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104,
+                    105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116,
+                    117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128,
+                    129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140,
+                    141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152,
+                    153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164,
+                    165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176,
+                    177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188,
+                    189, 190, 191]
+            </indices>
+        </quasicentroid>
+    </quasicentroids>
+	   <timestep units="femtosecond"> 0.002</timestep>
+     </dynamics>
+    </motion>
+  </motion>
+  </system>
+</simulation>
