@@ -199,8 +199,7 @@ class nm_trans(object):
         return q
 
 
-class nm_rescale(object):  # !! TODO - make compatible with a open path formulation
-
+class nm_rescale(object):
     """Uses matrix multiplication to do ring polymer contraction or expansion
     between different numbers of beads.
 
@@ -221,7 +220,8 @@ class nm_rescale(object):  # !! TODO - make compatible with a open path formulat
 
         self._b1tob2 = mk_rs_matrix(nbeads1, nbeads2)
         self._b2tob1 = self._b1tob2.T * (float(nbeads1) / float(nbeads2))
-        # definition of the scaling also using the open case normal mode matrixtransformations
+
+        # definition of the scaling also using the open case normal mode matrixt ransformations
         if open_paths is None:
             open_paths = []
         self._open = open_paths
@@ -235,13 +235,12 @@ class nm_rescale(object):  # !! TODO - make compatible with a open path formulat
            q: A matrix with nbeads1 rows, in the bead representation.
         """
         q_scal = np.dot(self._b1tob2, q)
-        for io in self._open:  # does separately the transformation for the atom that are marked as open paths
-            q_scal[:, 3 * io] = np.dot(self._o_b1tob2, q[:, 3 * io])
-            q_scal[:, 3 * io + 1] = np.dot(self._o_b1tob2, q[:, 3 * io + 1])
-            q_scal[:, 3 * io + 2] = np.dot(self._o_b1tob2, q[:, 3 * io + 2])
+        if len(q.shape)>1: # cannot do open path contraction for potential. TODO think what this actually implies
+            for io in self._open:  # does separately the transformation for the atom that are marked as open paths
+                q_scal[:, 3 * io] = np.dot(self._o_b1tob2, q[:, 3 * io])
+                q_scal[:, 3 * io + 1] = np.dot(self._o_b1tob2, q[:, 3 * io + 1])
+                q_scal[:, 3 * io + 2] = np.dot(self._o_b1tob2, q[:, 3 * io + 2])
         return q_scal
-
-#      return np.dot(self._b1tob2,q)
 
     def b2tob1(self, q):
         """Transforms a matrix from one value of beads to another.
@@ -250,15 +249,15 @@ class nm_rescale(object):  # !! TODO - make compatible with a open path formulat
            q: A matrix with nbeads2 rows, in the bead representation.
         """
         q_scal = np.dot(self._b2tob1, q)
-        for io in self._open:  # does separately the transformation for the atom that are marked as open paths
-            q_scal[:, 3 * io] = np.dot(self._o_b2tob1, q[:, 3 * io])
-            q_scal[:, 3 * io + 1] = np.dot(self._o_b2tob1, q[:, 3 * io + 1])
-            q_scal[:, 3 * io + 2] = np.dot(self._o_b2tob1, q[:, 3 * io + 2])
+        if len(q.shape)>1: # cannot do open path contraction for potential. TODO think what this actually implies
+            for io in self._open:  # does separately the transformation for the atom that are marked as open paths
+                q_scal[:, 3 * io] = np.dot(self._o_b2tob1, q[:, 3 * io])
+                q_scal[:, 3 * io + 1] = np.dot(self._o_b2tob1, q[:, 3 * io + 1])
+                q_scal[:, 3 * io + 2] = np.dot(self._o_b2tob1, q[:, 3 * io + 2])
         return q_scal
-#      return np.dot(self._b2tob1,q)
 
 
-class nm_fft(object):  # ! TODO add (matrix-version) of the open path transformation here
+class nm_fft(object):
 
     """Uses Fast Fourier transforms to do normal mode transformations.
 

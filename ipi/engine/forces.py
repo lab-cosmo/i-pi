@@ -528,13 +528,14 @@ class Forces(dobject):
         dself.virs.add_dependency(dforces.virs)
         dself.extras.add_dependency(dforces.extras)
 
-    def bind(self, beads, cell, fcomponents, fflist):
+    def bind(self, beads, cell, nm, fcomponents, fflist):
         """Binds beads, cell and forces to the forcefield.
 
 
         Args:
            beads: Beads object from which the bead positions are taken.
            cell: Cell object from which the system box is taken.
+           nm: Normal modes object that is needed to define contractions
            fcomponents: A list of different objects for each force type.
               For example, if ring polymer contraction is being used,
               then there may be separate forces for the long and short
@@ -550,6 +551,7 @@ class Forces(dobject):
         self.nbeads = beads.nbeads
         self.beads = beads
         self.cell = cell
+        self.nm = nm
         self.bound = True
         self.nforces = len(fcomponents)
         self.fcomp = fcomponents
@@ -578,7 +580,7 @@ class Forces(dobject):
             if newb == 0 or newb > beads.nbeads: newb = beads.nbeads
             newforce = ForceComponent(ffield=fc.ffield, name=fc.name, nbeads=newb, weight=fc.weight, mts_weights=fc.mts_weights, epsilon=fc.epsilon)
             newbeads = Beads(beads.natoms, newb)
-            newrpc = nm_rescale(beads.nbeads, newb)
+            newrpc = nm_rescale(beads.nbeads, newb, self.nm.open_paths)
 
             # the beads positions for this force components are obtained
             # automatically, when needed, as a contraction of the full beads
@@ -720,7 +722,11 @@ class Forces(dobject):
         if nbeads is None: nbeads = self.beads
         ncell = cell
         if cell is None: ncell = self.cell
-        nforce.bind(nbeads, ncell, self.fcomp, self.ff)
+
+        # caution - we don't duplicate nm because at present we only use the list of open paths
+        # but this should be changed if more intensive use of the nm object is done in the future
+        nforce.bind(nbeads, ncell, self.nm, self.fcomp, self.ff)
+
         return nforce
 
     def transfer_forces(self, refforce):
