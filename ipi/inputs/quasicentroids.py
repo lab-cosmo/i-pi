@@ -86,14 +86,18 @@ class InputQuasiCentroids(Input):
                                qclist=qclist)
         # initialise the quasi-centroid positions and momenta whenever possible
         q = self.q.fetch()
-        if (q.shape == (3 * quasi.natoms)):
+        if (q.shape == (3*quasi.natoms,)):
             quasi.q = q
         elif len(q) != 0:
-            raise ValueError("Array shape mismatches for q in <quasicentroids> input.")
+            raise ValueError(
+                    "Array shape mismatches for q in <quasicentroids> input.\n"+
+                    "Expecting ({:d},), got ({:d},).".format(3*quasi.natoms, len(q)))
         p = self.p.fetch()
-        if (p.shape == (3 * quasi.natoms)):
+        if (p.shape == (3*quasi.natoms,)):
             quasi.p = p
         elif len(p) != 0:
-            raise ValueError("Array shape mismatches for p in <quasicentroids> input.")
+            raise ValueError(
+                    "Array shape mismatches for p in <quasicentroids> input.\n"+
+                    "Expecting ({:d},), got ({:d},).".format(3*quasi.natoms, len(p)))
 
         return quasi

@@ -55,7 +55,7 @@ class Dynamics(Motion):
 
     def __init__(self, timestep, mode="nve", splitting="obabo",
                  thermostat=None, barostat=None,
-                 quasicentroids=None, fixcom=False, 
+                 quasicentroids=None, fixcom=False,
                  fixatoms=None, nmts=None):
         """Initialises a "dynamics" motion object.
 
@@ -139,7 +139,7 @@ class Dynamics(Motion):
         """
 
         super(Dynamics, self).bind(ens, beads, nm, cell, bforce, prng, omaker)
-        
+
         # Bind the quasicentroids to the beads
         if hasattr(self.beads, "quasicentroids"):
             raise AttributeError("Conflicting definitions of bead quasicentroids")
@@ -710,7 +710,7 @@ class QCMDIntegrator(NVTIntegrator):
            clist: list of HolonomicConstraint objects
 
     """
-    
+
     def get_qdt(self):
         return self.dt * 0.5 / (self.inmts * self.quasicentroids.nfree)
 
@@ -731,9 +731,9 @@ class QCMDIntegrator(NVTIntegrator):
 
         Args:
            dt: integration time-step for SHAKE/RATTLE
-        """    
+        """
         self.quasicentroids.shake()
-    
+
     def pconstraints(self):
         """This applies RATTLE to the momenta and returns the change in the
         total kinetic energy that arises from applying the constraint. This
@@ -744,7 +744,7 @@ class QCMDIntegrator(NVTIntegrator):
         The propagator raises an error if the centre-of-mass of the
         cell or any atoms are fixed.
         """
-        
+
         # Apply CoM constraint to quasi-centroids
         if (self.fixcom):
             na3 = self.quasicentroids.natoms * 3
@@ -760,36 +760,36 @@ class QCMDIntegrator(NVTIntegrator):
                 self.quasicentroids.p[i:na3:3] -= m * pcom
 
             self.ensemble.eens += dens * 0.5 / M
-  
-        # Fix the select quasi-centroids 
+
+        # Fix the select quasi-centroids
         if len(self.fixatoms) > 0:
             m = dstrip(self.quasicentroids.m)
             bp = self.quasicentroids.p
-            self.ensemble.eens += 0.5 * np.dot(bp[self.fixatoms * 3], 
-                                               bp[self.fixatoms * 3] / 
+            self.ensemble.eens += 0.5 * np.dot(bp[self.fixatoms * 3],
+                                               bp[self.fixatoms * 3] /
                                                m[self.fixatoms])
-            self.ensemble.eens += 0.5 * np.dot(bp[self.fixatoms * 3 + 1], 
-                                               bp[self.fixatoms * 3 + 1] / 
+            self.ensemble.eens += 0.5 * np.dot(bp[self.fixatoms * 3 + 1],
+                                               bp[self.fixatoms * 3 + 1] /
                                                m[self.fixatoms])
-            self.ensemble.eens += 0.5 * np.dot(bp[self.fixatoms * 3 + 2], 
-                                               bp[self.fixatoms * 3 + 2] / 
+            self.ensemble.eens += 0.5 * np.dot(bp[self.fixatoms * 3 + 2],
+                                               bp[self.fixatoms * 3 + 2] /
                                                m[self.fixatoms])
             bp[self.fixatoms * 3] = 0.0
             bp[self.fixatoms * 3 + 1] = 0.0
             bp[self.fixatoms * 3 + 2] = 0.0
-        
+
         # Apply the momentum constraint to the underlying beads
         if self._ethermo:
             p = dstrip(self.nm.pnm)
             m = dstrip(self.nm.dynm3)
             self.ensemble.eens += 0.5*np.sum(p**2/m)
-        self.quasicentroids.rattle()    
+        self.quasicentroids.rattle()
         if self._ethermo:
             p = dstrip(self.nm.pnm)
             self.ensemble.eens -= 0.5*np.sum(p**2/m)
             self._ethermo = False
         return
-    
+
     def pstep(self, level=0):
         """Velocity Verlet monemtum propagator."""
 
@@ -799,7 +799,7 @@ class QCMDIntegrator(NVTIntegrator):
         if level == 0:  # adds bias in the outer loop
             self.beads.p += dstrip(self.bias.f) * self.pdt[level]
         """
-        
+
         self.quasicentroids.p += self.quasicentroids.forces_mts(level) * self.pdt[level]
         if level == 0:  # adds bias in the outer loop
             self.quasicentroids.p += self.quasicentroids.bias() * self.pdt[level]
@@ -809,7 +809,7 @@ class QCMDIntegrator(NVTIntegrator):
         """Velocity Verlet momentum propagator with ring-polymer spring forces,
            followed by RATTLE.
         """
-        
+
         # NOTE: no spring contributions for quasi-centroids
         self.nm.pnm += dstrip(self.nm.fspringnm)*self.qdt
         self.pconstraints() # RATTLE
@@ -818,7 +818,7 @@ class QCMDIntegrator(NVTIntegrator):
         """Velocity Verlet position propagator with ring-polymer spring forces,
            followed by SHAKE.
         """
-        
+
         # Move quasi-centroids first
         self.quasicentroids.q += (dstrip(self.quasicentroids.p) /
                                   dstrip(self.quasicentroids.m3))*self.qdt
@@ -842,9 +842,9 @@ class QCMDIntegrator(NVTIntegrator):
         """Override the exact normal mode propagator for the free ring-polymer
            with a sequence of RATTLE/SHAKE steps.
         """
-        
+
         for i in range(self.quasicentroids.nfree//2):
-            
+
             self.free_p() # B
             self.free_q() # A
             self.free_q() # A
@@ -858,9 +858,9 @@ class QCMDIntegrator(NVTIntegrator):
         """Override the exact normal mode propagator for the free ring-polymer
            with a sequence of RATTLE/SHAKE steps.
         """
-        
+
         if (self.quasicentroids.nfree%2 == 1):
-            
+
             self.free_q() # A
             self.free_p() # B
 
