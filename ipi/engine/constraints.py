@@ -675,6 +675,9 @@ class ConstraintGroup(dobject):
             self.external.bind(dstrip(self.qc), dstrip(self.mqc))
             qqc = self._b2qc()
             self.quasi.q[self.indices3] = np.ravel(qqc)
+        # If qqc is initialised, bind to external constraints
+        else:
+            self.external.bind(dstrip(self.qqc), dstrip(self.mqc))
         # Create local normal-mode transform object
         if isinstance(self.nm.transform, nmtransform.nm_noop):
             self.nmtransform = self.nm.transform
@@ -786,7 +789,7 @@ class ConstraintGroup(dobject):
     def shake(self):
         """Enforce the quasi-centroid constraint onto the bead coordinates.
         """
-        
+
         # Make a copy of the bead coordinates
         temp = dstrip(self.q).copy()
         qc_init = np.zeros((self.nsets, 3*self.natoms), float)
