@@ -26,7 +26,7 @@ from copy import copy
 import ipi.engine.initializer
 from ipi.engine.motion import Motion, Dynamics, Replay, GeopMotion, NEBMover,\
                             DynMatrixMover, MultiMotion, AlchemyMC, InstantonMotion,\
-                            TemperatureRamp, PressureRamp
+                            TemperatureRamp, PressureRamp, ConstrainedDynamics
 from ipi.utils.inputvalue import *
 from ipi.inputs.thermostats import *
 from ipi.inputs.initializer import *
@@ -34,6 +34,7 @@ from .geop import InputGeop
 from .instanton import InputInst
 from .neb import InputNEB
 from .dynamics import InputDynamics
+from .constrained_dynamics import InputConstrainedDynamics
 from .phonons import InputDynMatrix
 from .alchemy import InputAlchemy
 from .ramp import InputTemperatureRamp, InputPressureRamp
@@ -60,7 +61,7 @@ class InputMotionBase(Input):
 
     attribs = {"mode": (InputAttribute, {"dtype": str,
                                          "help": "How atoms should be moved at each step in the simulatio. 'replay' means that a simulation is replayed from trajectories provided to i-PI.",
-                                         "options": ['vibrations', 'minimize', 'replay', 'neb', 'dynamics', 't_ramp', 'p_ramp', 'alchemy', 'instanton', 'dummy']})}
+                                         "options": ['vibrations', 'minimize', 'replay', 'neb', 'dynamics', 'constrained_dynamics', 't_ramp', 'p_ramp', 'alchemy', 'instanton', 'dummy']})}
 
     fields = {"fixcom": (InputValue, {"dtype": bool,
                                       "default": True,
@@ -74,6 +75,8 @@ class InputMotionBase(Input):
                                            "help": "Option for geometry optimization"}),
               "dynamics": (InputDynamics, {"default": {},
                                            "help": "Option for (path integral) molecular dynamics"}),
+              "constrained_dynamics": (InputConstrainedDynamics, {"default": {},
+                                           "help": "Option for constrained (path integral) molecular dynamics"}),
               "file": (InputInitFile, {"default": input_default(factory=ipi.engine.initializer.InitFile, kwargs={"mode": "xyz"}),
                                        "help": "This describes the location to read a trajectory file from."}),
               "vibrations": (InputDynMatrix, {"default": {},
@@ -117,6 +120,10 @@ class InputMotionBase(Input):
         elif type(sc) is Dynamics:
             self.mode.store("dynamics")
             self.dynamics.store(sc)
+            tsc = 1
+        elif type(sc) is ConstrainedDynamics:
+            self.mode.store("constrained_dynamics")
+            self.constrained_dynamics.store(sc)
             tsc = 1
         elif type(sc) is DynMatrixMover:
             self.mode.store("vibrations")
@@ -164,7 +171,13 @@ class InputMotionBase(Input):
         elif self.mode.fetch() == "neb":
             sc = NEBMover(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.neb_optimizer.fetch())
         elif self.mode.fetch() == "dynamics":
+            print "ACHTUNG!"
+            dyn = self.dynamics.fetch()
+            print dyn["nmts"]
             sc = Dynamics(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.dynamics.fetch())
+        elif self.mode.fetch() == "constrained_dynamics":
+            dyn = self.constrained_dynamics.fetch()
+            sc = ConstrainedDynamics(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.constrained_dynamics.fetch())
         elif self.mode.fetch() == "vibrations":
             sc = DynMatrixMover(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.vibrations.fetch())
         elif self.mode.fetch() == "alchemy":

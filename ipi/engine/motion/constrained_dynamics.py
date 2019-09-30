@@ -21,6 +21,7 @@ from ipi.utils.depend import depend_value, depend_array, \
                              dd, dobject, dstrip, dpipe
 from ipi.engine.thermostats import Thermostat
 from ipi.engine.barostats import Barostat
+from ipi.engine.quasicentroids import QuasiCentroids
 
 
 class ConstrainedDynamics(Dynamics):
@@ -50,8 +51,9 @@ class ConstrainedDynamics(Dynamics):
     """
 
     def __init__(self, timestep, mode="nve", splitting="obabo",
-                thermostat=None, barostat=None, fixcom=False, fixatoms=None,
-                nmts=None, nsteps_geo=1, constraint_list=[]):
+                thermostat=None, barostat=None,
+                quasicentroids=None, fixcom=False, fixatoms=None,
+                nmts=None, nsteps_geo=1, constraint_groups=[]):
 
         """Initialises a "ConstrainedDynamics" motion object.
 
@@ -71,6 +73,10 @@ class ConstrainedDynamics(Dynamics):
             self.barostat = Barostat()
         else:
             self.barostat = barostat
+        if quasicentroids is None:
+            self.quasicentroids = QuasiCentroids()
+        else:
+            self.quasicentroids = quasicentroids
         self.enstype = mode
         if nmts is None or len(nmts) == 0:
             dd(self).nmts = depend_array(name="nmts", value=np.asarray([1], int))
@@ -78,8 +84,6 @@ class ConstrainedDynamics(Dynamics):
             dd(self).nmts = depend_array(name="nmts", value=np.asarray(nmts, int))
         if self.enstype == "nve":
             self.integrator = NVEConstrainedIntegrator()
-#            elif self.enstype == "nvt":
-#                self.integrator = NVTIntegrator_constraint()
         else:
             self.integrator = DummyIntegrator()
         # splitting mode for the integrators
@@ -90,9 +94,8 @@ class ConstrainedDynamics(Dynamics):
             self.fixatoms = np.zeros(0, int)
         else:
             self.fixatoms = fixatoms
-        if constraint_list is not None:
-            self.constraint_list = constraint_list
-        self.csolver = ConstraintSolver(self.constraint_list)
+        self.constraint_groups = constraint_groups
+        self.csolver = ConstraintSolver(self.constraint_groups)
         self.nsteps_geo = nsteps_geo
 
     def bind(self, ens, beads, nm, cell, bforce, prng, omaker):
@@ -116,30 +119,115 @@ class ConstrainedDynamics(Dynamics):
                 generation.
             omaker: output maker
         """
+        
+        # Bind the constraints first
+        for cgp in self.constraint_groups:
+            cgp.bind(beads, nm)
+        self.csolver.bind(nm)
+        # Rest as in dynamics
         super(ConstrainedDynamics, self).bind(ens, beads, nm, cell, 
                                               bforce, prng, omaker)
-        # now binds the constraints
-        for cgp in self.constraint_list:
-            cgp.bind(nm)
-        self.csolver.bind(nm)
+
         
-        
-class ConstraintBase(object):
+class ConstraintBase(dobject):
     """Base constraint class; defines the constraint function and its Jacobian.
     """
     
-    def __init__(self, tolerance=1.0e-4, domain="cartesian"):
+    # Add constrained indices and values
+    def __init__(self, index_list, targetvals=None,
+                 tolerance=1.0e-4, domain="cartesian"):
         """Initialise the constraint.
 
         Args:
+            index_list: 1-d list of indices of the affected atoms
+            targetvals: target values of the constraint function
+            tolerance: the desired tolerance to which to converge the
+            constraint
             domain: ['cartesian'/'normalmode'/'centroid'] - specifies whether 
             the constraint is expressed in terms of Cartesian, normalmode 
             or centroid coordinates.
         """
+        
         self.tol = tolerance
-        self.domain = domain.lower()
+        dself = dd(self)
+        dself.natoms = depend_value(name="natoms", func=self.get_natoms)
+        if targetvals is None:
+            dself.targetvals = None
+        else:
+            dself.targetvals = depend_array(
+                    name="targetvals",
+                    value=np.asarray(targetvals).flatten())
+        dself.ilist = depend_array(
+                name="ilist", 
+                value=np.reshape(np.asarray(index_list), (-1, self.natoms)))
+        counts = np.unique(dstrip(self.ilist), return_counts=True)[1]
+        if np.any(counts != 1):
+            raise ValueError(
+"Constraint given overlapping groups of atoms.")
+        dself.ngp = depend_value(name="natoms", value=len(self.ilist))
+        dself.domain = domain.lower()
         if self.domain not in ["cartesian", "normalmode", "centroid"]:
             raise ValueError("Unknown constraint domain '{:s}'.".format(domain))
+            
+    def bind(self, beads, nm):
+        """Bind the beads and the normal modes to the constraint.
+        """
+        
+        self.beads = beads
+        self.nm = nm
+        dself = dd(self)
+        arr_shape = (self.nm.nbeads, self.ngp, 3*self.natoms)
+        i3list = np.asarray([i for j in dstrip(self.ilist).flatten()
+                               for i in range(3*j, 3*j+3)])
+        # Configurations of the affected beads (later to be made dependent
+        # on sections of arrays in grouped constraints)
+        
+        dself.qnm = depend_array(name="qnm", value = 
+                np.transpose(np.reshape(
+                dstrip(self.nm.qnm)[:,i3list], 
+                arr_shape), [1,2,0]))
+        dself.q = depend_array(name="q", value = 
+                np.transpose(np.reshape(
+                dstrip(self.beads.q)[:,i3list], 
+                arr_shape), [1,2,0]))
+        dself.qc = depend_array(name="qc", value = 
+                np.transpose(np.reshape(
+                dstrip(self.beads.qc)[i3list], 
+                (1,)+arr_shape[1:]), [1,2,0]))
+        dself.qnmprev = depend_array(
+                    name="qnmprev", value=dstrip(self.qnm).copy())
+        dself.qprev = depend_array(
+                    name="qprev", value=dstrip(self.q).copy())
+        dself.qcprev = depend_array(
+                    name="qcprev", value=dstrip(self.qc).copy())
+        # Constraint functions and their derivatives
+        if self.domain == "cartesian":
+            deps = [dself.q, dself.qprev]
+            fxns = [lambda: self.gfunc(dstrip(self.q)),
+                    lambda: self.Dgfunc(dstrip(self.qprev))]
+        elif self.domain == "normalmode":
+            deps = [dself.qnm, dself.qnmprev]
+            fxns = [lambda: self.gfunc(dstrip(self.qnm)),
+                    lambda: self.Dgfunc(dstrip(self.qnmprev))]
+        elif self.domain == "centroid":
+            deps = [dself.qc, dself.qcprev]
+            fxns = [lambda: self.gfunc(dstrip(self.qc)),
+                    lambda: self.Dgfunc(dstrip(self.qcprev))]
+        dself.g = depend_array(
+                name="g", value=np.zeros(self.ngp),
+                func=fxns[0], dependencies=[deps[0]])
+        dself.Dg = depend_array(
+                name="Dg", 
+                value=np.zeros((self.ngp, 3*self.natoms, self.nm.nbeads)), 
+                func=fxns[1], dependencies=[deps[1]])
+        if self.targetvals is None:
+            dself.targetvals = depend_array(name="targetvals",
+                                            value=dstrip(self.g).copy())
+            
+    def get_natoms(self):
+        """Return the number of atoms involved in the constraint
+        """
+        return -1
 
     def norm(self, x):
         """Defines the norm of the constraint function; typically just
@@ -170,12 +258,19 @@ class ConstraintBase(object):
 class BondLengthConstraint(ConstraintBase):
     """Constrain the mean bond-length
     """
-    def __init__(self, tolerance=1.0e-4, domain="cartesian"):
-        super(BondLengthConstraint, self).__init__(tolerance, domain)
+    def __init__(self, index_list, targetvals=None,
+                 tolerance=1.0e-4, domain="cartesian"):
+        super(BondLengthConstraint, self).__init__(index_list, targetvals,
+                                                   tolerance, domain)
         if self.domain == "normalmode":
             warnings.warn(
                 "Using the 'BondLength' constraint in the 'normalmode' domain "+
                 "may have unpredictable effects.")
+            
+    def get_natoms(self):
+        """Return the number of atoms involved in the constraint
+        """
+        return 2
 
     def gfunc(self, q):
         """Calculate the bond-length, averaged over the beads. 
@@ -204,17 +299,23 @@ class BondAngleConstraint(ConstraintBase):
     """Constraint the mean bond-angle.
     """
     
-    def __init__(self, tolerance=1.0e-4, domain="cartesian"):
-        super(BondAngleConstraint, self).__init__(tolerance, domain)
+    def __init__(self, index_list, targetvals=None,
+                 tolerance=1.0e-4, domain="cartesian"):
+        super(BondAngleConstraint, self).__init__(index_list, targetvals,
+                                                  tolerance, domain)
         if self.domain == "normalmode":
             warnings.warn(
                 "Using the 'BondAngle' constraint in the 'normalmode' domain "+
                 "may have unpredictable effects.")
+            
+    def get_natoms(self):
+        """Return the number of atoms involved in the constraint
+        """
+        return 3
 
     def gfunc(self, q):
         """Calculate the bond-angle, averaged over the beads. 
         """
-
         super(BondAngleConstraint, self).gfunc(q)
         ngp, ncart, nbeads = q.shape
         x = np.reshape(q, (ngp, 3, 3, nbeads))
@@ -228,7 +329,6 @@ class BondAngleConstraint(ConstraintBase):
     def Dgfunc(self, q):
         """Calculate the Jacobian of the constraint function.
         """
-
         super(BondAngleConstraint, self).Dgfunc(q)
         ngp, ncart, nbeads = q.shape
         x = np.reshape(q, (ngp, 3, 3, nbeads)).copy()
@@ -253,103 +353,48 @@ class GroupedConstraints(dobject):
     ngp non-overlapping groups of atoms.
     """
     
-    def __init__(self, constraint_list, index_list, maxit=100, 
-                 targetvals=None, qnmprev=None):
+    def __init__(self, constraint_list, maxit=100, qnmprev=None):
         """Initialise the set of grouped constraints
         
         Args:
             constraint_list: list of objects derived from ConstraintBase
-            index_list: list of indices of the atoms affected by the constraints
             maxit: maximum numbed of iterations to converge a single step
-            targetvals: list of target values for the constraint functions
             qnmprev: normal-mode configuration at the end of the previous
-                converged constrained propagation step, 
+                converged constrained propagation step, flattened from
                 shape=(ngp, n3unique, nbeads)
-            
-        index_list storage convention:
-            [
-              [                               \
-                [ i(c1, n1), i(c1, n2), ...],  |
-                [ i(c2, n1), i(c2, n2), ...],  |- constraints for group 1
-                ...                            |
-              ]                               /
-              [
-                ...
-              ]
-              ...
-            ]
-        where i(cj,nk) is the index of the k-th atom affected by the j-th 
-        constraint function and len(index_list) is the number of atom groups.
-        Similarly targetvals are to be supplied as
-        [ [ c1, c2, ... ], [ c1, c2, ... ], ...]
-          ^ group-1        ^group-2
-          
-        E.g. for a box of water molecules with OHH storage convention and
-        OH1, OH2, HOH bond, bond, angle constraints the index list becomes
-        [
-          [[0, 1], [0, 2], [0, 1, 2]],
-          [[3, 4], [3, 5], [3, 4, 5]],
-          ...
-        ]
         """
 
         self.clist = constraint_list
         self.ncons = len(self.clist) # number of constraint functions
         self.maxit = maxit
         self.tol = np.asarray([c.tol for c in self.clist])
-        ilist = np.asarray(index_list)
-        msg = "Non-conforming list of indices given to GroupedConstraints."
-        self.ngp = len(ilist) # number of groups of atoms
-        # Check that the number of constraint functions agrees
-        try:
-            k = ilist.shape[1]
-        except IndexError:
+        dself = dd(self)
+        msg = "Non-conforming list of constraints given to GroupedConstraints."
+        # Check that the number of atom groups agrees in each constraint
+        ngps = []
+        for c in self.clist:
+            ngps.append(c.ngp)
+        ngps = np.asarray(ngps)
+        if np.all(ngps == ngps[0]):
+            dself.ngp = depend_value(name="ngp", value=ngps[0])
+            for c in self.clist:
+                dpipe(dself.ngp, dd(c).ngp)
+        else:
             raise ValueError(msg)
-        except:
-            raise
-        if k != self.ncons:
-            raise ValueError(msg)
-        self.ilist = []
-        for i in range(self.ncons):
-            # Check the number of atom indices agrees for each constraint
-            try:
-                self.ilist.append(np.vstack(ilist[:,i]))
-            except ValueError:
-                raise ValueError(msg)
-            except:
-                raise
-        # Store a list of the unique atom indices for each group
-        self.iunique = np.asarray([np.unique(np.hstack(lst)) for lst in ilist])
-        # Check that the groups do not overlap
-        counts = np.unique(self.iunique, return_counts=True)[1]
-        if np.any(counts != 1):
-            raise ValueError(
-"GroupedConstraints given overlapping groups of atoms.")
+        # Collate the list of all constraint indices.
         self.mk_idmaps()
-        if targetvals is None:
-            self.targetvals = None
-        else:
-            try:
-                self.targetvals = np.reshape(
-                        np.asarray(targetvals, dtype=float).flatten(),
-                        (self.ngp, self.ncons), order="C")
-            except:
-                raise ValueError(
-"Non-conforming list of target values given to GroupedConstraints.")
-        self._fetch_cart = np.any(fxn.domain=="cartesian" for fxn in self.clist)
-        if qnmprev is None:
-            self.qnmprev = None
-        else:
-            dd(self).qnmprev = depend_array(
-                name="qnmprev", value=np.asarray(qnmprev).copy())
+        self.qnmprev = qnmprev
             
-
-    def bind(self, nm):
+    def bind(self, beads, nm):
+        self.beads = beads
         self.nm = nm
+        for c in self.clist:
+            c.bind(beads, nm)
         dself = dd(self)
         arr_shape = (self.nm.nbeads, self.ngp, self.n3unique)
         dself.dynm3 = depend_array(
-                name="dynm3", value=np.zeros((self.ngp, self.n3unique, self.nm.nbeads)),
+                name="dynm3", 
+                value=np.zeros((self.ngp, self.n3unique, self.nm.nbeads)),
                 func=(lambda: np.transpose(np.reshape(
                         dstrip(self.nm.dynm3)[:,self.i3unique.flatten()],
                         arr_shape), [1,2,0])),
@@ -369,70 +414,117 @@ class GroupedConstraints(dobject):
                         dstrip(self.nm.pnm)[:,self.i3unique.flatten()],
                         arr_shape), [1,2,0])),
                 dependencies = [dd(self.nm).pnm])
-        # Holds the configuration obtained at the end of the previous converged
-        # constrained propagation step
         if self.qnmprev is None:
             dself.qnmprev = depend_array(
                     name="qnmprev", value=dstrip(self.qnm).copy())
         else:
-            if (self.qnmprev.shape != 
-                    (self.ngp, self.n3unique, self.nbeads)):
+            try:
+                dself.qnmprev = depend_array(
+                    name="qnmprev", 
+                    value=np.reshape(self.qnmprev.copy(), (self.ngp, self.n3unique, self.nbeads)))
+            except:
                 raise ValueError(
 "Shape of previous converged configuration supplied at initialisation\n"+
 "is inconsistent with the bound system: {:s} \= {:s}.".format(
-    self.qnmprev.shape.__repr__(),
-    self.qnm.shape.__repr__()))
-
+                self.qnmprev.shape.__repr__(),
+                self.qnm.shape.__repr__()))
+        # TODO: in future check for open paths
+        self.nmtrans = nm_fft(self.qnm.shape[2], np.prod(self.qnm.shape[:2])//3)
+        dself.q = depend_array(
+                name="q",
+                value = np.zeros((self.ngp, self.n3unique, self.nm.nbeads)), 
+                func = (lambda: np.transpose(np.reshape(
+                        dstrip(self.beads.q)[:,self.i3unique.flatten()],
+                        arr_shape), [1,2,0])),
+                dependencies = [dd(self.beads).q])
+        dself.qprev = depend_array(
+                name="qprev", value=np.zeros_like(dstrip(self.qnmprev)),
+                func=(lambda: self._to_beads(dstrip(self.qnmprev))), 
+                dependencies=[dself.qnmprev])
+        dself.qc = depend_array(
+                name="qc", 
+                value=np.transpose(np.reshape(
+                    dstrip(self.beads.qc)[self.i3unique.flatten()], 
+                    (1,)+arr_shape[1:]), [1,2,0]))
+        dself.qcprev = depend_array(
+                name="qcprev", value=np.zeros_like(dstrip(self.qc)),
+                func=(lambda: np.expand_dims(
+                        dstrip(self.qnmprev)[...,0] /
+                        np.sqrt(1.0*self.beads.nbeads), axis=-1)), 
+                dependencies=[dself.qnmprev])
+        def make_arrgetter(k, arr):
+            return lambda: dstrip(arr)[:,self.i3list[k]]
+        for k,c in enumerate(self.clist):
+            if c.domain == "cartesian":
+                dd(c).q.add_dependency(dself.q)
+                dd(c).q._func = make_arrgetter(k, self.q)
+                dd(c).qprev.add_dependency(dself.qprev)
+                dd(c).qprev._func = make_arrgetter(k, self.qprev)
+            elif c.domain == "normalmode":
+                dd(c).qnm.add_dependency(dself.qnm)
+                dd(c).qnm._func = make_arrgetter(k, self.qnm)
+                dd(c).qnmprev.add_dependency(dself.qnmprev)
+                dd(c).qnmprev._func = make_arrgetter(k, self.qnmprev)
+            else:
+                dd(c).qc.add_dependency(dself.qc)
+                dd(c).qc._func = make_arrgetter(k, self.qc)
+                dd(c).qcprev.add_dependency(dself.qcprev)
+                dd(c).qcprev._func = make_arrgetter(k, self.qcprev)
         # Values of the constraint function
         dself.g = depend_array(
                 name="g", value=np.zeros((self.ngp, self.ncons)),
-                func=self.gfunc, dependencies=[dself.qnm])
+                func=self.gfunc, dependencies=[dd(c).g for c in self.clist])
         # Jacobian of the constraint function
         dself.Dg = depend_array(
                 name="Dg", 
                 value=np.zeros((self.ngp, self.ncons, 
                                 self.n3unique, self.nm.nbeads)), 
-                func=self.Dgfunc, dependencies=[dself.qnmprev])
+                func=self.Dgfunc, dependencies=[dd(c).Dg for c in self.clist])
         # The Cholesky decomposition of the Gramian matrix
         dself.GramChol = depend_array(
                 name="GramChol", 
                 value=np.zeros((self.ngp, self.ncons, self.ncons)),
                 func=self.GCfunc, dependencies=[dself.Dg])
-        # TODO: in future check for open paths
-        self.nmtrans = nm_fft(self.qnm.shape[2], np.prod(self.qnm.shape[:2])//3)
-        dself.q = depend_array(
-                name="q", value=np.zeros_like(dstrip(self.qnm)),
-                func=(lambda: self._to_beads(dstrip(self.qnm))), 
-                dependencies=[dself.qnm])
-        dself.qprev = depend_array(
-                name="qprev", value=np.zeros_like(dstrip(self.qnmprev)),
-                func=(lambda: self._to_beads(dstrip(self.qnmprev))), 
-                dependencies=[dself.qnmprev])
-        if self.targetvals is None:
-            self.targetvals = self.gfunc()
+        # Target values
+        dself.targetvals = depend_array(
+                name="targetvals", 
+                value=np.column_stack([dstrip(c.targetvals) for c in self.clist])
+                )
+        print self.targetvals.shape
+        def make_targetgetter(k):
+            return lambda: dstrip(self.targetvals[:,k])
+        for k,c in enumerate(self.clist):
+            dd(c).targetvals.add_dependency(dself.targetvals)
+            dd(c).targetvals._func = make_targetgetter(k)
             
     def mk_idmaps(self):
         """Construct lookup dictionary and lists to quickly access the portions
         of arrays that are affected by the constraints
         """
         
+        ilist = []
+        for c in self.clist:
+            ilist.append(dstrip(c.ilist))
+        # Store a list of the unique atom indices for each group
+        iunique = np.unique(np.hstack(ilist), axis=-1)
+        counts = np.unique(iunique, return_counts=True)[1]
+        if np.any(counts != 1):
+            raise ValueError(
+"GroupedConstraints given overlapping groups of atoms.")
         # List of unique indices
-        self.i3unique = np.zeros((self.iunique.shape[0],
-                                  self.iunique.shape[1]*3), dtype=int)
+        self.i3unique = np.zeros((iunique.shape[0],
+                                  iunique.shape[1]*3), dtype=int)
         self.n3unique = self.i3unique.shape[1]
-        for iunique, i3unique in zip(self.iunique, self.i3unique):
-            i3unique[:] = np.asarray(
-                    [ 3*i + j for i in iunique for j in range(3)])
+        for i, i3 in zip(iunique, self.i3unique):
+            i3[:] = np.asarray([ 3*k + j for k in i for j in range(3)])
         # List of constraint-specific indices
         i3list = []
-        for ilist in self.ilist:
-            i3 = (3*np.ones(ilist.shape+(3,),dtype=int) *
-                  ilist[:,:,None]) + np.arange(3)
-            i3.shape = (len(ilist),-1)
+        for lst in ilist:
+            i3 = (3*np.ones(lst.shape+(3,),dtype=int) *
+                  lst[:,:,None]) + np.arange(3)
+            i3.shape = (len(lst),-1)
             i3list.append(i3)
         self.i3list = []
-        # Construct the mapping between the array of all DoFs affected by the
-        # set of constraints and the argument of each individual constraint 
         for k in range(self.ncons):
             inv_idx_lst = []
             for ref,lst in zip(self.i3unique, i3list[k]):
@@ -472,39 +564,25 @@ class GroupedConstraints(dobject):
 
     def gfunc(self):
         """Return the value of each of the constraints for each of the
-        atoms groups. The result has shape (ngp,k)
+        atoms groups. The result has shape (ngp,ncons)
         """
         
-        ans = np.zeros((self.ncons, self.ngp))
-        qnm = dstrip(self.qnm)
-        if self._fetch_cart:
-            q = dstrip(self.q) 
-        for fxn, i3, arr in zip(self.clist, self.i3list, ans):
-            if fxn.domain=="normalmode":
-                arr[:] = fxn.gfunc(qnm[:,i3])
-            elif fxn.domain=="centroid":
-                arr[:] = fxn.gfunc(qnm[:,i3,:1])
-            else:
-                arr[:] = fxn.gfunc(q[:,i3])
-        return ans.T
+        return np.column_stack((dstrip(c.g) for c in self.clist))
 
     def Dgfunc(self):
         """Return the Jacobian of each of the constraints for each of the
         atoms groups. The result has shape (ngp,ncons,ndim*natoms,nbeads)
         """
 
-        qnmprev = dstrip(self.qnmprev)
-        ans = np.zeros((self.ncons,)+qnmprev.shape)
-        if self._fetch_cart:
-            qprev = dstrip(self.qprev) 
-        for fxn, i3, arr in zip(self.clist, self.i3list, ans):
-            if fxn.domain=="normalmode":
-                arr[:,i3] = fxn.Dgfunc(qnmprev[:,i3])
-            elif fxn.domain=="centroid":
-                arr[:,i3,:1] = fxn.Dgfunc(qnmprev[:,i3,:1])
-            else:
-                arr[:,i3] = fxn.Dgfunc(qprev[:,i3])
+        ans = np.zeros((self.ncons,)+self.qnmprev.shape)
+        for arr,c,i3 in zip(ans,self.clist,self.i3list):
+            if c.domain == "centroid":
+                arr[:,i3,:1] = dstrip(c.Dg)*np.sqrt(1.0*self.beads.nbeads)
+            elif c.domain == "cartesian":
+                arr[:,i3] = dstrip(c.Dg)
                 arr[:] = self._to_nm(arr)
+            else:
+                arr[:,i3] = dstrip(c.Dg)
         return np.transpose(ans, axes=[1,0,2,3]) 
 
     def GCfunc(self):
@@ -531,8 +609,9 @@ class GroupedConstraints(dobject):
 
 class ConstraintSolverBase(dobject):
 
-    def __init__(self, constraint_groups):
+    def __init__(self, constraint_groups, dt=1.0):
         self.constraint_groups = constraint_groups
+        dd(self).dt = depend_value(name="dt", value=dt)
 
     def proj_cotangent(self):
         raise NotImplementedError()
@@ -542,12 +621,11 @@ class ConstraintSolverBase(dobject):
         
 class ConstraintSolver(ConstraintSolverBase):
 
-    def __init__(self, constraint_groups):
-        super(ConstraintSolver,self).__init__(constraint_groups)
+    def __init__(self, constraint_groups, dt=1.0):
+        super(ConstraintSolver,self).__init__(constraint_groups, dt)
         
     def bind(self, nm, dt=1.0):
         self.nm = nm
-        dd(self).dt = depend_value(name="dt", value=dt)
 
     def proj_cotangent(self):
         """Projects onto the cotangent space of the constraint manifold.
@@ -653,7 +731,7 @@ class NVEConstrainedIntegrator(NVEIntegrator):
         """
 
         self.csolver.proj_cotangent()
-        super(NVEConstrainedIntegrator).pconstraints()
+        super(NVEConstrainedIntegrator, self).pconstraints()
 
     def bind(self, motion):
         """ Reference all the variables for simpler access."""
@@ -663,7 +741,6 @@ class NVEConstrainedIntegrator(NVEIntegrator):
         dself.nsteps_geo = dmotion.nsteps_geo
         
         super(NVEConstrainedIntegrator,self).bind(motion)
-        self.constraint_list = motion.constraint_list
         self.csolver = motion.csolver
         dself.gdt = depend_value(name="gdt", func=self.get_gdt,
                                  dependencies=[dself.dt, dself.nmts])
