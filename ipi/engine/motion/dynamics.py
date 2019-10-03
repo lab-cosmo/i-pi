@@ -347,8 +347,9 @@ class NVEIntegrator(DummyIntegrator):
             na3 = self.beads.natoms * 3
             nb = self.beads.nbeads
             p = dstrip(self.beads.p)
-            m = dstrip(self.beads.m3)[:, 0:na3:3]
-            M = self.beads[0].M
+            # TODO: take care of open paths
+            m = dstrip(self.beads.m3)[:, 0:na3:3]*self.nm.nm_factor[0]
+            M = self.beads[0].M*self.nm.nm_factor[0]
             Mnb = M*nb
 
             dens = 0

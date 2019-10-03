@@ -3,9 +3,9 @@
         <!--properties stride='1' filename='pot'>  [ pot_component_raw(0), pot_component_raw(1) ] </properties-->
         <properties stride='10' filename='out'>  [ step, time{picosecond}, conserved, temperature{kelvin}, kinetic_cv, potential, pressure_cv{megapascal} ] </properties>
         <trajectory stride='10' filename='pos'>  positions{angstrom} </trajectory>
-        <checkpoint stride='100'/>
+        <checkpoint stride='500'/>
     </output>
-    <total_steps> 1000 </total_steps>
+    <total_steps> 2500 </total_steps>
     <prng>
         <seed>31415</seed>
     </prng>
@@ -34,12 +34,13 @@
             </force>
         </forces>
         <motion mode='constrained_dynamics'>
-            <constrained_dynamics mode='nve' splitting='baoab'>
-                <nsteps_geo> 3 </nsteps_geo>
+            <constrained_dynamics mode='nvt' splitting='baoab'>
+                <nsteps_geo> 1 </nsteps_geo>
                 <nmts> [1,4] </nmts>
-                <timestep units='femtosecond'> 0.125 </timestep>
-                <thermostat mode='langevin'>
+                <timestep units='femtosecond'> 0.5 </timestep>
+                <thermostat mode='pile_l'>
                     <tau units='femtosecond'> 25.0 </tau>
+                    <pile_lambda> 0.5 </pile_lambda>
                 </thermostat>
                 <constraint_group>
                         <maxit> 100 </maxit>
@@ -76,11 +77,27 @@
                                     90, 91, 92, 93, 94, 95]
                                 </atoms>
                         </constraint>
+                        <constraint name='eckart' tolerance='1.0e-06' ngroups='32' domain='centroid'>
+                                <atoms>
+                                    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                                    13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                                    24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                                    35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+                                    46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56,
+                                    57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+                                    68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78,
+                                    79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+                                    90, 91, 92, 93, 94, 95]
+                                </atoms>
+                        </constraint>
                 </constraint_group>
             </constrained_dynamics>
         </motion>
         <ensemble>
             <temperature units='kelvin'> 300 </temperature>
         </ensemble>
+        <normal_modes>
+           <frequencies style="pa-qcmd" units="inversecm">[2500]</frequencies>
+        </normal_modes>
     </system>
 </simulation>

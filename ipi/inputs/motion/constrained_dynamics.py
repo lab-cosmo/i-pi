@@ -9,7 +9,8 @@ import numpy as np
 import ipi.engine.thermostats
 import ipi.engine.barostats
 from ipi.engine.motion.constrained_dynamics import \
-        BondLengthConstraint, BondAngleConstraint, GroupedConstraints
+        BondLengthConstraint, BondAngleConstraint, EckartConstraint, \
+        GroupedConstraints
 from ipi.utils.inputvalue import InputDictionary, InputAttribute, InputValue, \
         InputArray, Input, input_default
 from ipi.inputs.barostats import InputBaro
@@ -26,12 +27,17 @@ class InputConstraintBase(Input):
         "name": (InputAttribute, {
             "dtype": str,
             "help": "Type of constraint. ",
-            "options": ["bondlength", "bondangle"]
+            "options": ["bondlength", "bondangle", "eckart"]
             }),
         "tolerance": (InputAttribute, {
             "dtype": float,
             "default": 1.0e-04,
             "help": "The tolerance to which the constraint is converged. "
+            }),
+        "ngroups": (InputAttribute, {
+            "dtype": int,
+            "default": 0,
+            "help": "Number of groups of atoms subject to constraint. "
             }),
         "domain": (InputAttribute, {
             "dtype": str,
@@ -51,16 +57,22 @@ class InputConstraintBase(Input):
                 "dimension": "length",
                 "help": "List of constraint lengths."})
               }
-
+    
     def store(self, cnstr):
         if type(cnstr) is BondLengthConstraint:
             self.name.store("bondlength")
         elif type(cnstr) is BondAngleConstraint:
             self.name.store("bondangle")
+        elif type(cnstr) is EckartConstraint:
+            self.name.store("eckart")
         self.atoms.store(dstrip(cnstr.ilist).flatten())
-        self.values.store(dstrip(cnstr.targetvals))
+        self.ngroups.store(cnstr.ngp)
         self.tolerance.store(cnstr.tol)
         self.domain.store(cnstr.domain)
+        if type(cnstr) is EckartConstraint:
+            self.values.store(dstrip(cnstr.qref).flatten())
+        else:
+            self.values.store(dstrip(cnstr.targetvals))
 
     def fetch(self):
         name = self.name.fetch()
@@ -68,21 +80,24 @@ class InputConstraintBase(Input):
         domain = self.domain.fetch()
         alist = self.atoms.fetch()
         vlist = self.values.fetch()
+        ngp = self.ngroups.fetch()
         if name == "bondlength":
             if len(alist.shape) == 1:
                 alist.shape = (alist.shape[0]//2, 2)
-                cls = BondLengthConstraint
+            cls = BondLengthConstraint
         elif name == "bondangle":
             if len(alist.shape) == 1:
                 alist.shape = (alist.shape[0]//3, 3)
-                cls = BondAngleConstraint
-        ngp = len(vlist)
-        if ngp == 0:
+            cls = BondAngleConstraint
+        elif name == "eckart":
+            if (ngp == 0):
+                raise ValueError(
+    "Number of atoms groups must be specified for the Eckart constraint.")
+            alist.shape = (ngp, -1)
+            cls = EckartConstraint
+        if len(vlist) == 0:
             vlist = None
-        elif ngp != len(alist):
-            raise ValueError(
-    "Number of constrain values does not match number of constrained groups.")
-        return cls(alist, vlist, tol, domain)
+        return cls(alist, vlist, tol, domain, ngp)
 
 
 class InputConstraintGroup(Input):
