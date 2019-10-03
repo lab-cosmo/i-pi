@@ -137,12 +137,17 @@ class ConstraintBase(dobject):
     """
     
     # Add constrained indices and values
-    def __init__(self, index_list, targetvals=None,
+    def __init__(self, indices, targetvals=None,
                  tolerance=1.0e-4, domain="cartesian", ngp=0):
-        """Initialise the constraint.
+        """Initialise the constraint. NOTE: during propagation, constraints
+        of the same kind applied to independent groups of atoms are vectorised,
+        so that the coordinates are taken from a 3d array of shape 
+        (ngroups, 3*natoms, nbeads), where natoms is the total number of 
+        atoms in a set. The list 'indices' determines which atoms of that set
+        are subject to this particular constraint.
 
         Args:
-            index_list: 1-d list of indices of the affected atoms
+            indices: 1-d list of indices of the affected atoms 
             targetvals: target values of the constraint function
             tolerance: the desired tolerance to which to converge the
             constraint
@@ -153,25 +158,14 @@ class ConstraintBase(dobject):
         """
         
         self.tol = tolerance
-        dself = dd(self)
-        dself.natoms = depend_value(name="natoms", func=self.get_natoms)
-        if targetvals is None:
-            dself.targetvals = None
-        else:
-            dself.targetvals = depend_array(
-                    name="targetvals",
-                    value=np.asarray(targetvals).flatten())
-        dself.ilist = depend_array(
-                name="ilist", 
-                value=np.reshape(np.asarray(index_list), (-1, self.natoms)))
-        counts = np.unique(dstrip(self.ilist), return_counts=True)[1]
-        if np.any(counts != 1):
-            raise ValueError(
-"Constraint given overlapping groups of atoms.")
-        dself.ngp = depend_value(name="ngp", value=len(self.ilist))
-        dself.domain = domain.lower()
+        self.domain = domain.lower()
+        self.ilist = np.asarray(indices).flatten()
+        self.natoms = depend_value(name="natoms", value=len(self.ilist))
         if self.domain not in ["cartesian", "normalmode", "centroid"]:
             raise ValueError("Unknown constraint domain '{:s}'.".format(domain))
+        dself = dd(self)
+        dself.ngp = depend_value(name="ngp", value=ngp)
+        self.targetvals = targetvals
             
     def bind(self, beads, nm):
         """Bind the beads and the normal modes to the constraint.
@@ -179,66 +173,38 @@ class ConstraintBase(dobject):
         
         self.beads = beads
         self.nm = nm
+        self.nbeads = self.beads.nbeads
+        # Check that the number of groups has been set
+        if self.ngp == 0:
+            raise ValueError("The number of atom groups must be specified!")
         dself = dd(self)
-        arr_shape = (self.nm.nbeads, self.ngp, 3*self.natoms)
-        i3list = np.asarray([i for j in dstrip(self.ilist).flatten()
-                               for i in range(3*j, 3*j+3)])
+        dself.targetvals = depend_array(name="targetvals",
+                                        value=np.nan*np.ones(self.ngp))
+        if self.targetvals is not None:
+            self.targetvals = np.asarray(self.targetvals)
+        if self.domain == "centroid":
+            arr_shape = (self.ngp, 3*self.natoms, 1)
+        else:
+            arr_shape = (self.ngp, 3*self.natoms, self.nbeads)
         # Configurations of the affected beads (later to be made dependent
         # on sections of arrays in grouped constraints)
-        
-        dself.qnm = depend_array(name="qnm", value = 
-                np.transpose(np.reshape(
-                dstrip(self.nm.qnm)[:,i3list], 
-                arr_shape), [1,2,0]))
-        dself.q = depend_array(name="q", value = 
-                np.transpose(np.reshape(
-                dstrip(self.beads.q)[:,i3list], 
-                arr_shape), [1,2,0]))
-        dself.qc = depend_array(name="qc", value = 
-                np.transpose(np.reshape(
-                dstrip(self.beads.qc)[i3list], 
-                (1,)+arr_shape[1:]), [1,2,0]))
-        dself.qnmprev = depend_array(
-                    name="qnmprev", value=dstrip(self.qnm).copy())
-        dself.qprev = depend_array(
-                    name="qprev", value=dstrip(self.q).copy())
-        dself.qcprev = depend_array(
-                    name="qcprev", value=dstrip(self.qc).copy())
-        # Constraint functions and their derivatives
-        if self.domain == "cartesian":
-            deps = [dself.q, dself.qprev]
-            fxns = [lambda: self.gfunc(dstrip(self.q)),
-                    lambda: self.Dgfunc(dstrip(self.qprev))]
-        elif self.domain == "normalmode":
-            deps = [dself.qnm, dself.qnmprev]
-            fxns = [lambda: self.gfunc(dstrip(self.qnm)),
-                    lambda: self.Dgfunc(dstrip(self.qnmprev))]
-        elif self.domain == "centroid":
-            deps = [dself.qc, dself.qcprev]
-            fxns = [lambda: self.gfunc(dstrip(self.qc)),
-                    lambda: self.Dgfunc(dstrip(self.qcprev))]
+        dself.q = depend_array(name="q", value=np.zeros(arr_shape))
+        dself.qprev = depend_array(name="qprev", value=dstrip(self.q).copy())
         dself.g = depend_array(
                 name="g", value=np.zeros(self.ngp),
-                func=fxns[0], dependencies=[deps[0]])
+                func=(lambda: self.gfunc(dstrip(self.q))),
+                dependencies=[dself.q])
         dself.Dg = depend_array(
-                name="Dg", 
-                value=np.zeros((self.ngp, 3*self.natoms, self.nm.nbeads)), 
-                func=fxns[1], dependencies=[deps[1]])
-        if self.targetvals is None:
-            dself.targetvals = depend_array(name="targetvals",
-                                            value=dstrip(self.g).copy())
-            
-    def get_natoms(self):
-        """Return the number of atoms involved in the constraint
-        """
-        return -1
-
+                name="Dg", value=np.zeros(arr_shape), 
+                func=(lambda: self.Dgfunc(dstrip(self.qprev))), 
+                dependencies=[dself.qprev])
+        
     def norm(self, x):
         """Defines the norm of the constraint function; typically just
         the absolute value.
         """
         return np.abs(x)
-
+    
     def gfunc(self, q):
         if q.ndim != 3:
             raise ValueError(
@@ -248,7 +214,6 @@ class ConstraintBase(dobject):
                 "Constraint.gfunc given input with shape[-1] != 1 when "+
                 "centroid domain was specified."
                 )
-
     def Dgfunc(self, q):
         if q.ndim != 3:
             raise ValueError(
@@ -266,20 +231,18 @@ class BondLengthConstraint(ConstraintBase):
                  tolerance=1.0e-4, domain="cartesian", ngp=0):
         super(BondLengthConstraint, self).__init__(index_list, targetvals,
                                                    tolerance, domain, ngp)
+        if self.natoms != 2:
+            raise ValueError(
+                    "{:s} expected natoms == 2, got {:s}".format(
+                            self.__class__.__name__, self.natoms))
         if self.domain == "normalmode":
             warnings.warn(
                 "Using the 'BondLength' constraint in the 'normalmode' domain "+
                 "may have unpredictable effects.")
-            
-    def get_natoms(self):
-        """Return the number of atoms involved in the constraint
-        """
-        return 2
 
     def gfunc(self, q):
         """Calculate the bond-length, averaged over the beads. 
         """
-
         super(BondLengthConstraint, self).gfunc(q)
         ngp, ncart, nbeads = q.shape
         x = np.reshape(q, (ngp, 2, 3, nbeads))
@@ -292,7 +255,6 @@ class BondLengthConstraint(ConstraintBase):
 
         super(BondLengthConstraint, self).Dgfunc(q)
         ngp, ncart, nbeads = q.shape
-        
         x = np.reshape(q, (ngp, 2, 3, nbeads))
         xij = x[:,1]-x[:,0] # (ngp, 3, nbeads)
         r = np.sqrt(np.sum(xij**2, axis=1)) # (ngp, nbeads)
@@ -307,15 +269,14 @@ class BondAngleConstraint(ConstraintBase):
                  tolerance=1.0e-4, domain="cartesian", ngp=0):
         super(BondAngleConstraint, self).__init__(index_list, targetvals,
                                                   tolerance, domain, ngp)
+        if self.natoms != 3:
+            raise ValueError(
+                    "{:s} expected natoms == 3, got {:s}".format(
+                            self.__class__.__name__, self.natoms))
         if self.domain == "normalmode":
             warnings.warn(
                 "Using the 'BondAngle' constraint in the 'normalmode' domain "+
                 "may have unpredictable effects.")
-            
-    def get_natoms(self):
-        """Return the number of atoms involved in the constraint
-        """
-        return 3
 
     def gfunc(self, q):
         """Calculate the bond-angle, averaged over the beads. 
@@ -351,221 +312,55 @@ class BondAngleConstraint(ConstraintBase):
         x[:,2] = (ct*x02-x01)/(r2*st)
         x[:,0] = -(x[:,1]+x[:,2])
         return np.reshape(x, (ngp, ncart, nbeads))/nbeads
-    
-class EckartConstraint(ConstraintBase):
-    """ Constraint class for MD specialized for enforcing the Eckart conditions
-        (see E. Bright Wilson et al. 'Molecular Vibrations') 
-        This is special, and is implemented and read differently 
-        to the other constraints
-    """
-
-    def __init__(self, index_list, targetvals=None,
-                 tolerance=1.0e-4, domain="cartesian", ngp=0):
-        """In this case, 'targetvals' are the reference geometries.
-        Actual target values for the Eckart conditions are zero.
-        """
-        
-        self.tol = tolerance
-        if (ngp == 0):
-            raise ValueError(
-    "The number of constrained groups must be specified for " +
-    EckartConstraint.__class__.__name__)
-        dself = dd(self)
-        dself.ngp = depend_value(name="ngp", value=ngp)
-        if targetvals is None:
-            dself.qref = None
-        else:
-            dself.qref = depend_array(
-                    name="qref",
-                    value=np.asarray(targetvals).reshape((self.ngp,-1,3)))
-        dself.targetvals = depend_array(
-                name="targetvals",
-                value=np.zeros((6,self.ngp)))
-        dself.ilist = depend_array(
-                name="ilist", 
-                value=np.reshape(np.asarray(index_list), (self.ngp,-1)))
-        dself.natoms = depend_value(name="natoms", value=self.ilist.shape[-1])
-        counts = np.unique(dstrip(self.ilist), return_counts=True)[1]
-        if np.any(counts != 1):
-            raise ValueError(
-"Constraint given overlapping groups of atoms.")
-        dself.domain = domain.lower()
-        if self.domain != "centroid":
-            raise ValueError(
-                "Using the 'EckartConstraint' not in the 'centroid' domain "+
-                "may have unpredictable effects.")
-        
-    def bind(self, beads, nm):
-        self.beads = beads
-        self.nm = nm
-        dself = dd(self)
-        arr_shape = (self.nm.nbeads, self.ngp, 3*self.natoms)
-        i3list = np.asarray([i for j in dstrip(self.ilist).flatten()
-                               for i in range(3*j, 3*j+3)])
-        # Configurations of the affected beads (later to be made dependent
-        # on sections of arrays in grouped constraints)
-        dself.qnm = depend_array(name="qnm", value = 
-                np.transpose(np.reshape(
-                dstrip(self.nm.qnm)[:,i3list], 
-                arr_shape), [1,2,0]))
-        dself.qc = depend_array(name="qc", value = 
-                np.transpose(np.reshape(
-                dstrip(self.beads.qc)[i3list], 
-                (1,)+arr_shape[1:]), [1,2,0]))
-        dself.qnmprev = depend_array(
-                    name="qnmprev", value=dstrip(self.qnm).copy())
-        dself.qcprev = depend_array(
-                    name="qcprev", value=dstrip(self.qc).copy())
-        if self.qref is None:
-            # Use qcprev
-            dd(self).qref = depend_array(
-                    name="qref",
-                    value=dstrip(self.qcprev).copy().reshape((self.ngp,-1,3)))
-        dself.m3 = depend_array(
-                    name="m3",
-                    value=np.zeros_like(dstrip(self.qref)),
-                    func=(lambda: np.reshape(
-                          self.nm.dynm3[0, i3list], (self.ngp,-1,3))))
-        # Total mass of the group of atoms
-        dself.mtot = depend_array(name="mtot", value=np.zeros(self.ngp),
-            func=(lambda: dstrip(self.m3)[:,:,0].sum(axis=-1)),
-            dependencies=[dself.m3]
-            )
-        # Coords of reference centre of mass
-        dself.qref_com = depend_array(
-                name="qref_com", value=np.zeros((self.ngp,3)),
-                func=(lambda: np.sum(
-                      dstrip(self.qref)*dstrip(self.m3),
-                      axis=1)/dstrip(self.mtot)[:,None]),
-                dependencies=[dself.m3, dself.qref]
-                )
-        # qref in its centre of mass frame
-        dself.qref_rel = depend_array(
-                name="qref_rel", value=np.zeros_like(dstrip(self.qref)),
-                func=(lambda: dstrip(self.qref)-dstrip(self.qref_com)[:,None,:]),
-                dependencies=[dself.qref_com]
-                )
-        # qref in the CoM frame, mass-weighted
-        dself.mqref_rel = depend_array(
-                name="mqref_rel", value=np.zeros_like(dstrip(self.qref)),
-                func=(lambda: 
-                    dstrip(self.qref_rel)*dstrip(self.m3)),
-                dependencies=[dself.qref_rel]
-                )
-        # Set up the constraint functions and its derivatives;
-        # NOTE that there are *six* Eckart conditions
-        dself.g = depend_array(
-                name="g", value=np.zeros((6,self.ngp)),
-                func=(lambda: self.gfunc(dstrip(self.qc))), 
-                dependencies=[dself.qc, dself.qref, dself.m3])
-        dself.Dg = depend_array(
-                name="Dg", 
-                value=np.zeros((6, self.ngp, 3*self.natoms, self.nm.nbeads)), 
-                func=(lambda: self.Dgfunc(dstrip(self.qcprev))),
-                dependencies=[dself.qcprev, dself.qref, dself.m3])
-        
-    def gfunc(self, q):
-        """
-        Calculates the constraint.
-        """
-
-        q = np.reshape(q, (self.ngp,-1,3))
-        qref = dstrip(self.qref)
-        mqref_rel = dstrip(self.mqref_rel)
-        m = dstrip(self.m3)
-        M = dstrip(self.mtot).reshape((self.ngp,1))
-        g = np.zeros((6, self.ngp))
-        Delta = q-qref
-        g[:3] = np.transpose(np.sum(m*Delta, axis=1)/M)
-        g[3:] = np.transpose( np.sum ( np.cross(
-                mqref_rel, Delta, axis=-1), axis=1)/M)
-        return g
-
-    def Dgfunc(self, q):
-        """
-        Calculates the Jacobian of the constraint.
-        """
-        
-        q = np.reshape(q, (self.ngp,-1,3))
-        Dg = np.zeros((6,)+q.shape) # Gradient w.r.t qc
-        m = dstrip(self.m3)
-        M = dstrip(self.mtot).reshape((self.ngp,1,1))
-        mqref_rel = dstrip(self.mqref_rel)
-        for i in range(3):
-            Dg[i,:,:,i] = m[:,:,i]
-        # Eckart rotation, x-component
-        Dg[3,:,:,1] =-mqref_rel[:,:,2]
-        Dg[3,:,:,2] = mqref_rel[:,:,1]
-        # Eckart rotation, y-component
-        Dg[4,:,:,0] = mqref_rel[:,:,2]
-        Dg[4,:,:,2] =-mqref_rel[:,:,0]
-        # Eckart rotation, z-component
-        Dg[5,:,:,0] =-mqref_rel[:,:,1]
-        Dg[5,:,:,1] = mqref_rel[:,:,0]
-        Dg /= M
-        ans = np.zeros((6, self.ngp, 3*self.natoms, self.nm.nbeads))
-        Dg.shape = (6, self.ngp, 3*self.natoms)
-        ans[...,0] = np.sqrt(1.0*self.nm.nbeads)*Dg
-        return ans
 
 class GroupedConstraints(dobject):
     """Describes a set of k constraint functions that are applied to 
     ngp non-overlapping groups of atoms.
     """
     
-    def __init__(self, constraint_list, maxit=100, qnmprev=None,
-                 eckart=False, tolerance=1.0e-6, qref=None):
+    def __init__(self, constraint_list, constrained_atoms, ngroups,
+                 maxit=100, qnmprev=None):
         """Initialise the set of grouped constraints
         
         Args:
-            constraint_list: list of objects derived from ConstraintBase
+            constraint_list: list of constraint functions
+            constrained_atoms: list of atomic indices subject to the constraint
+            ngroups: number of groups of constrained atoms
             maxit: maximum numbed of iterations to converge a single step
             qnmprev: normal-mode configuration at the end of the previous
                 converged constrained propagation step, flattened from
                 shape=(ngp, n3unique, nbeads)
-            eckart: indicate whether the Eckart constraint is to be imposed
-                   onto the individual groups
-            tolerance: convergence criterion for Eckart conditions
-            qref: "reference" configuration for Eckart conditions
         """
 
         self.clist = constraint_list
-        self.ncons = len(self.clist)
         self.maxit = maxit
         self.tol = np.asarray([c.tol for c in self.clist])
-        self.eckart = eckart
-        self.ecktol = tolerance
         dself = dd(self)
-        msg = "Non-conforming list of constraints given to GroupedConstraints."
-        # Check that the number of atom groups agrees in each constraint
-        ngps = []
+        dself.ngp = depend_value(name="ngp", value=ngroups)
+        dself.ncons = depend_value(name="ncons", func=self.get_ncons)
         for c in self.clist:
-            ngps.append(c.ngp)
-        ngps = np.asarray(ngps)
-        if np.all(ngps == ngps[0]):
-            dself.ngp = depend_value(name="ngp", value=ngps[0])
-            for c in self.clist:
-                dpipe(dself.ngp, dd(c).ngp)
-        else:
-            raise ValueError(msg)
+            dpipe(dself.ngp, dd(c).ngp)
         # Collate the list of all constraint indices.
+        self.iunique = np.reshape(np.asarray(constrained_atoms), (self.ngp,-1))
         self.mk_idmaps()
         self.qnmprev = qnmprev
-        self.qref = qref
+        
+    def get_ncons(self):
+        return len(self.clist)
             
     def bind(self, beads, nm):
         self.beads = beads
         self.nm = nm
+        self.nbeads = self.beads.nbeads
         for c in self.clist:
             c.bind(beads, nm)
         dself = dd(self)
-        arr_shape = (self.nm.nbeads, self.ngp, self.n3unique)
+        arr_shape = (self.nbeads, self.ngp, self.n3unique)
         #-------- Set up copies of the affected phase-space -----------#
         #------------- coordinates and relevant masses ----------------#
-        
         dself.dynm3 = depend_array(
                 name="dynm3", 
-                value=np.zeros((self.ngp, self.n3unique, self.nm.nbeads)),
+                value=np.zeros((self.ngp, self.n3unique, self.nbeads)),
                 func=(lambda: np.transpose(np.reshape(
                         dstrip(self.nm.dynm3)[:,self.i3unique.flatten()],
                         arr_shape), [1,2,0])),
@@ -573,14 +368,14 @@ class GroupedConstraints(dobject):
         # Holds all of the atoms affected by this list of constraints
         dself.qnm = depend_array(
                 name="qnm", 
-                value = np.zeros((self.ngp, self.n3unique, self.nm.nbeads)), 
+                value = np.zeros((self.ngp, self.n3unique, self.nbeads)), 
                 func = (lambda: np.transpose(np.reshape(
                         dstrip(self.nm.qnm)[:,self.i3unique.flatten()],
                         arr_shape), [1,2,0])),
                 dependencies = [dd(self.nm).qnm])
         dself.pnm = depend_array(
                 name="pnm", 
-                value = np.zeros((self.ngp, self.n3unique, self.nm.nbeads)), 
+                value = np.zeros((self.ngp, self.n3unique, self.nbeads)), 
                 func = (lambda: np.transpose(np.reshape(
                         dstrip(self.nm.pnm)[:,self.i3unique.flatten()],
                         arr_shape), [1,2,0])),
@@ -592,7 +387,8 @@ class GroupedConstraints(dobject):
             try:
                 dself.qnmprev = depend_array(
                     name="qnmprev", 
-                    value=np.reshape(self.qnmprev.copy(), (self.ngp, self.n3unique, self.nbeads)))
+                    value=np.reshape(self.qnmprev.copy(), 
+                                     (self.ngp, self.n3unique, self.nbeads)))
             except:
                 raise ValueError(
 "Shape of previous converged configuration supplied at initialisation\n"+
@@ -604,7 +400,7 @@ class GroupedConstraints(dobject):
         self.nmtrans = nm_fft(self.qnm.shape[2], np.prod(self.qnm.shape[:2])//3)
         dself.q = depend_array(
                 name="q",
-                value = np.zeros((self.ngp, self.n3unique, self.nm.nbeads)), 
+                value = np.zeros((self.ngp, self.n3unique, self.nbeads)), 
                 func = (lambda: np.transpose(np.reshape(
                         dstrip(self.beads.q)[:,self.i3unique.flatten()],
                         arr_shape), [1,2,0])),
@@ -622,7 +418,7 @@ class GroupedConstraints(dobject):
                 name="qcprev", value=np.zeros_like(dstrip(self.qc)),
                 func=(lambda: np.expand_dims(
                         dstrip(self.qnmprev)[...,0] /
-                        np.sqrt(1.0*self.beads.nbeads), axis=-1)), 
+                        np.sqrt(1.0*self.nbeads), axis=-1)), 
                 dependencies=[dself.qnmprev])
         #------- Make the coordinates of the individual constraints ---------#
         #----------- depend on the coordinates in this object ---------------#
@@ -635,84 +431,80 @@ class GroupedConstraints(dobject):
                 dd(c).qprev.add_dependency(dself.qprev)
                 dd(c).qprev._func = make_arrgetter(k, self.qprev)
             elif c.domain == "normalmode":
-                dd(c).qnm.add_dependency(dself.qnm)
-                dd(c).qnm._func = make_arrgetter(k, self.qnm)
-                dd(c).qnmprev.add_dependency(dself.qnmprev)
-                dd(c).qnmprev._func = make_arrgetter(k, self.qnmprev)
+                dd(c).q.add_dependency(dself.qnm)
+                dd(c).q._func = make_arrgetter(k, self.qnm)
+                dd(c).qprev.add_dependency(dself.qnmprev)
+                dd(c).qprev._func = make_arrgetter(k, self.qnmprev)
             else:
-                dd(c).qc.add_dependency(dself.qc)
-                dd(c).qc._func = make_arrgetter(k, self.qc)
-                dd(c).qcprev.add_dependency(dself.qcprev)
-                dd(c).qcprev._func = make_arrgetter(k, self.qcprev)
+                dd(c).q.add_dependency(dself.qc)
+                dd(c).q._func = make_arrgetter(k, self.qc)
+                dd(c).qprev.add_dependency(dself.qcprev)
+                dd(c).qprev._func = make_arrgetter(k, self.qcprev)
         # Target values
-        targetvals = []
-        for c in self.clist:
-            targetvals.append(dstrip(c.targetvals).copy())
+        targetvals = np.zeros((self.ngp, self.ncons))
+        for k, c in enumerate(self.clist):
+            if np.any(np.isnan(c.targetvals)):
+                targetvals[:,k] = dstrip(c.g)
+            else:
+                targetvals[:,k] = dstrip(c.targetvals)
         dself.targetvals = depend_array(
                 name="targetvals", 
-                value=np.column_stack(targetvals))
+                value=targetvals)
         def make_targetgetter(k):
             return lambda: dstrip(self.targetvals[:,k])
         for k, c in enumerate(self.clist):
             dd(c).targetvals.add_dependency(dself.targetvals)
             dd(c).targetvals._func = make_targetgetter(k)
-        # Values of the constraint function (no Eckart)
         dself.g = depend_array(
-                name="g", value=np.zeros((self.ngp, self.ncons)),
-                func=self.gfunc, dependencies=[dd(c).g for c in self.clist])
+                name="g", 
+                value=np.zeros((self.ngp, self.ncons)),
+                func=self.gfunc,
+                dependencies=[dd(c).g for c in self.clist])
         # Jacobian of the constraint function (with Eckart)
         dself.Dg = depend_array(
                 name="Dg", 
-                value=np.zeros((self.ngp, self.ncons, 
-                                self.n3unique, self.nm.nbeads)), 
-                func=self.Dgfunc, dependencies=[dd(c).Dg for c in self.clist])
+                value=np.zeros((self.ngp,self.ncons,self.n3unique,self.nbeads)),
+                func=self.Dgfunc, 
+                dependencies=[dd(c).Dg for c in self.clist])
         # The Cholesky decomposition of the Gramian matrix
         dself.GramChol = depend_array(
                 name="GramChol", 
-                value=np.zeros((self.ngp, self.ncons, self.ncons)),
-                func=self.GCfunc, dependencies=[dself.Dg])
-        
+                value=np.zeros((self.ngp,self.ncons,self.ncons)),
+                func=self.GCfunc, 
+                dependencies=[dself.Dg])
             
     def mk_idmaps(self):
         """Construct lookup dictionary and lists to quickly access the portions
         of arrays that are affected by the constraints
         """
         
-        ilist = []
-        for c in self.clist:
-            ilist.append(dstrip(c.ilist))
-        # Store a list of the unique atom indices for each group
-        iunique = np.unique(np.hstack(ilist), axis=-1)
-        counts = np.unique(iunique, return_counts=True)[1]
+        # Check all atomic indices are unique
+        counts = np.unique(self.iunique, return_counts=True)[1]
         if np.any(counts != 1):
             raise ValueError(
 "GroupedConstraints given overlapping groups of atoms.")
         # List of unique indices
-        self.i3unique = np.zeros((iunique.shape[0],
-                                  iunique.shape[1]*3), dtype=int)
+        self.i3unique = np.zeros((self.iunique.shape[0],
+                                  self.iunique.shape[1]*3), dtype=int)
         self.n3unique = self.i3unique.shape[1]
-        for i, i3 in zip(iunique, self.i3unique):
+        for i, i3 in zip(self.iunique, self.i3unique):
             i3[:] = np.asarray([ 3*k + j for k in i for j in range(3)])
         # List of constraint-specific indices
-        i3list = []
-        for lst in ilist:
-            i3 = (3*np.ones(lst.shape+(3,),dtype=int) *
-                  lst[:,:,None]) + np.arange(3)
-            i3.shape = (len(lst),-1)
-            i3list.append(i3)
         self.i3list = []
-        for k in range(len(self.clist)):
-            inv_idx_lst = []
-            for ref,lst in zip(self.i3unique, i3list[k]):
-                inv_idx = []
-                for idx in lst:
-                    inv_idx.append(np.argwhere(ref==idx).item())
-                inv_idx_lst.append(inv_idx)
-            inv_idx_lst = np.asarray(inv_idx_lst, dtype=int)
-            if not np.all(inv_idx_lst == inv_idx_lst[0]):
+        nlist = list(range(self.n3unique//3))
+        for c in self.clist:
+            idx = c.ilist
+            counts = np.unique(idx, return_counts=True)[1]
+            if np.any(counts != 1):
                 raise ValueError(
-"Constrained atoms in GroupedConstraints are misaligned.")
-            self.i3list.append(inv_idx_lst[0].flatten())
+                        "Constraint {:s} given duplicate indices".format(
+                                c.__class__.__name__))
+            for i in idx:
+                if i not in nlist:
+                    raise ValueError(
+                        "Constraint {:s} given out-of-bound indices".format(
+                                c.__class__.__name__))            
+            self.i3list.append(list([3*i+j for i in idx for j in range(3)]))
 
     def _to_beads(self, arr):
         """
@@ -742,34 +534,24 @@ class GroupedConstraints(dobject):
         """Return the value of each of the constraints for each of the
         atoms groups. The result has shape (ngp,ncons)
         """
-        
-        g = []
-        for c in self.clist:
-            if isinstance(c, EckartConstraint):
-                g += list(dstrip(c.g))
-            else:
-                g.append(dstrip(c.g))
-        return np.column_stack(g)
+        return np.column_stack(list(dstrip(c.g) for c in self.clist))
 
     def Dgfunc(self):
         """Return the Jacobian of each of the constraints for each of the
         atoms groups. The result has shape (ngp,ncons,ndim*natoms,nbeads)
         """
 
-        ans = np.zeros((self.ncons,)+self.qnmprev.shape)
+        ans = np.zeros((len(self.clist),)+self.qnmprev.shape)
         arr = np.zeros(self.qnmprev.shape) # wkspace for nm conversion
-        k = 0
-        for c,i3 in zip(self.clist,self.i3list):
+        for k, (c,i3) in enumerate(zip(self.clist,self.i3list)):
             if c.domain == "cartesian":
+                arr[:] = 0.0
                 arr[:,i3] = dstrip(c.Dg)
                 ans[k,:] = self._to_nm(arr)
-                k += 1
-            elif isinstance(c, EckartConstraint):
-                ans[k:k+6,:,i3] = dstrip(c.Dg)
-                k += 6
-            else:
+            elif c.domain == "centroid":
+                ans[k,:,i3,0] = dstrip(c.Dg)*np.sqrt(self.nbeads)
+            elif c.domain == "normalmode":
                 ans[k,:,i3] = dstrip(c.Dg)
-                k += 1
         return np.transpose(ans, axes=[1,0,2,3]) 
 
     def GCfunc(self):
@@ -789,18 +571,142 @@ class GroupedConstraints(dobject):
         """Return the norm of the deviations from the targetvalues
         for an input of shape (ngp, k).
         """
-        ans = np.empty_like(x)
-        k = 0
-        for c in self.clist:
-            if isinstance(c, EckartConstraint):
-                for i in range(6):
-                    ans[:,k] = c.norm(x[:,k])
-                    k += 1
-            else:
-                ans[:,k] = c.norm(x[:,k])
-                k += 1
-                
-        return ans    
+        ans = np.zeros_like(x)
+        for k, c in enumerate(self.clist):
+            ans[:,k] = c.norm(x[:,k])
+        return ans
+    
+class EckartGroupedConstraints(GroupedConstraints):
+    """Describes a set of k constraint functions that are applied to 
+    ngp non-overlapping groups of atoms, where each of the groups of
+    atoms is also subject to the Eckart conditions.
+    """
+    
+    def __init__(self, constraint_list, constrained_atoms, ngroups,
+                 maxit=100, tolerance=1.0e-04, qnmprev=None, qref=None):
+        """Initialise the set of grouped constraints
+        
+        Args:
+            constraint_list: list of constraint functions
+            constrained_atoms: list of atomic indices subject to the constraint
+            ngroups: number of groups of constrained atoms
+            maxit: maximum numbed of iterations to converge a single step
+            tolerance: convergence criterion for the Eckart constraints
+            qnmprev: normal-mode configuration at the end of the previous
+                converged constrained propagation step, flattened from
+                shape=(ngp, n3unique, nbeads)
+            qref: reference configuration for the Eckart constraints
+        """
+    
+        super(EckartGroupedConstraints, self).__init__(constraint_list,
+             constrained_atoms, ngroups, maxit, qnmprev)
+        self.tol = np.concatenate((self.tol, 6*[tolerance,]))
+        self.qref = qref
+    
+    def get_ncons(self):
+        return len(self.clist)+6
+    
+    def bind(self, beads, nm):
+        super(EckartGroupedConstraints, self).bind(beads, nm)
+        # Eckart variables
+        dself = dd(self)
+        if self.qref is None:
+            # Use qcprev
+            dself.qref = depend_array(
+                    name="qref",
+                    value=dstrip(self.qcprev).copy().reshape((self.ngp,-1,3)))
+        else:
+            dself.qref = depend_array(
+                    name="qref",
+                    value=self.qref.copy().reshape((self.ngp,-1,3)))
+        dself.m3 = depend_array(
+                    name="m3",
+                    value=np.zeros_like(dstrip(self.qref)),
+                    func=(lambda: np.reshape(
+                          dstrip(self.dynm3[...,0]), (self.ngp,-1,3))))
+        # Total mass of the group of atoms
+        dself.mtot = depend_array(name="mtot", value=np.zeros(self.ngp),
+            func=(lambda: dstrip(self.m3)[:,:,0].sum(axis=-1)),
+            dependencies=[dself.m3]
+            )
+        # Coords of reference centre of mass
+        dself.qref_com = depend_array(
+                name="qref_com", value=np.zeros((self.ngp,3)),
+                func=(lambda: np.sum(
+                      dstrip(self.qref)*dstrip(self.m3),
+                      axis=1)/dstrip(self.mtot)[:,None]),
+                dependencies=[dself.m3, dself.qref]
+                )
+        # qref in its centre of mass frame
+        dself.qref_rel = depend_array(
+                name="qref_rel", value=np.zeros_like(dstrip(self.qref)),
+                func=(lambda: dstrip(self.qref)-dstrip(self.qref_com)[:,None,:]),
+                dependencies=[dself.qref_com]
+                )
+        # qref in the CoM frame, mass-weighted
+        dself.mqref_rel = depend_array(
+                name="mqref_rel", value=np.zeros_like(dstrip(self.qref)),
+                func=(lambda: 
+                    dstrip(self.qref_rel)*dstrip(self.m3)),
+                dependencies=[dself.qref_rel]
+                )
+        dself.g_eckart = depend_array(
+                name="g_eckart", value=np.zeros((self.ngp, 6)),
+                func = self.gfunc_eckart,
+                dependencies=[dself.mqref_rel, dself.qc]
+                )
+        dself.Dg_eckart = depend_array(
+                name="Dg_eckart", 
+                value=np.zeros((self.ngp, 6, self.n3unique, self.nbeads)),
+                func = self.Dgfunc_eckart,
+                dependencies=[dself.mqref_rel]
+                )
+        dself.g.add_dependency(dself.g_eckart)
+        dself.Dg.add_dependency(dself.Dg_eckart)
+        
+    def gfunc_eckart(self):
+        g = np.zeros((6, self.ngp))
+        q = np.reshape(dstrip(self.qc), (self.ngp, -1, 3))
+        qref = dstrip(self.qref)
+        mqref_rel = dstrip(self.mqref_rel)
+        m = dstrip(self.m3)
+        M = dstrip(self.mtot).reshape((self.ngp,1))
+        Delta = q-qref
+        g[:3] = np.transpose(np.sum(m*Delta, axis=1)/M)
+        g[3:] = np.transpose( np.sum ( np.cross(
+                mqref_rel, Delta, axis=-1), axis=1)/M)
+        return g.T
+    
+    def Dgfunc_eckart(self):
+        # Eckart constraints
+        Dg = np.zeros((6, self.ngp, self.n3unique//3, 3))
+        m = dstrip(self.m3)
+        M = dstrip(self.mtot).reshape((self.ngp,1,1))
+        mqref_rel = dstrip(self.mqref_rel)
+        for i in range(3):
+            Dg[i,:,:,i] = m[:,:,i]
+        # Eckart rotation, x-component
+        Dg[3,:,:,1] =-mqref_rel[:,:,2]
+        Dg[3,:,:,2] = mqref_rel[:,:,1]
+        # Eckart rotation, y-component
+        Dg[4,:,:,0] = mqref_rel[:,:,2]
+        Dg[4,:,:,2] =-mqref_rel[:,:,0]
+        # Eckart rotation, z-component
+        Dg[5,:,:,0] =-mqref_rel[:,:,1]
+        Dg[5,:,:,1] = mqref_rel[:,:,0]
+        Dg /= M
+        ans = np.zeros((self.ngp, 6, self.n3unique, self.nbeads))
+        Dg.shape = (6, self.ngp, -1)
+        ans[...,0] = np.transpose(Dg, [1,0,2])
+        return ans
+        
+    def gfunc(self):
+        ans = super(EckartGroupedConstraints, self).gfunc()
+        return np.hstack((ans, dstrip(self.g_eckart)))
+    
+    def Dgfunc(self):
+        ans = super(EckartGroupedConstraints, self).Dgfunc()
+        return np.hstack((ans, dstrip(self.Dg_eckart)))
 
 class ConstraintSolverBase(dobject):
 
@@ -850,7 +756,7 @@ class ConstraintSolver(ConstraintSolverBase):
         for cgp in self.constraint_groups:
             icycle = 0
             active = np.ones(cgp.ngp, dtype=bool)
-            g = np.empty((cgp.ngp, cgp.ncons, 1))
+            g = np.zeros((cgp.ngp, cgp.ncons, 1))
             Dg = np.transpose(np.reshape(dstrip(cgp.Dg), 
                                          (cgp.ngp, cgp.ncons,-1)), [0,2,1])
             GramChol = dstrip(cgp.GramChol)

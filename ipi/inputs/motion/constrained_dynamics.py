@@ -9,8 +9,8 @@ import numpy as np
 import ipi.engine.thermostats
 import ipi.engine.barostats
 from ipi.engine.motion.constrained_dynamics import \
-        BondLengthConstraint, BondAngleConstraint, EckartConstraint, \
-        GroupedConstraints
+        BondLengthConstraint, BondAngleConstraint, \
+        GroupedConstraints, EckartGroupedConstraints
 from ipi.utils.inputvalue import InputDictionary, InputAttribute, InputValue, \
         InputArray, Input, input_default
 from ipi.inputs.barostats import InputBaro
@@ -27,17 +27,12 @@ class InputConstraintBase(Input):
         "name": (InputAttribute, {
             "dtype": str,
             "help": "Type of constraint. ",
-            "options": ["bondlength", "bondangle", "eckart"]
+            "options": ["bondlength", "bondangle"]
             }),
         "tolerance": (InputAttribute, {
             "dtype": float,
             "default": 1.0e-04,
             "help": "The tolerance to which the constraint is converged. "
-            }),
-        "ngroups": (InputAttribute, {
-            "dtype": int,
-            "default": 0,
-            "help": "Number of groups of atoms subject to constraint. "
             }),
         "domain": (InputAttribute, {
             "dtype": str,
@@ -53,26 +48,20 @@ class InputConstraintBase(Input):
                 "help": "List of atoms indices that are to be constrained."}),
         "values": (InputArray, {
                 "dtype": float,
-                "default":  np.zeros(0, float),
+                "default": input_default(factory=np.zeros, args=(0,)),
                 "dimension": "length",
                 "help": "List of constraint lengths."})
               }
-    
     def store(self, cnstr):
+        super(InputConstraintBase, self).store()
         if type(cnstr) is BondLengthConstraint:
             self.name.store("bondlength")
         elif type(cnstr) is BondAngleConstraint:
             self.name.store("bondangle")
-        elif type(cnstr) is EckartConstraint:
-            self.name.store("eckart")
         self.atoms.store(dstrip(cnstr.ilist).flatten())
-        self.ngroups.store(cnstr.ngp)
         self.tolerance.store(cnstr.tol)
         self.domain.store(cnstr.domain)
-        if type(cnstr) is EckartConstraint:
-            self.values.store(dstrip(cnstr.qref).flatten())
-        else:
-            self.values.store(dstrip(cnstr.targetvals))
+        self.values.store(dstrip(cnstr.targetvals).flatten())
 
     def fetch(self):
         name = self.name.fetch()
@@ -80,24 +69,13 @@ class InputConstraintBase(Input):
         domain = self.domain.fetch()
         alist = self.atoms.fetch()
         vlist = self.values.fetch()
-        ngp = self.ngroups.fetch()
         if name == "bondlength":
-            if len(alist.shape) == 1:
-                alist.shape = (alist.shape[0]//2, 2)
             cls = BondLengthConstraint
         elif name == "bondangle":
-            if len(alist.shape) == 1:
-                alist.shape = (alist.shape[0]//3, 3)
             cls = BondAngleConstraint
-        elif name == "eckart":
-            if (ngp == 0):
-                raise ValueError(
-    "Number of atoms groups must be specified for the Eckart constraint.")
-            alist.shape = (ngp, -1)
-            cls = EckartConstraint
         if len(vlist) == 0:
             vlist = None
-        return cls(alist, vlist, tol, domain, ngp)
+        return cls(alist, vlist, tol, domain)
 
 
 class InputConstraintGroup(Input):
@@ -105,26 +83,56 @@ class InputConstraintGroup(Input):
        of disjoint atoms.
     """
 
-    fields = {
-        "maxit": (InputValue, {
+    attribs = {
+        "eckart": (InputAttribute, {
+            "dtype": bool,
+            "default": False,
+            "help": "Indicates whether the Eckart conditions are imposed onto the groups of constrained atoms."
+            }),
+        "ngroups": (InputAttribute, {
+                "dtype": int,
+                "help": "Number of groups of constrained atoms"}),
+        "maxit": (InputAttribute, {
                 "dtype": int,
                 "default": 100,
-                "help": "Maximum number of iterations to converge a constrained propagation step."}),
+                "help": "Maximum number of iterations to converge a constrained propagation step."})
+            }
+    fields = {
+        "tolerance": (InputValue, {
+                "dtype": float,
+                "default": 1.0e-06,
+                "help": "Converge criterion for the Eckart conditions"
+                }),
         "qprev": (InputArray, {
                 "dtype": float,
                 "default":  np.zeros(0, float),
                 "dimension": "length",
-                "help": "Normal-mode coordinates from previous converged constrained propagation step."})
+                "help": "Normal-mode coordinates from previous converged constrained propagation step."}),
+        "qref": (InputArray, {
+                "dtype": float,
+                "default":  np.zeros(0, float),
+                "dimension": "length",
+                "help": "Reference configurations for the Eckart conditions"}),
+        "atoms": (InputArray, {
+                "dtype": int,
+                "help": "Indices of the atoms affected by the constraints"})
               }
     dynamic = {"constraint" : (
             InputConstraintBase, 
             {"help" : "Define a constraint to be applied onto atoms"})
               }
-    
 
     def store(self, cgp):
+        self.ngroups.store(cgp.ngp)
         self.maxit.store(cgp.maxit)
         self.qprev.store(dstrip(cgp.qnmprev).flatten())
+        self.atoms.store(cgp.iunique.flatten())
+        if isinstance(cgp, EckartGroupedConstraints):
+            self.qref.store(dstrip(cgp.qref).flatten())
+            self.tolerance.store(cgp.tol[-1])
+            self.eckart.store(True)
+        else:
+            self.eckart.store(False)
         self.extra = []
         for c in cgp.clist:
             iobj = InputConstraintBase()
@@ -134,18 +142,28 @@ class InputConstraintGroup(Input):
     def fetch(self):
         """Creates a GroupedConstraints object.
         """
+        ngp = self.ngroups.fetch()
+        maxit = self.maxit.fetch()
+        atoms = self.atoms.fetch()
         qnmprev = self.qprev.fetch()
+        qref = self.qref.fetch()
+        eckart = self.eckart.fetch()
+        tol = self.tolerance.fetch()
         if (len(qnmprev)==0): 
             qnmprev = None
-        maxit = self.maxit.fetch()
+        if (len(qref)==0):
+            qref = None
         clist = []
         for (k, c) in self.extra:
             if k == "constraint":
                 clist.append(c.fetch())
             else:
                 raise ValueError("Invalid entry "+k+" in constraint_group")
-        return GroupedConstraints(clist, maxit, qnmprev)
-    
+        if eckart is False:
+            return GroupedConstraints(clist, atoms, ngp, maxit, qnmprev)
+        else:
+            return EckartGroupedConstraints(clist, atoms, ngp, maxit, 
+                                            tol, qnmprev, qref)
     
 class InputConstrainedDynamics(InputDictionary):
 
