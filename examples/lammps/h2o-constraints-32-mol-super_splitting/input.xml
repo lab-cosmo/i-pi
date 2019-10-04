@@ -1,8 +1,10 @@
-<simulation mode='md' verbosity='high'>
+<simulation mode='md' verbosity='low'>
     <output prefix='simulation'>
         <!--properties stride='1' filename='pot'>  [ pot_component_raw(0), pot_component_raw(1) ] </properties-->
         <properties stride='1' filename='out'>  [ step, time{picosecond}, conserved, temperature{kelvin}, kinetic_cv, potential, pressure_cv{megapascal} ] </properties>
-        <trajectory stride='1' filename='pos'>  positions{angstrom} </trajectory>
+        <trajectory stride='1' filename='pos'>  positions </trajectory>
+        <trajectory stride='1' filename='mom'>  momenta </trajectory>
+        <trajectory stride='1' filename='xc'>  x_centroid </trajectory>
         <checkpoint stride='10' overwrite='false' filename='chk'/>
     </output>
     <total_steps> 100 </total_steps>
@@ -39,7 +41,7 @@
                 <nmts> [1,4] </nmts>
                 <timestep units='femtosecond'> 0.5 </timestep>
                 <thermostat mode='pile_l'>
-                    <tau units='femtosecond'> 25.0 </tau>
+                    <tau units='femtosecond'> 50.0 </tau>
                     <pile_lambda> 0.5 </pile_lambda>
                 </thermostat>
                 <constraint_group ngroups='32' maxit='100' eckart='true'>
