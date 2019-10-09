@@ -13,7 +13,7 @@ from ipi.utils.messages import verbosity, warning
 
 __all__ = ['matrix_exp', 'stab_cholesky', 'h2abc', 'h2abc_deg', 'abc2h',
            'invert_ut3x3', 'det_ut3x3', 'eigensystem_ut3x3', 'exp_ut3x3',
-           'root_herm', 'logsumlog']
+           'root_herm', 'logsumlog', 'to_com']
 
 
 def logsumlog(lasa, lbsb):
@@ -483,7 +483,7 @@ def eckspin(p, q, m, ref, L):
     p -= m*np.cross(ww[...,None,:], q, axis=-1)
     return p
 
-def toCoM(m, q, axes=(-1,-2)):
+def to_com(m, q, axes=(-1,-2)):
     """
     Shift the array of coordinates q to its centre of mass frame.
 
@@ -523,50 +523,48 @@ def mominertia(m, q, q2=None, shift=True, axes=(-1,-2)):
                       in the same molecule.
     """
 
-    if (m.shape != q.shape):
-        raise ValueError("mominertia expects conforming mass an position arrays")
-    if not isinstance(axes, tuple):
-        raise ValueError("mominertia expects a tuple for argument 'axes'")
-    if (len(axes) != 2):
-        raise ValueError("mominertia expects a length-2 tuple for argument 'axes'")
     ndim = q.ndim
     cart_ax, atom_ax = axes
+    # Error checks
+    if (m.shape != q.shape):
+        raise ValueError("mominertia expects conforming mass an position arrays")
     if q.shape[cart_ax] != 3:
         raise ValueError("mominertia product axis must be of length 3")
     if cart_ax == atom_ax:
         raise ValueError("mominertia product and sum axes cannot be the same")
-    if cart_ax < 0:
-        cart_ax += ndim
-    if atom_ax < 0:
-        atom_ax += ndim
+    # Make all axes non-negative
+    cart_ax %= ndim
+    atom_ax %= ndim
+    # Shift to CoM if required
+    if shift:
+        q = to_com(m, q, axes)[0]
+    # Check for second coordinate array
+    if q2 is None:
+        q2 = np.expand_dims(q,axis=cart_ax)
+    else:
+        if q.shape != q2.shape:
+            raise ValueError("mominertia: coordinate arrays must conform.")
+        if shift:
+            q2 = to_com(m, q2, axes)[0]
+        q2 = np.expand_dims(q2,axis=cart_ax)
+    # Will insert new axis after cart_ax; make space for atom_ax if needed
     if atom_ax > cart_ax:
         atom_ax += 1
-    if shift:
-        # Shift into CoM frame of reference
-        q = toCoM(m, q, axes)[0]
-    mq1 = -np.expand_dims(m*q,axis=cart_ax+1)
-    if q2 is not None:
-        if q.shape != q2.shape:
-            raise ValueError("the two coordinate arrays must conform in mominertia")
-        if shift:
-            q2 = toCoM(m, q, axes)[0]
-        q2 = np.expand_dims(q2,axis=cart_ax)
-    else:
-        q2 = np.expand_dims(q,axis=cart_ax)
     # -m_{i,k}*q_{i,k}*q_{j,k}, where k is the atomic index and i,j = x,y,z
-    outer_prod = mq1*q2
+    mq1 = -np.expand_dims(m*q,axis=cart_ax+1)
+    outer_prod = np.sum(mq1*q2, axis=atom_ax)
+    if atom_ax < cart_ax:
+        cart_ax -= 1
     # Calculate the trace of the outer product
-    sublist0 = list(range(outer_prod.ndim))
-    sublist0[cart_ax+1] = sublist0[cart_ax]
-    sublistout = list(range(outer_prod.ndim))
-    sublistout.pop(cart_ax+1)
-    sublistout.pop(cart_ax)
-    trace = np.einsum(outer_prod, sublist0, sublistout)
+    sublist_in = list(range(outer_prod.ndim))
+    sublist_in[cart_ax+1] = sublist_in[cart_ax]
+    sublist_out = list(range(outer_prod.ndim))
+    sublist_out.pop(cart_ax+1)
+    sublist_out.pop(cart_ax)
+    trace = np.einsum(outer_prod, sublist_in, sublist_out)
     # Add to diagonal
     trace = np.expand_dims(trace, axis=cart_ax)
-    sublistout = sublist0[:]
-    sublistout.pop(cart_ax+1)
-    np.einsum(outer_prod, sublist0, sublistout)[:] -= trace
-    return np.sum(outer_prod, axis=atom_ax)
-
-
+    sublist_out = sublist_in[:]
+    sublist_out.pop(cart_ax+1)
+    np.einsum(outer_prod, sublist_in, sublist_out)[:] -= trace
+    return outer_prod

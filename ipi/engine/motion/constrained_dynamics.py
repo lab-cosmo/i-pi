@@ -1,4 +1,4 @@
-"""Contains the classes that deal with the different dynamics required in
+"""Contains the classes that deal with the constrained dynamics required in
 different types of ensembles.
 
 Holds the algorithms required for normal mode propagators, and the objects to
@@ -21,7 +21,6 @@ from ipi.utils.depend import depend_value, depend_array, \
                              dd, dobject, dstrip, dpipe
 from ipi.engine.thermostats import Thermostat
 from ipi.engine.barostats import Barostat
-from ipi.engine.quasicentroids import QuasiCentroids
 
 
 class ConstrainedDynamics(Dynamics):
@@ -42,7 +41,7 @@ class ConstrainedDynamics(Dynamics):
     Depend objects:
         econs: The conserved energy quantity appropriate to the given
             ensemble. Depends on the various energy terms which make it up,
-            which are different depending on the ensemble.he
+            which are different depending on the ensemble.
         temp: The system temperature.
         dt: The timestep for the algorithms.
         ntemp: The simulation temperature. Will be nbeads times higher than
@@ -52,7 +51,7 @@ class ConstrainedDynamics(Dynamics):
 
     def __init__(self, timestep, mode="nve", splitting="obabo",
                 thermostat=None, barostat=None,
-                quasicentroids=None, fixcom=False, fixatoms=None,
+                fixcom=False, fixatoms=None,
                 nmts=None, nsteps_geo=1, constraint_groups=[]):
 
         """Initialises a "ConstrainedDynamics" motion object.
@@ -73,10 +72,6 @@ class ConstrainedDynamics(Dynamics):
             self.barostat = Barostat()
         else:
             self.barostat = barostat
-        if quasicentroids is None:
-            self.quasicentroids = QuasiCentroids()
-        else:
-            self.quasicentroids = quasicentroids
         self.enstype = mode
         if nmts is None or len(nmts) == 0:
             dd(self).nmts = depend_array(name="nmts", value=np.asarray([1], int))
@@ -420,7 +415,8 @@ class EckartGroupedConstraints(GroupedConstraints):
                     value=np.zeros_like(dstrip(self.qref)),
                     func=(lambda: np.reshape(
                           dstrip(self.dynm3)[...,0], 
-                          (self.ngp,self.nunique,3))))
+                          (self.ngp,self.nunique,3))),
+                    dependencies=[dself.dynm3])
         # Total mass of the group of atoms
         dself.mtot = depend_array(name="mtot", value=np.zeros(self.ngp),
             func=(lambda: dstrip(self.m3)[:,:,0].sum(axis=-1)),
@@ -686,6 +682,9 @@ class NVEConstrainedIntegrator(NVEIntegrator):
         """
         self.step_Ag()
         self.free_p()
+        
+    def tstep(self):
+        pass
 
 class NVTConstrainedIntegrator(NVEConstrainedIntegrator):
 
@@ -743,7 +742,6 @@ class ConstraintBase(dobject):
     """Base constraint class; defines the constraint function and its Jacobian.
     """
     
-    # Add constrained indices and values
     def __init__(self, indices, targetvals=None,
                  tolerance=1.0e-4, domain="cartesian", ngp=0):
         """Initialise the constraint. NOTE: during propagation, constraints

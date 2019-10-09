@@ -3,10 +3,11 @@
         <!--properties stride='1' filename='pot'>  [ pot_component_raw(0), pot_component_raw(1) ] </properties-->
         <properties stride='10' filename='out'>  [ time{picosecond}, conserved, temperature{kelvin}, kinetic_cv, potential ] </properties>
         <trajectory stride='10' filename='pos' bead='-8'>  positions </trajectory>
+        <trajectory stride='10' filename='xqc'>  x_quasi </trajectory>
         <trajectory stride='10' filename='mom' bead='-8'>  momenta </trajectory>
-        <checkpoint stride='100' overwrite='false' filename='chk'/>
+        <checkpoint stride='1000' overwrite='false' filename='chk'/>
     </output>
-    <total_steps> 1000 </total_steps>
+    <total_steps> 10000 </total_steps>
     <prng>
         <seed>31415</seed>
     </prng>
@@ -34,13 +35,18 @@
                 <mts_weights>[ 1,0]</mts_weights>
             </force>
         </forces>
-        <motion mode='constrained_dynamics'>
+        <motion mode='quasi'>
+            <quasicentroid_dynamics mode='nvt'>
+                    <thermostat mode='svr'>
+                            <tau units='femtosecond'> 100.0 </tau>
+                    </thermostat>
+            </quasicentroid_dynamics>
             <constrained_dynamics mode='nvt' splitting='baoab'>
                 <nsteps_geo> 1 </nsteps_geo>
                 <nmts> [1,4] </nmts>
-                <timestep units='femtosecond'> 0.5 </timestep>
+                <timestep units='femtosecond'> 0.05 </timestep>
                 <thermostat mode='pile_l'>
-                    <tau units='femtosecond'> 50.0 </tau>
+                    <tau units='femtosecond'> 5.0 </tau>
                     <pile_lambda> 0.5 </pile_lambda>
                 </thermostat>
                 <constraint_group ngroups='32' maxit='100' eckart='true'>
@@ -71,7 +77,7 @@
             <temperature units='kelvin'> 300 </temperature>
         </ensemble>
         <normal_modes>
-           <frequencies style="pa-qcmd" units="inversecm">[2500]</frequencies>
+           <frequencies style="pa-qcmd" units="inversecm">[25000]</frequencies>
         </normal_modes>
     </system>
 </simulation>

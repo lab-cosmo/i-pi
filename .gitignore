@@ -9,6 +9,7 @@ doc/manual.xml
 *.mod
 *.out
 *.o
+*.swp
 *~
 \#*
 *.orig
@@ -19,9 +20,9 @@ examples/qcmd/*_nvt/**/log.txt
 examples/qcmd/*_nvt/**/script
 examples/qcmd/*_nvt/**/input.xml
 examples/qcmd/*_nvt/**/submit.sh
-examples/lammps/h2o-constraints-32-mol-super_splitting/**/*pos*.xyz
-examples/lammps/h2o-constraints-32-mol-super_splitting/**/simulation.*
-examples/lammps/h2o-constraints-32-mol-super_splitting/**/RESTART
-examples/lammps/h2o-constraints-32-mol-super_splitting/**/EXIT
-examples/lammps/h2o-constraints-32-mol-super_splitting/**/log.*
-examples/lammps/h2o-constraints-32-mol-super_splitting/**/*.sh
+examples/lammps/h2o-*-32-mol-super_splitting/**/*pos*.xyz
+examples/lammps/h2o-*-32-mol-super_splitting/**/simulation.*
+examples/lammps/h2o-*-32-mol-super_splitting/**/RESTART
+examples/lammps/h2o-*-32-mol-super_splitting/**/EXIT
+examples/lammps/h2o-*-32-mol-super_splitting/**/log.*
+examples/lammps/h2o-*-32-mol-super_splitting/**/*.sh

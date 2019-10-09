@@ -22,6 +22,7 @@ from ipi.engine.atoms import *
 from ipi.engine.cell import *
 from ipi.engine.ensembles import *
 from ipi.engine.forces import *
+from ipi.engine.motion.quasicentroid_dynamics import QuasiCentroidMotion
 
 
 __all__ = ['Properties', 'Trajectories', 'getkey', 'getall', 'help_latex']
@@ -2225,17 +2226,16 @@ class Trajectories(dobject):
                                'func': self.get_isotope_zetasc},
             "x_quasi": {"dimension": "length",
                         "help": "The quasicentroid coordinates.",
-                        'func': (lambda: 1.0 * self.system.beads.quasicentroids.q)},
+                        'func': (lambda: self.get_quasi("q"))},
             "v_quasi": {"dimension": "velocity",
                         "help": "The quasicentroid velocity.",
-                        'func': (lambda: self.system.beads.quasicentroids.p / 
-                                         self.system.beads.quasicentroids.m3)},
+                        'func': (lambda: self.get_quasi("v"))},
             "p_quasi": {"dimension": "momentum",
                         "help": "The quasicentroid momentum.",
-                        'func': (lambda: 1.0*self.system.beads.quasicentroids.p)},
+                        'func': (lambda: self.get_quasi("p"))},
             "f_quasi": {"dimension": "force",
                         "help": "The quasicentroid force.",
-                        'func': (lambda: 1.0*self.system.beads.quasicentroids.f)},
+                        'func': (lambda: self.get_quasi("f"))},
         }
 
     def bind(self, system):
@@ -2407,6 +2407,24 @@ class Trajectories(dobject):
         zetasc[:, 2] = np.exp(-1.0 * beta * zetasc[:, 0])
 
         return zetasc.reshape(nat * 3)
+    
+    def get_quasi(self, key):
+        """Return a quasicentroid property, where key = ['p'/'x'/'f'/'v'].
+        """
+        
+        if not isinstance(self.system.motion, QuasiCentroidMotion):
+            raise ValueError(
+                    "Trying to get quasicentroid variables without QCMD!")
+        else:
+            quasi = self.system.motion.qmotion.quasi
+            if key == 'p':
+                return quasi.p
+            elif key == 'q':
+                return quasi.q
+            elif key == 'f':
+                return quasi.f
+            elif key == 'v':
+                return quasi.p/quasi.m3
 
     def __getitem__(self, key):
         """Retrieves the item given by key.

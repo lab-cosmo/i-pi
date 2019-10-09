@@ -26,7 +26,8 @@ from copy import copy
 import ipi.engine.initializer
 from ipi.engine.motion import Motion, Dynamics, Replay, GeopMotion, NEBMover,\
                             DynMatrixMover, MultiMotion, AlchemyMC, InstantonMotion,\
-                            TemperatureRamp, PressureRamp, ConstrainedDynamics
+                            TemperatureRamp, PressureRamp, ConstrainedDynamics,\
+                            QuasiCentroidMotion, QuasiCentroidDynamics
 from ipi.utils.inputvalue import *
 from ipi.inputs.thermostats import *
 from ipi.inputs.initializer import *
@@ -35,6 +36,7 @@ from .instanton import InputInst
 from .neb import InputNEB
 from .dynamics import InputDynamics
 from .constrained_dynamics import InputConstrainedDynamics
+from .quasicentroid_dynamics import InputQuasiCentroidDynamics
 from .phonons import InputDynMatrix
 from .alchemy import InputAlchemy
 from .ramp import InputTemperatureRamp, InputPressureRamp
@@ -77,6 +79,8 @@ class InputMotionBase(Input):
                                            "help": "Option for (path integral) molecular dynamics"}),
               "constrained_dynamics": (InputConstrainedDynamics, {"default": {},
                                            "help": "Option for constrained (path integral) molecular dynamics"}),
+              "quasicentroid_dynamics": (InputQuasiCentroidDynamics, {"default": {},
+                                           "help": "Option for path-integral quasicentroid molecular dynamics"}),
               "file": (InputInitFile, {"default": input_default(factory=ipi.engine.initializer.InitFile, kwargs={"mode": "xyz"}),
                                        "help": "This describes the location to read a trajectory file from."}),
               "vibrations": (InputDynMatrix, {"default": {},
@@ -125,6 +129,10 @@ class InputMotionBase(Input):
             self.mode.store("constrained_dynamics")
             self.constrained_dynamics.store(sc)
             tsc = 1
+        elif type(sc) is QuasiCentroidDynamics:
+            self.mode.store("quasicentroid_dynamics")
+            self.quasicentroid_dynamics.store(sc)
+            tsc = 1
         elif type(sc) is DynMatrixMover:
             self.mode.store("vibrations")
             self.vibrations.store(sc)
@@ -171,12 +179,8 @@ class InputMotionBase(Input):
         elif self.mode.fetch() == "neb":
             sc = NEBMover(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.neb_optimizer.fetch())
         elif self.mode.fetch() == "dynamics":
-            print "ACHTUNG!"
-            dyn = self.dynamics.fetch()
-            print dyn["nmts"]
             sc = Dynamics(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.dynamics.fetch())
         elif self.mode.fetch() == "constrained_dynamics":
-            dyn = self.constrained_dynamics.fetch()
             sc = ConstrainedDynamics(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.constrained_dynamics.fetch())
         elif self.mode.fetch() == "vibrations":
             sc = DynMatrixMover(fixcom=self.fixcom.fetch(), fixatoms=self.fixatoms.fetch(), **self.vibrations.fetch())
@@ -197,11 +201,14 @@ class InputMotionBase(Input):
 
 class InputMotion(InputMotionBase):
 
-    """ Extends InputMotionBase to allow the definition of a multimotion """
+    """ Extends InputMotionBase to allow the definition of a multimotion 
+    and quasicentroid motion.
+    """
 
     attribs = copy(InputMotionBase.attribs)
 
     attribs["mode"][1]["options"].append("multi")
+    attribs["mode"][1]["options"].append("quasi")
 
     dynamic = {"motion": (InputMotionBase, {"default": input_default(factory=Motion),
                                             "help": "A motion class that can be included as a member of a 'multi' integrator."})
@@ -222,6 +229,10 @@ class InputMotion(InputMotionBase):
                     self.extra[ii] = ("motion", im)
                 else:
                     self.extra[ii][1].store(m)
+        elif type(motion) is QuasiCentroidMotion:
+            self.mode.store("quasi")
+            self.constrained_dynamics.store(motion.cmotion)
+            self.quasicentroid_dynamics.store(motion.qmotion)
         else:
             super(InputMotion, self).store(motion)
 
@@ -232,6 +243,16 @@ class InputMotion(InputMotionBase):
             for (k, m) in self.extra:
                 mlist.append(m.fetch())
             motion = MultiMotion(motionlist=mlist)
+        elif self.mode.fetch() == "quasi":
+            # NOTE: fixcom and fixatoms apply to quasicentroids only
+            cdict = self.constrained_dynamics.fetch()
+            cdyn = ConstrainedDynamics(**cdict)
+            qdict = self.quasicentroid_dynamics.fetch()
+            qdict["nmts"] = cdict["nmts"]
+            qdyn = QuasiCentroidDynamics(fixcom=self.fixcom.fetch(),
+                                         fixatoms=self.fixatoms.fetch(),
+                                         **qdict)
+            motion = QuasiCentroidMotion(cdyn, qdyn) 
         else:
             motion = super(InputMotion, self).fetch()
 
