@@ -1,13 +1,13 @@
 <simulation mode='md' verbosity='high'>
     <output prefix='simulation'>
         <!--properties stride='1' filename='pot'>  [ pot_component_raw(0), pot_component_raw(1) ] </properties-->
-        <properties stride='10' filename='out'>  [ time{picosecond}, conserved, temperature{kelvin}, kinetic_cv, potential ] </properties>
-        <trajectory stride='10' filename='pos' bead='-8'>  positions </trajectory>
-        <trajectory stride='10' filename='xqc'>  x_quasi </trajectory>
-        <trajectory stride='10' filename='mom' bead='-8'>  momenta </trajectory>
-        <checkpoint stride='1000' overwrite='false' filename='chk'/>
+        <properties stride='1' filename='out'>  [ time{picosecond}, conserved, temperature{kelvin}, kinetic_cv, potential ] </properties>
+        <trajectory stride='1' filename='pos' bead='-8'>  positions </trajectory>
+        <trajectory stride='1' filename='xqc'>  x_quasi </trajectory>
+        <trajectory stride='1' filename='mom' bead='-8'>  momenta </trajectory>
+        <checkpoint stride='100' overwrite='false' filename='chk'/>
     </output>
-    <total_steps> 10000 </total_steps>
+    <total_steps> 1000 </total_steps>
     <prng>
         <seed>31415</seed>
     </prng>
@@ -35,7 +35,7 @@
                 <mts_weights>[ 1,0]</mts_weights>
             </force>
         </forces>
-        <motion mode='quasi'>
+        <motion mode='qcmd'>
             <quasicentroid_dynamics mode='nvt'>
                     <thermostat mode='svr'>
                             <tau units='femtosecond'> 100.0 </tau>

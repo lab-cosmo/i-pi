@@ -208,7 +208,7 @@ class InputMotion(InputMotionBase):
     attribs = copy(InputMotionBase.attribs)
 
     attribs["mode"][1]["options"].append("multi")
-    attribs["mode"][1]["options"].append("quasi")
+    attribs["mode"][1]["options"].append("qcmd")
 
     dynamic = {"motion": (InputMotionBase, {"default": input_default(factory=Motion),
                                             "help": "A motion class that can be included as a member of a 'multi' integrator."})
@@ -230,7 +230,7 @@ class InputMotion(InputMotionBase):
                 else:
                     self.extra[ii][1].store(m)
         elif type(motion) is QuasiCentroidMotion:
-            self.mode.store("quasi")
+            self.mode.store("qcmd")
             self.constrained_dynamics.store(motion.cmotion)
             self.quasicentroid_dynamics.store(motion.qmotion)
         else:
@@ -243,7 +243,7 @@ class InputMotion(InputMotionBase):
             for (k, m) in self.extra:
                 mlist.append(m.fetch())
             motion = MultiMotion(motionlist=mlist)
-        elif self.mode.fetch() == "quasi":
+        elif self.mode.fetch() == "qcmd":
             # NOTE: fixcom and fixatoms apply to quasicentroids only
             cdict = self.constrained_dynamics.fetch()
             cdyn = ConstrainedDynamics(**cdict)

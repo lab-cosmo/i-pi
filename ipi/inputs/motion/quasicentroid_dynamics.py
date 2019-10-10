@@ -49,7 +49,10 @@ class InputQuasiCentroidDynamics(InputDictionary):
                               "help": "Number of iterations for each MTS level (including the outer loop, that should in most cases have just one iteration)."}),
         "pqc": (InputArray, {"dtype": float,
                               "default": np.zeros(0, float),
-                              "help": "Quasicentroid momenta."})
+                              "help": "Quasicentroid momenta."}),
+        "qqc": (InputArray, {"dtype": float,
+                             "default": np.zeros(0, float),
+                             "help": "Quasicentroid positions."})
     }
 
     default_help = "Holds all the information for the MD integrator, such as timestep, the thermostats and barostats that control it."
@@ -72,6 +75,7 @@ class InputQuasiCentroidDynamics(InputDictionary):
         self.barostat.store(dyn.barostat)
         self.nmts.store(dyn.nmts)
         self.pqc.store(dstrip(dyn.quasi.p).flatten())
+        self.qqc.store(dstrip(dyn.quasi.q).flatten())
 
     def fetch(self):
         """Creates a ConstrainedDynamics object.

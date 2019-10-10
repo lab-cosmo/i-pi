@@ -40,16 +40,24 @@ class QuasiCentroids(dobject):
 
     """
 
-    def __init__(self, pqc=None):
+    def __init__(self, pqc=None, qqc=None):
         """Initialises a "QuasiCentroids" object --- simply store quasicentroid
         momenta whenever available.
         """
+        
         if pqc is None:
             self.p = None
         elif len(pqc) == 0:
             self.p = None
         else:
             self.p = np.asarray(pqc).flatten()
+            
+        if qqc is None:
+            self.q = None
+        elif len(qqc) == 0:
+            self.q = None
+        else:
+            self.q = np.asarray(qqc).flatten()
             
     def bind(self, ens, beads, nm, cell, bforce, prng, omaker, cdyn):
         self.beads = beads
@@ -89,6 +97,7 @@ unit_to_user("energy", "kelvin", ens.temp)), verbosity.low)
             self.p = (prng.gvec(self.p.size) * np.sqrt(dstrip(self.m3)*ens.temp * Constants.kb))
         else:
             self.p = p
+        q = self.q
         dself.q = depend_array(
                 name="q", 
                 value=np.nan*np.ones(3*self.natoms))
@@ -108,7 +117,10 @@ unit_to_user("energy", "kelvin", ens.temp)), verbosity.low)
                 raise ValueError(
 "Unknown constraint combination {:s}".format(class_list.__repr__()))
             qgp.bind(self.beads, cgp)
-            self.q[qgp.i3list] = dstrip(qgp.q).copy()
+            if q is None:
+                self.q[qgp.i3list] = dstrip(qgp.q).copy()
+            else:
+                self.q[qgp.i3list] = q[qgp.i3list]
             dd(qgp).q.add_dependency(dself.q)
             dd(qgp).q._func = lambda: dstrip(self.q)[qgp.i3list]
             self.quasicentroid_groups.append(qgp)
@@ -231,7 +243,7 @@ class QuasiCentroidDynamics(Dynamics):
     
     def __init__(self, timestep, mode="nve", splitting="obabo",
             thermostat=None, barostat=None, fixcom=False, 
-            fixatoms=None, nmts=None, pqc=None):
+            fixatoms=None, nmts=None, pqc=None, qqc=None):
         """Initialises a "quasicentroid dynamics" motion object.
 
         Args:
@@ -271,7 +283,7 @@ class QuasiCentroidDynamics(Dynamics):
         else:
             self.fixatoms = fixatoms
         # quasicentroid object
-        self.quasi = QuasiCentroids(pqc)
+        self.quasi = QuasiCentroids(pqc, qqc)
         
     
     def bind(self, ens, beads, nm, cell, bforce, prng, omaker,

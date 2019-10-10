@@ -19,7 +19,13 @@ examples/qcmd/*_nvt/**/*.xyz
 examples/qcmd/*_nvt/**/log.txt
 examples/qcmd/*_nvt/**/script
 examples/qcmd/*_nvt/**/input.xml
-examples/qcmd/*_nvt/**/submit.sh
+examples/qcmd/*_nvt/**/*.sh
+examples/qcmd/*_nvt/**/*.py
+examples/qcmd/*_nvt/**/*.txt
+examples/qcmd/*_nvt/**/*.chk
+examples/qcmd/*_nvt/**/*.so
+examples/qcmd/*_nvt/**/*.pyf
+examples/qcmd/*_nvt/**/*.f90
 examples/lammps/h2o-*-32-mol-super_splitting/**/*pos*.xyz
 examples/lammps/h2o-*-32-mol-super_splitting/**/simulation.*
 examples/lammps/h2o-*-32-mol-super_splitting/**/RESTART
