@@ -101,7 +101,10 @@ class InputAlKMC(InputDictionary):
                 "qcache_file": (InputValue, {"dtype" : str,
                               "default"  : "",
                               "help"     : "Filename for storing/loading positions cache"}),
-                }
+                "max_cache_len": (InputValue, {"dtype": int,
+                                     "default": 1000,
+                                     "help": "Maximum cache length before oldest entry is deleted"}),
+    }
 
     STORE_STRIDE = 1.1
 
@@ -142,6 +145,7 @@ class InputAlKMC(InputDictionary):
         self.tottime.store(kmc.tottime)
         self.ecache_file.store(kmc.ecache_file)
         self.qcache_file.store(kmc.qcache_file)
+        self.max_cache_len.store(kmc.max_cache_len)
 
         # only stores cache after a decent amount of new structures have been found
         if kmc.ncache_stored*self.STORE_STRIDE<kmc.ncache:
