@@ -15,6 +15,7 @@ import time
 import pickle
 import threading
 import numpy as np
+import collections
 
 from ipi.engine.motion import Motion, GeopMotion
 from ipi.utils.depend import dstrip, depend_value, dobject, dpipe, dd
@@ -56,7 +57,7 @@ class AlKMC(Motion):
                   diffusion_barrier_si, diffusion_prefactor_si,
                   idx=[], tottime=0, ecache_file="",
                   qcache_file="", thermostat=None, barostat=None,
-                  fixcom=False, fixatoms=None, nmts=None):
+                  fixcom=False, fixatoms=None, nmts=None, max_cache_len = 1000):
         """Initialises a "dynamics" motion object.
 
         Args:
@@ -154,6 +155,7 @@ class AlKMC(Motion):
         # dictionary of previous energy evaluations - kind of tricky to use this with the omaker thingie
         self.ecache_file = ecache_file
         self.qcache_file = qcache_file
+        self.max_cache_len = max_cache_len # hard coded to be 1000 for now; will allow user modification later
         try:
             ff = open(self.ecache_file, "rb")
             self.ecache = pickle.load(ff)
@@ -164,14 +166,14 @@ class AlKMC(Motion):
             print "Loaded %d cached energies" % (len(self.ecache))
         except:
             print "Couldn't load cache files "+self.ecache_file+","+self.qcache_file+" - resetting"
-            self.ecache = {}
-            self.qcache = {}
+            self.ecache = collections.OrderedDict()
+            self.qcache = collections.OrderedDict()
         self.ncache = len(self.ecache)
         self.ncache_stored = self.ncache
 
 
         # no TS evaluation implemented yet
-        self.tscache = {}
+        self.tscache = {} # collections.OrderedDict()
         self.tottime = tottime
 
 
@@ -275,7 +277,11 @@ class AlKMC(Motion):
         with self._threadlock:
             self.ecache[nstr] = newpot
             self.qcache[nstr] = newq
-            self.ncache += 1
+            if self.ncache == self.max_cache_len:
+                self.ecache.popitem(last=False)
+                self.qcache.popitem(last=False)
+            else:
+                self.ncache += 1
             nevent[2] = self.ecache[nstr]
             nevent[3] = self.qcache[nstr]
 
