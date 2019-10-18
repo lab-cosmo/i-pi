@@ -224,7 +224,7 @@ class RigidBondConstraint(ValueConstraintBase):
         Calculates the deviation of the constraint from its target 
         """
 
-        q = dstrip(self.q)
+        q = dstrip(self.qnm[0])/self.beads.nbeads
         r = np.zeros(self.ncons)
         ndof = len(q) # nbeads if domain == "beads", 1 if "centroid"
         constraint_distances = dstrip(self.constraint_values)
