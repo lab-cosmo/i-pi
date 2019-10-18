@@ -198,15 +198,15 @@ class RigidBondConstraint(ValueConstraintBase):
         super(RigidBondConstraint, self).bind(beads)
         # if constraint values are not specified, initializes based on the first frame
         if self._calc_cons:
-            self.q = dstrip(beads.q[0])[self.i3_unique.flatten()]
+            self.q = dstrip(beads.qnm[0]/beads.nbeads)[self.i3_unique.flatten()]
             self.constraint_values = np.sqrt(dstrip(self.g))
             
     def gfunc(self):
         """
-        Calculates the deviation of the constraint frp, its target 
+        Calculates the deviation of the constraint from its target 
         """
 
-        q = dstrip(self.q)
+        q = dstrip(self.qnm[0])/self.beads.nbeads
         r = np.zeros(self.ncons)
         constraint_distances = dstrip(self.constraint_values)
         for i in range(self.ncons):
@@ -214,7 +214,7 @@ class RigidBondConstraint(ValueConstraintBase):
             c_dist = constraint_distances[i]
             #print q[c_atoms[0]], q[c_atoms[1]], c_dist
             r[i] = np.sum((q[c_atoms[0]] - q[c_atoms[1]])**2) - c_dist**2
-        if q[0] == float('inf'):
+        if q[0] == float('inf'): #TODO what is this????
             ValueError("fgfgf")
             print("autsch")
             exit()
@@ -226,6 +226,7 @@ class RigidBondConstraint(ValueConstraintBase):
         Calculates the Jacobian of the constraint.
         """
 
+        # TODO this should be nbeads sized
         q = dstrip(self.qprev)
         #constrained_indices = self.constrained_indices
         r = np.zeros((self.ncons, self.n_unique*3))
