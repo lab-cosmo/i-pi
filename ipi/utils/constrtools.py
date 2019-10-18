@@ -4,8 +4,6 @@
 # i-PI Copyright (C) 2014-2015 i-PI developers
 # See the "licenses" directory for full license information.
 
-import math
-
 import numpy as np
 
 from ipi.utils.depend import *
@@ -24,14 +22,19 @@ class ConstraintBase(dobject):
     the atoms that are affected by the constraint, and creates
     depend objects to store the constraint function and gradient."""
 
-    def __init__(self, constrained_indices, ncons = 0):
+    def __init__(self, constrained_indices, ncons=0, domain='centroid'):
         """ Initialize the constraint. 
         
         constrained_indices: Indices of the atoms that are involved in the constraint
+        ncons: number of atom groups subject to the constraint
+        domain: ['centroid'/'beads'] specifies whether the constraint is 
+            calculated as a function of the centroid, or as an average over
+            the beads.
         """
         
         self.constrained_indices = constrained_indices
         self.ncons = ncons
+        self.domain = domain
         
         # determines the list of unique indices of atoms that are 
         # affected by this constraint. this is necessary because the 
@@ -65,7 +68,7 @@ class ConstraintBase(dobject):
         self.beads = beads
         dself = dd(self)
         
-        # masses of the atoms involved in the constraint - repeated 4 
+        # masses of the atoms involved in the constraint - repeated 3 
         # times to vectorize operations on 3-vectors
         dself.m3 = depend_array(name="m3", value=np.zeros(self.n_unique*3),
                     func=(lambda: self.beads.m3[0,self.i3_unique]),
@@ -75,34 +78,47 @@ class ConstraintBase(dobject):
         # coordinates during geodesic integration; this array holds such
         # updates. this is useful to avoid messing with the beads q 
         # until they can be updated
-        dself.q = depend_array(name="q", value=np.zeros(self.n_unique*3))
+        if self.domain == "centroid":
+            dself.q = depend_array(
+                    name="q", 
+                    value=dstrip(beads.qc)[None,self.i3_unique])
+        elif self.domain == "beads":
+            dself.q = depend_array(
+                    name="q", 
+                    value=dstrip(beads.q)[:,self.i3_unique])
+        else:
+            raise ValueError("Unknown constraint domain '{:s}'.".format(self.domain))
         dself.g = depend_array(name="g", value=np.zeros(self.ncons),
-                       func=self.gfunc, dependencies=[dself.q])
-                       
+                       func=self.gfunc, dependencies=[dself.q])                       
         # The gradient of the constraint function is computed at the configuration
         # obtained from the previous converged SHAKE step; this array holds
         # a local copy of that configuration
-        dself.qprev = depend_array(name="qprev", value=np.zeros(self.n_unique*3))
-                                   
-        dself.Dg = depend_array(name="Dg", 
-                                value=np.zeros((self.ncons, self.n_unique*3)),
-                                func=self.Dgfunc, 
-                                dependencies=[dself.qprev])
-        dself.Gram = depend_array(name="Gram",
-                                      value=np.zeros((self.ncons,self.ncons)),
-                                      func=self.Gfunc, 
-                                      dependencies=[dself.Dg] )
+        dself.qprev = depend_array(
+                name="qprev", 
+                value=np.zeros_like(dstrip(self.q)))
+        dself.Dg = depend_array(
+                name="Dg", 
+                value=np.zeros((self.ncons,)+dstrip(self.q).shape),
+                func=self.Dgfunc, 
+                dependencies=[dself.qprev])
+        dself.Gram = depend_array(
+                name="Gram",
+                value=np.zeros((self.ncons,self.ncons)),
+                func=self.Gfunc, 
+                dependencies=[dself.Dg] )
         if spla is None:
-            dself.GramChol = depend_array(name="GramChol",
-                                      value=np.zeros((self.ncons,self.ncons)),
-                                      func=self.GCfunc, 
-                                      dependencies=[dself.Gram] )
+            dself.GramChol = depend_array(
+                    name="GramChol",
+                    value=np.zeros((self.ncons,self.ncons)),
+                    func=self.GCfunc, 
+                    dependencies=[dself.Gram])
         else:
             # scipy cho_factor returns both c and lower, so we need to have a depend tuple            
-            dself.GramChol = depend_value(name="GramChol",
-                                      value=(),
-                                      func=self.GCfunc, 
-                                      dependencies=[dself.Gram] )
+            dself.GramChol = depend_value(
+                    name="GramChol",
+                    value=(),
+                    func=self.GCfunc, 
+                    dependencies=[dself.Gram])
 
     def gfunc(self):
         """ Calculates the value of the constraint(s) """
@@ -120,6 +136,8 @@ class ConstraintBase(dobject):
         
         dg = dstrip(self.Dg).copy()
         dgm = dg/self.m3
+        for arr in [dg, dgm]:
+            arr.shape = (self.ncons,-1)
         return np.dot(dg, dgm.T)
         
     if spla is None:
@@ -138,7 +156,7 @@ class ConstraintBase(dobject):
 class ValueConstraintBase(ConstraintBase):
     """ Base class for a constraint that contains target values. """
     
-    def __init__(self, constrained_indices, constraint_values, ncons):
+    def __init__(self, constrained_indices, constraint_values, ncons, domain="centroid"):
         """ Initialize the constraint. 
         
         constrained_indices: Indices of the atoms that are involved in the constraint
@@ -152,17 +170,19 @@ class ValueConstraintBase(ConstraintBase):
         if len(constraint_values) != 0:
             self.ncons = len(constraint_values)
             self._calc_cons = False
-            dd(self).constraint_values = depend_array(name="constraint_values",
-                value=np.asarray(constraint_values).copy())
+            dd(self).constraint_values = depend_array(
+                    name="constraint_values",
+                    value=np.asarray(constraint_values).copy())
         elif ncons != 0:
             self.ncons = ncons
             self._calc_cons = True
-            dd(self).constraint_values = depend_array(name="constraint_values",
-                value=np.zeros(ncons))                
+            dd(self).constraint_values = depend_array(
+                    name="constraint_values",
+                    value=np.zeros(ncons))                
         else:
             raise ValueError("cannot determine the number of constraints in list")    
         
-        super(ValueConstraintBase,self).__init__(constrained_indices, ncons)
+        super(ValueConstraintBase,self).__init__(constrained_indices, ncons, domain)
                     
     def bind(self, beads):
         
@@ -172,7 +192,6 @@ class ValueConstraintBase(ConstraintBase):
         dself.g.add_dependency(dself.constraint_values)
         dself.Dg.add_dependency(dself.constraint_values)
         
-
         
 class RigidBondConstraint(ValueConstraintBase):
     """ Constraint class for MD.
@@ -180,14 +199,14 @@ class RigidBondConstraint(ValueConstraintBase):
         of rigid bonds, i.e. there will be a list of pairs of atoms and
         a list of bond lengths. """
 
-    def __init__(self, constrained_indices, constraint_values):
+    def __init__(self, constrained_indices, constraint_values, domain="centroid"):
 
         # this is a bit perverse, but we need to function regardless of 
         # whether this is called with a shaped or flattended index list
         ncons = len(constrained_indices.flatten())/2
         super(RigidBondConstraint,self).__init__(
                 constrained_indices, constraint_values, 
-                ncons=ncons)
+                ncons=ncons,domain=domain)
                 
         # reshapes accessors to simplify picking individual bonds
         self.constrained_indices.shape = (self.ncons, 2)
@@ -198,27 +217,21 @@ class RigidBondConstraint(ValueConstraintBase):
         super(RigidBondConstraint, self).bind(beads)
         # if constraint values are not specified, initializes based on the first frame
         if self._calc_cons:
-            self.q = dstrip(beads.q[0])[self.i3_unique.flatten()]
             self.constraint_values = np.sqrt(dstrip(self.g))
             
     def gfunc(self):
         """
-        Calculates the deviation of the constraint frp, its target 
+        Calculates the deviation of the constraint from its target 
         """
 
         q = dstrip(self.q)
         r = np.zeros(self.ncons)
+        ndof = len(q) # nbeads if domain == "beads", 1 if "centroid"
         constraint_distances = dstrip(self.constraint_values)
         for i in range(self.ncons):
             c_atoms = self.i3_indirect[i]
             c_dist = constraint_distances[i]
-            #print q[c_atoms[0]], q[c_atoms[1]], c_dist
-            r[i] = np.sum((q[c_atoms[0]] - q[c_atoms[1]])**2) - c_dist**2
-        if q[0] == float('inf'):
-            ValueError("fgfgf")
-            print("autsch")
-            exit()
-        #print("gfunc", r)
+            r[i] = np.sum((q[:,c_atoms[0]]-q[:,c_atoms[1]])**2)/ndof - c_dist**2
         return r
     
     def Dgfunc(self, reduced=False):
@@ -227,14 +240,14 @@ class RigidBondConstraint(ValueConstraintBase):
         """
 
         q = dstrip(self.qprev)
-        #constrained_indices = self.constrained_indices
-        r = np.zeros((self.ncons, self.n_unique*3))
+        ndof = len(q)
+        r = np.zeros((self.ncons, ndof, self.n_unique*3))
         for i in range(self.ncons):
             c_atoms = self.i3_indirect[i]
-            inst_position_vector = q[c_atoms[0]] - q[c_atoms[1]]
-            r[i][c_atoms[0]] =   2.0 * inst_position_vector
-            r[i][c_atoms[1]] = - 2.0 * inst_position_vector
-        return r
+            inst_position_vector = q[:,c_atoms[0]] - q[:,c_atoms[1]]
+            r[i][:,c_atoms[0]] =   2.0 * inst_position_vector
+            r[i][:,c_atoms[1]] = - 2.0 * inst_position_vector
+        return r/ndof
     
 class AngleConstraint(ValueConstraintBase):
     """ Constraint class for MD specialized for angles. 
@@ -243,12 +256,12 @@ class AngleConstraint(ValueConstraintBase):
         middle atom appears first in the list.
     """
 
-    def __init__(self,constrained_indices, constraint_values):
+    def __init__(self,constrained_indices, constraint_values, domain="centroid"):
 
         ncons = len(constrained_indices.flatten())/3
         super(AngleConstraint,self).__init__(
                 constrained_indices, constraint_values, 
-                ncons=ncons)
+                ncons=ncons, domain=domain)
         self.constrained_indices.shape = (self.ncons, 3)
         self.i3_indirect.shape = (self.ncons, 3, 3)
         
@@ -259,12 +272,14 @@ class AngleConstraint(ValueConstraintBase):
         # initial geometry
         if self._calc_cons:
             self.constraint_values = np.pi/2 # so that cos(angle) = 0
-            self.q = dstrip(beads.q[0])[self.i3_unique.flatten()]
             self.constraint_values = np.arccos(dstrip(self.g))
 
     def gfunc(self):
         """
         Calculates the constraint.
+        NOTE: for domain == "beads", the constraint is defined
+              as the cosine of the average angle, and not as the average
+              of angle cosines.
         """
 
         q = dstrip(self.q)
@@ -273,33 +288,52 @@ class AngleConstraint(ValueConstraintBase):
         for i in range(self.ncons):
             c_atoms = self.i3_indirect[i]
             c_cos = constraint_cosines[i]
-            q1 = q[c_atoms[1]] - q[c_atoms[0]]
-            r1 = np.sqrt(np.dot(q1,q1))
-            q2 = q[c_atoms[2]] - q[c_atoms[0]]
-            r2 = np.sqrt(np.dot(q2,q2))
-            r[i] = np.dot(q1,q2)/r1/r2
-            r[i] -= c_cos
+            q1 = q[:,c_atoms[1]] - q[:,c_atoms[0]]
+            r1 = np.sqrt(np.sum(q1**2, axis=-1))[...,None]
+            q1 /= r1
+            q2 = q[:,c_atoms[2]] - q[:,c_atoms[0]]
+            r2 = np.sqrt(np.sum(q2**2, axis=-1))[...,None]
+            q2 /= r2
+            if self.domain == "centroid":
+                r[i] = np.sum(q1*q2) - c_cos
+            else:
+                theta = np.mean(np.arccos(np.sum(q1*q2, axis=-1)))
+                r[i] = np.cos(theta) - c_cos
         return r
 
     def Dgfunc(self, reduced=False):
         """
         Calculates the Jacobian of the constraint.
         """
-
         q = dstrip(self.qprev)
-        r = np.zeros((self.ncons, self.n_unique*3))
+        ndof = len(q)
+        r = np.zeros((self.ncons, ndof, self.n_unique*3))
         for i in range(self.ncons):
             c_atoms = self.i3_indirect[i]
-            q1 = q[c_atoms[1]] - q[c_atoms[0]]
-            r1 = np.sqrt(np.dot(q1,q1))
+            # 0-1
+            q1 = q[:,c_atoms[1]] - q[:,c_atoms[0]]
+            r1 = np.sqrt(np.sum(q1**2, axis=-1))[...,None]
             q1 /= r1
-            q2 = q[c_atoms[2]] - q[c_atoms[0]]
-            r2 = np.sqrt(np.dot(q2,q2))
+            # 0-2
+            q2 = q[:,c_atoms[2]] - q[:,c_atoms[0]]
+            r2 = np.sqrt(np.sum(q2**2, axis=-1))[...,None]
             q2 /= r2
-            ct = np.dot(q1,q2)
-            r[i][c_atoms[1]] = (q2 - ct*q1)/r1
-            r[i][c_atoms[2]] = (q1 - ct*q2)/r2
-            r[i][c_atoms[0]] = -(r[i][c_atoms[1]] + r[i][c_atoms[2]])
+            # jacobian
+            ct = np.sum(q1*q2, axis=-1)[...,None]
+            if self.domain == "centroid":
+                r[i][:,c_atoms[1]] = (q2-ct*q1)/r1
+                r[i][:,c_atoms[2]] = (q1-ct*q2)/r2
+                r[i][:,c_atoms[0]] = -(r[i][:,c_atoms[1]] + 
+                                       r[i][:,c_atoms[2]])
+            else:
+                # sin(theta)
+                st = np.sqrt(1.0-ct**2) 
+                # sin(mean(theta))/ndof
+                smt = np.sin(np.mean(np.arccos(ct.reshape(-1))))/ndof
+                r[i][:,c_atoms[1]] = (q2-ct*q1)/(r1*st)*smt
+                r[i][:,c_atoms[2]] = (q1-ct*q2)/(r2*st)*smt
+                r[i][:,c_atoms[0]] = -(r[i][:,c_atoms[1]] + 
+                                       r[i][:,c_atoms[2]])
         return r
     
 class EckartConstraint(ConstraintBase):
@@ -309,8 +343,11 @@ class EckartConstraint(ConstraintBase):
         describe one set of Eckart conditions.
     """
 
-    def __init__(self,constrained_indices,constraint_values):
-
+    def __init__(self, constrained_indices, constraint_values, domain="centroid"):
+        
+        if domain != "centroid":
+            raise ValueError(
+            "Eckart constraints not defined for domain {:s}".format(domain))
         super(EckartConstraint,self).__init__(constrained_indices, 6)
         self.constrained_indices.shape = -1
         dd(self).constraint_values = depend_array(name="constraint_values",
@@ -323,21 +360,25 @@ class EckartConstraint(ConstraintBase):
         if len(constraint_values) == 0:
             self._calc_cons = True
             dd(self).qref = depend_array(
-                    name="qref", value=np.zeros_like(self.i3_indirect, float)
-                    )
+                    name="qref", 
+                    value=np.zeros((1,)+self.i3_indirect.shape))
         else:
             self._calc_cons = False
             dd(self).qref = depend_array(
                     name="qref", 
-                    value=np.reshape(constraint_values, 
-                                     self.i3_indirect.shape).copy()
-                    )
+                    value=np.reshape(
+                            constraint_values, 
+                            (1,)+self.i3_indirect.shape).copy())
         
     def bind(self, beads):
         
+        if not self._calc_cons:
+            qref = dstrip(self.qref).copy()
         super(EckartConstraint, self).bind(beads)
         if self._calc_cons:
-            self.qref[:] = dstrip(beads.q[0])[self.i3_unique].reshape((-1,3))
+            self.qref = np.reshape(dstrip(self.q).copy(), (1,-1,3))
+        else:
+            self.qref = qref
         dself = dd(self)
         dself.g.add_dependency(dself.constraint_values)
         dself.Dg.add_dependency(dself.constraint_values)
@@ -352,19 +393,23 @@ class EckartConstraint(ConstraintBase):
         dself.qref_com = depend_array(
                 name="qref_com", value=np.zeros(3, float),
                 func=(lambda: np.sum(
-                      dstrip(self.qref)*dstrip(self.m3).reshape((-1,3)),
+                      dstrip(self.qref).reshape((-1,3)) *
+                      dstrip(self.m3).reshape((-1,3)),
                       axis=0)/self.mtot),
                 dependencies=[dself.m3, dself.qref]
                 )
         # qref in its centre of mass frame
         dself.qref_rel = depend_array(
-                name="qref_rel", value=np.zeros_like(dstrip(self.qref)),
-                func=(lambda: dstrip(self.qref)-dstrip(self.qref_com)),
+                name="qref_rel",
+                value=np.zeros(dstrip(self.qref).shape[1:]),
+                func=(lambda: dstrip(self.qref).reshape(-1,3) -
+                              dstrip(self.qref_com)),
                 dependencies=[dself.qref, dself.qref_com]
                 )
         # qref in the CoM frame, mass-weighted
         dself.mqref_rel = depend_array(
-                name="mqref_rel", value=np.zeros_like(dstrip(self.qref)),
+                name="mqref_rel", 
+                value=np.zeros(dstrip(self.qref).shape[1:]),
                 func=(lambda: 
                     dstrip(self.qref_rel)*dstrip(self.m3).reshape((-1,3))),
                 dependencies=[dself.qref_rel, dself.m3]
@@ -382,7 +427,7 @@ class EckartConstraint(ConstraintBase):
 
         q = dstrip(self.q).reshape((-1,3))
         m = dstrip(self.m3).reshape((-1,3))
-        qref = dstrip(self.qref)
+        qref = dstrip(self.qref).reshape((-1,3))
         r = np.zeros(self.ncons)
         Delta = q-qref
         r[:3] = np.sum(m*Delta, axis=0)/self.mtot
@@ -394,10 +439,9 @@ class EckartConstraint(ConstraintBase):
         Calculates the Jacobian of the constraint.
         """
 
-        q = dstrip(self.qprev)
         r = np.zeros((self.ncons, self.n_unique, 3))
         m = dstrip(self.m3).reshape((-1,3))
-        mqref_rel = dstrip(self.mqref_rel)
+        mqref_rel = dstrip(self.mqref_rel).reshape((-1,3))
         for i in range(3):
             r[i,:,i] = m[:,i]
         # Eckart rotation, x-component
@@ -410,7 +454,7 @@ class EckartConstraint(ConstraintBase):
         r[5,:,0] =-mqref_rel[:,1]
         r[5,:,1] = mqref_rel[:,0]
         r /= self.mtot
-        r.shape = (self.ncons,-1)
+        r.shape = (self.ncons,1,-1)
         return r
 
 class ConstraintList(ConstraintBase):
@@ -430,12 +474,14 @@ class ConstraintList(ConstraintBase):
         # determines the list of unique indices of atoms that are affected 
         # by this list of constraint
         self.i_unique = np.zeros(0)
+        self.domains = []
         for c in self.constraint_list:
             self.i_unique = np.union1d(
                     c.constrained_indices.flatten(),self.i_unique
                     )
+            self.domains.append(c.domain)
                     
-        super(ConstraintList,self).__init__(self.i_unique, self.ncons)
+        super(ConstraintList,self).__init__(self.i_unique, self.ncons, domain="beads")
 
         # must now find the mapping from the unique indices in each constraint 
         # ic_map[i] gives the position where the atoms involved 
@@ -456,21 +502,27 @@ class ConstraintList(ConstraintBase):
         # defining a function that transfer q and qprev to the individual
         # constraints, and setting dependencies appropriately
         dself = dd(self)
-        def make_qgetter(k):
-            return lambda: self.q[self.ic3_map[k]]
-        def make_qprevgetter(k):
-            return lambda: self.qprev[self.ic3_map[k]]
+        def make_qgetter(k, domain):
+            if domain == "centroid":
+                return lambda: np.mean(self.q[:,None,self.ic3_map[k]], axis=0)
+            else:
+                return lambda: self.q[:,self.ic3_map[k]]
+        def make_qprevgetter(k, domain):
+            if domain == "centroid":
+                return lambda: np.mean(self.qprev[:,None,self.ic3_map[k]], axis=0)
+            else:
+                return lambda: self.qprev[:,self.ic3_map[k]]
         for ic, c in enumerate(self.constraint_list):
             c.bind(beads)
             # deal with constraint functions
             dq = dd(c).q
             dq.add_dependency(dself.q)
-            dq._func = make_qgetter(ic)
+            dq._func = make_qgetter(ic, c.domain)
             dself.g.add_dependency(dd(c).g)
             # ...and their gradients
             dqprev = dd(c).qprev
             dqprev.add_dependency(dself.qprev)
-            dqprev._func = make_qprevgetter(ic)
+            dqprev._func = make_qprevgetter(ic, c.domain)
             dself.Dg.add_dependency(dd(c).Dg)
 
     def gfunc(self):
@@ -489,10 +541,14 @@ class ConstraintList(ConstraintBase):
         Compute the Jacobian of the constraint function.
         """
         q = dstrip(self.qprev)
-        r = np.zeros((self.ncons, np.size(q)))
+        ndof = len(q)
+        r = np.zeros((self.ncons,)+q.shape)
         si = 0
         for ic, constr in enumerate(self.constraint_list):
-            r[si:si+constr.ncons, self.ic3_map[ic]] = constr.Dg
+            if constr.domain == "beads":
+                r[si:si+constr.ncons,:,self.ic3_map[ic]] = constr.Dg
+            else:
+                r[si:si+constr.ncons,:,self.ic3_map[ic]] = constr.Dg/ndof
             si += constr.ncons
         return r
 

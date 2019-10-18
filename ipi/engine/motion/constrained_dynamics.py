@@ -178,9 +178,9 @@ class ConstraintSolverBase(dobject):
 
         self.beads = beads
         # Sets the initial value of the constraint positions
-        q = dstrip(beads.q[0])
+        q = dstrip(beads.q)
         for constr in self.constraint_list:
-            constr.qprev = q[constr.i3_unique.flatten()]
+            constr.qprev = q[:,constr.i3_unique]
             
     def proj_cotangent(self, beads):
         """Set the momenta conjugate to the constrained degrees of freedom
@@ -227,32 +227,33 @@ class ConstraintSolver(ConstraintSolverBase):
     
     def proj_cotangent(self):
         
-        m3 = dstrip(self.beads.m3[0])
-        p = dstrip(self.beads.p[0]).copy()
+        p = dstrip(self.beads.p).copy()
         self.beads.p.hold()
         
         for constr in self.constraint_list:
             dg = dstrip(constr.Dg)
             ic = constr.i3_unique
-            b = np.dot(dg, p[ic]/constr.m3)
+            b = np.sum(dg*p[:,ic]/dstrip(constr.m3), axis=(-1,-2))
             
             if spla is None:
                 x = np.linalg.solve(dstrip(constr.Gram), b)
             else:
                 x = spla.cho_solve(dstrip(constr.GramChol), b)
                 
-            p[ic] -= np.dot(np.transpose(dg),x)
-        self.beads.p[0] = p
+            p[:,ic] -= np.dot(np.transpose(dg, [1,2,0]),x)
+        self.beads.p[:] = p
         self.beads.p.resume()
 
     def proj_manifold(self):
         
-        m3 = dstrip(self.beads.m3[0])
-        p = dstrip(self.beads.p[0]).copy()
-        q = dstrip(self.beads.q[0]).copy()
+#        m3 = dstrip(self.beads.m3[0])
+        p = dstrip(self.beads.p).copy()
+        self.beads.p.hold()
+        q = dstrip(self.beads.q).copy()
+        self.beads.q.hold()
                     
         for constr in self.constraint_list:
-            dg = dstrip(constr.Dg)
+            dg = np.transpose(dstrip(constr.Dg), [1,2,0])
             
             if spla is None:
                 gram = dstrip(constr.Gram)
@@ -260,33 +261,33 @@ class ConstraintSolver(ConstraintSolverBase):
                 chol_gram = dstrip(constr.GramChol)
             
             ic = constr.i3_unique
-            constr.q = q[ic]            
-            
+            constr.q = q[:,ic]            
+            m3 = dstrip(constr.m3)
             # iterative projection on the manifold
             for i in xrange(self.maxit):
                 g = dstrip(constr.g)
                 # bailout condition
                 if self.tolerance > np.linalg.norm(g, ord=self.norm_order):
-                    break
-                
+                    break  
                 if spla is None:
                     dlambda = np.linalg.solve(gram, g)
                 else:
                     dlambda = spla.cho_solve(chol_gram, g)
-                delta = np.dot(np.transpose(dg), dlambda)
-                q[ic] -= delta / m3[ic]
-                constr.q = q[ic] # updates the constraint to recompute g
-                
-                p[ic] -= delta / self.dt
+                delta = np.dot(dg, dlambda)
+                q[:,ic] -= delta / m3
+                constr.q = q[:,ic] # updates the constraint to recompute g
+                p[:,ic] -= delta / self.dt
                 
             if (i == self.maxit):
                 warning("No convergence in Newton iteration for positional component", verbosity.low)
 
         # after all constraints have been applied, q is on the manifold and we can update the constraint positions
         for constr in self.constraint_list:
-            constr.qprev = q[constr.i3_unique.flatten()]
-        self.beads.p[0] = p
-        self.beads.q[0] = q
+            constr.qprev = q[:,constr.i3_unique]
+        self.beads.p = p
+        self.beads.p.resume()
+        self.beads.q = q
+        self.beads.q.resume()
 
 
 class ConstrainedIntegrator(DummyIntegrator):
@@ -350,11 +351,14 @@ class NVEConstrainedIntegrator(ConstrainedIntegrator):
     
     def step_A(self):
         """Unconstrained A-step (coordinate integration)"""
-        self.beads.q[0] += self.beads.p[0] / dstrip(self.beads.m3)[0] * self.qdt
+        self.beads.q += self.beads.p / dstrip(self.beads.m3) * self.qdt
 
     def step_B(self, level=0):
         """Unconstrained B-step (momentum integration)"""
-        self.beads.p[0] += self.forces.forces_mts(level)[0] * self.pdt[level]
+        self.beads.p += self.forces.forces_mts(level) * self.pdt[level]
+        if level == self.nmtslevels - 1:
+            # Apply the forces due to ring-polymer springs
+            self.beads.p += dstrip(self.nm.fspring)*self.pdt[level]
 
     def step_Bc(self, level=0):
         """Unconstrained B-step (momentum integration)
@@ -364,15 +368,15 @@ class NVEConstrainedIntegrator(ConstrainedIntegrator):
 
     def step_Ag(self):
         """
-        Geodesic flow integrator. Makes one A step including manifold 
+        Geodesic flow integrator. Updates momenta with the spring forces, 
+        then makes one A step including manifold 
         projection of the position and update of the momenta following 
         the orthogonalization. Can be broken down into a MTS-like fashion
         to increase the accuracy without having to recompute forces.
         """
-        # Resolve momentum constraint and update Gram matrix if neccesary
-        # GT: is the following line necessary?
+        # Project momenta onto the cotangent space of the constraints
         self.proj_cotangent()
-
+        # Geodesic flow on the constraint manifold
         for i in range(self.nsteps_geo):
             self.step_A()
             self.proj_manifold()

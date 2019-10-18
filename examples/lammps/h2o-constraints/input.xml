@@ -2,7 +2,8 @@
     <output prefix='simulation'>
         <properties stride='1' filename='pot'>  [ pot_component_raw(0), pot_component_raw(1) ] </properties>
         <properties stride='1' filename='out'>  [ step, time{picosecond}, conserved, temperature{kelvin}, kinetic_cv, potential, pressure_cv{megapascal} ] </properties>
-        <trajectory stride='1' filename='pos'>  positions{angstrom} </trajectory>
+        <trajectory stride='1' filename='pos' bead='-8'>  positions{angstrom} </trajectory>
+        <trajectory stride='1' filename='xc'>  x_centroid{angstrom} </trajectory>
         <checkpoint stride='10'/>
     </output>
     <total_steps> 100 </total_steps>
@@ -16,7 +17,7 @@
         <address>h2o-pimd+mts.1</address>
     </ffsocket>
     <system>
-        <initialize nbeads='1'>
+        <initialize nbeads='32'>
             <file mode='pdb'> init.pdb </file>
             <velocities mode='thermal' units='kelvin'> 300 </velocities>
         </initialize>
@@ -47,16 +48,17 @@
                     <tolerance> .0001 </tolerance>
                 </csolver>
                 <nmts> [1, 4] </nmts>
-                <timestep units='femtosecond'> 4.0 </timestep>
-                <thermostat mode='langevin'>
-                    <tau units='femtosecond'> 5 </tau>
+                <timestep units='femtosecond'> 1.0 </timestep>
+                <thermostat mode='pile_l'>
+                   <tau units='femtosecond'> 5 </tau>
+                   <pile_lambda> 0.5 </pile_lambda>
                 </thermostat>
                 <constraint mode="multi">
-                    <constraint mode="angle">
+                    <constraint mode="angle" domain="beads">
                          <atoms>[0,1,2]</atoms>
                          <values units="degree">[104.75]</values>
                     </constraint>
-                    <constraint mode="distance">
+                    <constraint mode="distance" domain="beads">
                          <atoms>[0,1,0,2]</atoms>
                          <values units="angstrom">[0.96,0.96]</values>
                     </constraint>

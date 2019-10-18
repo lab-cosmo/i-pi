@@ -57,7 +57,11 @@ class InputConstraintBase(Input):
         "mode": (InputAttribute, {"dtype": str,
                                   "default": 'distance',
                                   "help": "The type of constraint. ",
-                                  "options": ['distance', 'angle', 'eckart', 'multi']})
+                                  "options": ['distance', 'angle', 'eckart', 'multi']}),
+        "domain": (InputAttribute, {"dtype": str,
+                                  "default": 'centroid',
+                                  "help": "The type of constraint. ",
+                                  "options": ['centroid', 'beads']})
               }
 
     fields = {
@@ -75,19 +79,23 @@ class InputConstraintBase(Input):
 
         if type(cnstr) is RigidBondConstraint:
             self.mode.store("distance")
+            self.domain.store(cnstr.domain)
             self.atoms.store(cnstr.constrained_indices)
             self.values.store(cnstr.constraint_values)
         if type(cnstr) is AngleConstraint:
             self.mode.store("angle")
+            self.domain.store(cnstr.domain)
             self.atoms.store(cnstr.constrained_indices)
             self.values.store(cnstr.constraint_values)
         if type(cnstr) is EckartConstraint:
             self.mode.store("eckart")
+            self.domain.store(cnstr.domain)
             self.atoms.store(cnstr.constrained_indices)
             # NOTE: this is special
             self.values.store(cnstr.qref.flatten())
 
     def fetch(self):
+        domain = self.domain.fetch()
         if self.mode.fetch() == "distance":
             alist = self.atoms.fetch()
             dlist = self.values.fetch()
@@ -95,7 +103,7 @@ class InputConstraintBase(Input):
                 alist.shape = (alist.shape[0]/2, 2)
             if len(dlist) != len(alist) and len(dlist) != 0:
                 raise ValueError("Length of atom indices and of distance list do not match")
-            robj = RigidBondConstraint(alist, dlist)
+            robj = RigidBondConstraint(alist, dlist, domain=domain)
         elif self.mode.fetch() == "angle":
             alist = self.atoms.fetch()
             dlist = self.values.fetch()
@@ -103,14 +111,14 @@ class InputConstraintBase(Input):
                 alist.shape = (alist.shape[0]/3, 3)
             if len(dlist) != len(alist) and len(dlist) != 0:
                 raise ValueError("Length of atom indices and of distance list do not match")
-            robj = AngleConstraint(alist, dlist)
+            robj = AngleConstraint(alist, dlist, domain=domain)
         elif self.mode.fetch() == "eckart":
             alist = self.atoms.fetch()
             dlist = self.values.fetch()
             alist.shape = -1
             if len(dlist) != 3*len(alist) and len(dlist) != 0:
                 raise ValueError("Length of atom indices and of list of coordinates do not match")
-            robj = EckartConstraint(alist, dlist)
+            robj = EckartConstraint(alist, dlist, domain=domain)
 
         return robj
 
