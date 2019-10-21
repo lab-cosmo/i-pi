@@ -1,0 +1,56 @@
+<simulation mode='md' verbosity='medium'>
+    <output prefix='simulation'>
+        <properties stride='10' filename='out'>  [ step, time{picosecond}, conserved, temperature{kelvin}, potential ] </properties>
+        <trajectory stride='40' filename='pos' bead='-8'>  positions </trajectory>
+        <trajectory stride='40' filename='force' bead='-8'>  forces </trajectory>
+        <trajectory stride='40' filename='xc'>  x_centroid </trajectory>
+        <trajectory stride='40' filename='fc'>  f_centroid </trajectory>
+        <checkpoint stride='10000'/>
+    </output>
+    <total_steps> 400000 </total_steps>
+    <prng>
+        <seed>31415</seed>
+    </prng>
+    <ffsocket name='driver' mode='unix' pbc='false'>
+            <address>h2o-pimd</address>
+    </ffsocket>
+    <system>
+        <initialize nbeads='32'>
+            <file mode='pdb'> init.pdb </file>
+            <velocities mode='thermal' units='kelvin'> 300 </velocities>
+        </initialize>
+        <forces>
+                <force forcefield='driver'/>
+        </forces>
+        <motion mode='constrained_dynamics'>
+            <fixcom> true </fixcom>
+            <constrained_dynamics mode='nvt' splitting='baoab'>
+                <nsteps_geo> 1 </nsteps_geo>
+                <nsteps_o> 1 </nsteps_o>
+                <csolver>
+                    <maxit> 10000 </maxit>
+                    <norm_order> 2 </norm_order>
+                    <tolerance> .0001 </tolerance>
+                </csolver>
+                <timestep units='femtosecond'> 0.25 </timestep>
+                <thermostat mode='pile_l'>
+                   <tau units='femtosecond'> 50 </tau>
+                   <pile_lambda> 0.5 </pile_lambda>
+                </thermostat>
+                <constraint mode="multi">
+                    <constraint mode="angle" domain="centroid">
+                         <atoms>[0,1,2]</atoms>
+                         <values units="degree">[106.1905]</values>
+                    </constraint>
+                    <constraint mode="distance" domain="centroid">
+                         <atoms>[0,1,0,2]</atoms>
+                         <values units="atomic_unit">[1.7587302,1.8460317]</values>
+                    </constraint>
+                </constraint>
+            </constrained_dynamics>
+        </motion>
+        <ensemble>
+            <temperature units='kelvin'> 300 </temperature>
+        </ensemble>
+    </system>
+</simulation>

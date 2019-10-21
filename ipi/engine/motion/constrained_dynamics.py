@@ -112,8 +112,10 @@ class ConstrainedDynamics(Dynamics):
                     elif isinstance(c, EckartConstraint):
                         has_eckart = True
             else:
-                if isinstance(constr, EckartConstraint):
-                    has_eckart = True
+                # ConstraintList converts from centroid to bead space
+                # therefore must have all constraints within lists.
+                raise ValueError(
+                "A constraint must appear as part of a constaint list!")
                     
         self.fixcom = fixcom
         # If only some of the molecules have Eckart enforced, this will clash
