@@ -149,7 +149,7 @@ class AlKMC(Motion):
         # we hard-code this option to avoid early-termination that would be hard to debug for a user
         geop["exit_on_convergence"] = False
         for i in xrange(self.neval):
-            # geometry optimizer should not have *any* hystory dependence
+            # geometry optimizer should not have *any* history dependence
             self.geop[i] = GeopMotion(fixcom=fixcom, fixatoms=fixatoms,**geop) #mode="cg", ls_options={"tolerance": 1, "iter": 20,  "step": 1e-3, "adaptive": 0.0}, tolerances={"energy": 1e-7, "force": 1e-2, "position": 1e-4}, ) #!TODO: set the geop parameters properly
 
         # dictionary of previous energy evaluations - kind of tricky to use this with the omaker thingie
@@ -166,10 +166,12 @@ class AlKMC(Motion):
             print "Loaded %d cached energies" % (len(self.ecache))
         except:
             print "Couldn't load cache files "+self.ecache_file+","+self.qcache_file+" - resetting"
+            print "Testing Ordered dictionary "
             self.ecache = collections.OrderedDict()
             self.qcache = collections.OrderedDict()
         self.ncache = len(self.ecache)
         self.ncache_stored = self.ncache
+        self.struct_count = self.ncache
 
 
         # no TS evaluation implemented yet
@@ -284,6 +286,7 @@ class AlKMC(Motion):
                 self.ncache += 1
             nevent[2] = self.ecache[nstr]
             nevent[3] = self.qcache[nstr]
+            self.struct_count+=1
 
         # launches TS calculation
         #if not ostr is None:
