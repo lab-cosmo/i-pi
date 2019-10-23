@@ -471,8 +471,8 @@ class KDEConstraint(ValueConstraintBase):
             raise ValueError(
             "KDE constraints not defined for domain {:s}".format(domain))
         
-        ncons = len(constrained_indices.flatten())*3        
-        super(KDEConstraint,self).__init__(constrained_indices, constraint_values, ncons)                
+        ncons = len(constrained_indices.flatten())*3 
+        super(KDEConstraint,self).__init__(constrained_indices, constraint_values, ncons, domain=domain)                
         self.constraint_values.shape = (ncons)
         self.sigma = sigma
                 
@@ -484,37 +484,56 @@ class KDEConstraint(ValueConstraintBase):
         
         if not self._calc_cons:
             qref = dstrip(self.qref).copy()
+        
         super(KDEConstraint, self).bind(beads)
+        
         if self._calc_cons:
-            self.qref = dstrip(beads.qc[self.i3_unique]).copy()      
-            self.constraint_values = self.qref      
+            self.qref = dstrip(beads.q[:,self.i3_unique]).copy()      
+            # computes the constraint as the linear centroid
+            self.constraint_values = self.qref.mean(axis=0)      
         else:
             self.qref = qref
-            
+                
         dself = dd(self)
         dself.g.add_dependency(dself.constraint_values)
         dself.Dg.add_dependency(dself.constraint_values)
          
     def gfunc(self):
         """
-        Calculates the constraint value.
+        Calculates the position of the mode of the KDE by iterative mode-seeking
         """
 
-        q = dstrip(self.q)
-        dq = q-dstrip(self.constraint_values).reshape(q.shape)
-        # distances of each atom to its target
-        d2 = np.sum((q-dq)**2,axis=1)
-        gw = np.exp(-d2*0.5/self.sigma**2)
+        ndof = len(self.q)
+        q = dstrip(self.q).reshape((ndof,self.n_unique,3)).copy()        
+        x = self.constraint_values.reshape((self.n_unique, 3))
         
         
-        return r
+        for i in xrange(4): # make it an option, maxiter
+            dq = q-x
+            print "KDE CONSTRAINTS _____ "
+            print "target", x
+            print "distance", q
+            # distances of each atom to its target
+            d2 = np.sum((dq)**2,axis=2)
+            gw = np.exp(-d2*0.5/self.sigma**2) 
+            gw /= gw.sum(axis=0) 
+            qmode = np.einsum("bjk,bj->jk", q, gw)
+            if np.linalg.norm(qmode-x)<1e-8: 
+                break
+            x = qmode
+        
+        print "qmode and x ", qmode, x
+                
+        return qmode.flatten()
 
     def Dgfunc(self, reduced=False):
         """
         Calculates the Jacobian of the constraint.
         """
 
-        r = np.zeros((self.ncons, self.n_unique, 3))        
+        
+        ndof = len(self.q)
+        r = np.ones((self.ncons, ndof, self.n_unique*3))        
         return r
 
 class ConstraintList(ConstraintBase):

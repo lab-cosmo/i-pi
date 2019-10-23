@@ -411,7 +411,8 @@
                 </constraint>
                 <constraint mode="multi" domain="beads">
                     <constraint mode="kde" domain="beads">
-                         <atoms>[93,94,95]</atoms>
+                        <atoms>[93,94,95]</atoms>
+                        <kde_sigma> 1.0 </kde_sigma>
                      </constraint>
                 </constraint>
             </constrained_dynamics>

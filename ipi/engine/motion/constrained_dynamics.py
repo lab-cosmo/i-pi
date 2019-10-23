@@ -231,8 +231,9 @@ class ConstraintSolver(ConstraintSolverBase):
         
         p = dstrip(self.beads.p).copy()
         self.beads.p.hold()
-        
+                
         for constr in self.constraint_list:
+            print constr.g
             dg = dstrip(constr.Dg)
             ic = constr.i3_unique
             b = np.sum(dg*p[:,ic]/dstrip(constr.m3), axis=(-1,-2))
