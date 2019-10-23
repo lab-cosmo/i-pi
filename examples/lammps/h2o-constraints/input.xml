@@ -2,7 +2,7 @@
     <output prefix='simulation'>
         <properties stride='1' filename='pot'>  [ pot_component_raw(0), pot_component_raw(1) ] </properties>
         <properties stride='1' filename='out'>  [ step, time{picosecond}, conserved, temperature{kelvin}, kinetic_cv, potential, pressure_cv{megapascal} ] </properties>
-        <trajectory stride='1' filename='pos' bead='-8'>  positions{angstrom} </trajectory>
+        <trajectory stride='1' filename='pos' bead='-2'>  positions{angstrom} </trajectory>
         <trajectory stride='1' filename='xc'>  x_centroid{angstrom} </trajectory>
         <checkpoint stride='10'/>
     </output>
@@ -17,7 +17,7 @@
         <address>h2o-pimd+mts.1</address>
     </ffsocket>
     <system>
-        <initialize nbeads='32'>
+        <initialize nbeads='8'>
             <file mode='pdb'> init.pdb </file>
             <velocities mode='thermal' units='kelvin'> 300 </velocities>
         </initialize>
@@ -409,16 +409,10 @@
                          <atoms>[90,91,92]</atoms>
                     </constraint>
                 </constraint>
-                <constraint mode="multi">
-                    <constraint mode="angle">
+                <constraint mode="multi" domain="beads">
+                    <constraint mode="kde" domain="beads">
                          <atoms>[93,94,95]</atoms>
-                    </constraint>
-                    <constraint mode="distance">
-                         <atoms>[93,94,93,95]</atoms>
-                    </constraint>
-                    <constraint mode="eckart">
-                         <atoms>[93,94,95]</atoms>
-                    </constraint>
+                     </constraint>
                 </constraint>
             </constrained_dynamics>
         </motion>

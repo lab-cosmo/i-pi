@@ -8,7 +8,7 @@ import numpy as np
 from copy import copy
 import ipi.engine.thermostats
 import ipi.engine.barostats
-from ipi.utils.constrtools import ConstraintBase, RigidBondConstraint, AngleConstraint, EckartConstraint, ConstraintList
+from ipi.utils.constrtools import ConstraintBase, RigidBondConstraint, AngleConstraint, EckartConstraint, KDEConstraint, ConstraintList
 from ipi.utils.inputvalue import InputDictionary, InputAttribute, InputValue, InputArray, Input, input_default
 from ipi.inputs.barostats import InputBaro
 from ipi.inputs.thermostats import InputThermo
@@ -57,7 +57,7 @@ class InputConstraintBase(Input):
         "mode": (InputAttribute, {"dtype": str,
                                   "default": 'distance',
                                   "help": "The type of constraint. ",
-                                  "options": ['distance', 'angle', 'eckart', 'multi']}),
+                                  "options": ['distance', 'angle', 'eckart', 'multi', 'kde']}),
         "domain": (InputAttribute, {"dtype": str,
                                   "default": 'centroid',
                                   "help": "The type of constraint. ",
@@ -71,7 +71,11 @@ class InputConstraintBase(Input):
         "values": (InputArray, {"dtype": float,
                               "default":  np.zeros(0, int),
                               "dimension": "length",
-                              "help": "List of constraint lengths."})
+                              "help": "List of constraint values."}),
+        "kde_sigma": (InputValue, {"dtype": float,
+                                    "default": 0,
+                                    "dimension": "length",
+                                    "help": "Bandwidth of the smearing function for the KDE maximum constraint."})
     }
 
 
@@ -82,17 +86,25 @@ class InputConstraintBase(Input):
             self.domain.store(cnstr.domain)
             self.atoms.store(cnstr.constrained_indices)
             self.values.store(cnstr.constraint_values)
-        if type(cnstr) is AngleConstraint:
+        elif type(cnstr) is AngleConstraint:
             self.mode.store("angle")
             self.domain.store(cnstr.domain)
             self.atoms.store(cnstr.constrained_indices)
             self.values.store(cnstr.constraint_values)
-        if type(cnstr) is EckartConstraint:
+        elif type(cnstr) is KDEConstraint:
+            self.mode.store("kde")
+            self.domain.store(cnstr.domain)
+            self.atoms.store(cnstr.constrained_indices)
+            self.values.store(cnstr.constraint_values)
+            self.kde_sigma.store(cnstr.sigma)
+        elif type(cnstr) is EckartConstraint:
             self.mode.store("eckart")
             self.domain.store(cnstr.domain)
             self.atoms.store(cnstr.constrained_indices)
             # NOTE: this is special
             self.values.store(cnstr.qref.flatten())
+        else:
+            raise ValueError("Invalid constraint object.")
 
     def fetch(self):
         domain = self.domain.fetch()
@@ -119,6 +131,15 @@ class InputConstraintBase(Input):
             if len(dlist) != 3*len(alist) and len(dlist) != 0:
                 raise ValueError("Length of atom indices and of list of coordinates do not match")
             robj = EckartConstraint(alist, dlist, domain=domain)
+        elif self.mode.fetch() == "kde":
+            alist = self.atoms.fetch()
+            dlist = self.values.fetch()
+            alist.shape = -1
+            if len(dlist) != 3*len(alist) and len(dlist) != 0:
+                raise ValueError("Length of atom indices and of list of coordinates do not match")
+            robj = KDEConstraint(alist, dlist, domain=domain, sigma = self.kde_sigma.fetch())
+        else:
+            raise ValueError("Invalid constraint mode '"+self.mode.fetch()+"'")
 
         return robj
 

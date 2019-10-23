@@ -248,7 +248,6 @@ class ConstraintSolver(ConstraintSolverBase):
 
     def proj_manifold(self):
         
-#        m3 = dstrip(self.beads.m3[0])
         p = dstrip(self.beads.p).copy()
         self.beads.p.hold()
         q = dstrip(self.beads.q).copy()

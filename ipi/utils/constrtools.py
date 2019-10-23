@@ -14,7 +14,8 @@ try:
 except:
     spla = None
 
-__all__ = ['ConstraintBase', 'ConstraintList', 'AngleConstraint', 'RigidBondConstraint', 'EckartConstraint']
+__all__ = ['ConstraintBase', 'ConstraintList', 'AngleConstraint', 
+            'RigidBondConstraint', 'EckartConstraint', 'KDEConstraint']
            
            
 class ConstraintBase(dobject):
@@ -81,11 +82,13 @@ class ConstraintBase(dobject):
         if self.domain == "centroid":
             dself.q = depend_array(
                     name="q", 
-                    value=dstrip(beads.qc)[None,self.i3_unique])
+                    value=dstrip(beads.qc)[None,self.i3_unique].copy()
+                    )
         elif self.domain == "beads":
             dself.q = depend_array(
                     name="q", 
-                    value=dstrip(beads.q)[:,self.i3_unique])
+                    value=dstrip(beads.q)[:,self.i3_unique].copy()
+                    )
         else:
             raise ValueError("Unknown constraint domain '{:s}'.".format(self.domain))
         dself.g = depend_array(name="g", value=np.zeros(self.ncons),
@@ -455,6 +458,63 @@ class EckartConstraint(ConstraintBase):
         r[5,:,1] = mqref_rel[:,0]
         r /= self.mtot
         r.shape = (self.ncons,1,-1)
+        return r
+
+class KDEConstraint(ValueConstraintBase):
+    """ Constraint class that fixes the mode of the ring polymer distribution
+        estimated based on a kernel density estimation.
+    """
+
+    def __init__(self, constrained_indices, constraint_values, domain="beads", sigma = 1.0):
+        
+        if domain != "beads":
+            raise ValueError(
+            "KDE constraints not defined for domain {:s}".format(domain))
+        
+        ncons = len(constrained_indices.flatten())*3        
+        super(KDEConstraint,self).__init__(constrained_indices, constraint_values, ncons)                
+        self.constraint_values.shape = (ncons)
+        self.sigma = sigma
+                
+        # Check that there are no repeats
+        if np.any(self.constrained_indices != self.i_unique):
+            raise ValueError("Repeated atom indices in KDEConstraint")
+        
+    def bind(self, beads):
+        
+        if not self._calc_cons:
+            qref = dstrip(self.qref).copy()
+        super(KDEConstraint, self).bind(beads)
+        if self._calc_cons:
+            self.qref = dstrip(beads.qc[self.i3_unique]).copy()      
+            self.constraint_values = self.qref      
+        else:
+            self.qref = qref
+            
+        dself = dd(self)
+        dself.g.add_dependency(dself.constraint_values)
+        dself.Dg.add_dependency(dself.constraint_values)
+         
+    def gfunc(self):
+        """
+        Calculates the constraint value.
+        """
+
+        q = dstrip(self.q)
+        dq = q-dstrip(self.constraint_values).reshape(q.shape)
+        # distances of each atom to its target
+        d2 = np.sum((q-dq)**2,axis=1)
+        gw = np.exp(-d2*0.5/self.sigma**2)
+        
+        
+        return r
+
+    def Dgfunc(self, reduced=False):
+        """
+        Calculates the Jacobian of the constraint.
+        """
+
+        r = np.zeros((self.ncons, self.n_unique, 3))        
         return r
 
 class ConstraintList(ConstraintBase):
