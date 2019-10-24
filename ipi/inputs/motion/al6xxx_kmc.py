@@ -148,14 +148,15 @@ class InputAlKMC(InputDictionary):
 
         # only stores cache after a decent amount of new structures have been found
         # if kmc.ncache_stored*self.STORE_STRIDE<kmc.ncache:
-        if (kmc.struct_count - kmc.ncache_stored) >= 100 : # Basically dump only after 100 new structures.
+        if (kmc.struct_count - kmc.ncache_stored) >= 0.1*kmc.ncache : # dump if new structures exceed 10% of current store
+        # if (kmc.struct_count - kmc.ncache_stored) >= 100 : # Basically dump only after 100 new structures.
             if kmc.ecache_file != "":
-                print "100 new structures since last dump. Storing ECACHE in ", kmc.ecache_file
+                print "10%% new structures since last dump. Storing ECACHE in ", kmc.ecache_file
                 ff = open(kmc.ecache_file, "wb")
                 pickle.dump(kmc.ecache, ff)
                 ff.close()
             if kmc.qcache_file != "":
-                print "100 new structures since last dump. Storing QCACHE in ", kmc.qcache_file
+                print "10%% new structures since last dump. Storing QCACHE in ", kmc.qcache_file
                 ff = open(kmc.qcache_file, "wb")
                 pickle.dump(kmc.qcache, ff)
                 ff.close()
