@@ -40,15 +40,20 @@ def compute_acf(input_file, output_prefix, maximum_lag, block_length, length_zer
         else:
             raise ValueError("LENGTH_BLOCK should be greater than or equal to 2 * MAXIMUM_LAG.")
 
-    # reads one frame.
-    ff = open(ifile)
-    rr = read_file_raw(ifile_ext, ff)
-    ff.close()
-
     # appends "der" to output file in case the acf of the derivative is desired
     if(der == True):
         ofile = ofile + "_der"
 
+    ff = open(ifile)
+    if ifile_ext == "xyz" or ifile_ext == "pdb":
+        # reads one frame.
+        rr = read_file_raw(ifile_ext, ff)
+    else:
+        # reads one frame.
+	rr = {}
+        rr['data'] = np.asarray(ff.readline().split()).astype(float)
+        rr['names'] = None
+    ff.close()
     # stores the indices of the "chosen" atoms.
     ndof = len(rr['data'])
     if("*" in labels):
@@ -92,8 +97,11 @@ def compute_acf(input_file, output_prefix, maximum_lag, block_length, length_zer
         try:
             # Reads the data in blocks.
             for i in range(bsize):
-                rr = read_file_raw(ifile_ext, ff)
-                data[i] = rr['data'].reshape((ndof / 3, 3))[labelbool]
+	    	if ifile_ext == "xyz" or ifile_ext == "pdb":
+                    rr = read_file_raw(ifile_ext, ff)
+                    data[i] = rr['data'].reshape((ndof / 3, 3))[labelbool]
+	    	else:
+		    data[i] = np.asarray(ff.readline().split()).astype(float).reshape((ndof / 3, 3))
 
             if(der == True):
                 data = np.gradient(data, axis=0) / dt
