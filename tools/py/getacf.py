@@ -27,6 +27,7 @@ def compute_acf(input_file, output_prefix, maximum_lag, block_length, length_zer
     labels = str(labels)
     timestep = str(timestep).split()
     fskip = int(skip)
+    ifile_ext = ifile.split('.')[-1]
 
     # checks for errors
     if(mlag <= 0):
@@ -41,7 +42,7 @@ def compute_acf(input_file, output_prefix, maximum_lag, block_length, length_zer
 
     # reads one frame.
     ff = open(ifile)
-    rr = read_file_raw("xyz", ff)
+    rr = read_file_raw(ifile_ext, ff)
     ff.close()
 
     # appends "der" to output file in case the acf of the derivative is desired
@@ -84,14 +85,14 @@ def compute_acf(input_file, output_prefix, maximum_lag, block_length, length_zer
     ff = open(ifile)
     # Skips the first fskip frames
     for x in xrange(fskip):
-        rr = read_file_raw("xyz", ff)
+        rr = read_file_raw(ifile_ext, ff)
 
     while True:
 
         try:
             # Reads the data in blocks.
             for i in range(bsize):
-                rr = read_file_raw("xyz", ff)
+                rr = read_file_raw(ifile_ext, ff)
                 data[i] = rr['data'].reshape((ndof / 3, 3))[labelbool]
 
             if(der == True):

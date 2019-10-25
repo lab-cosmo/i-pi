@@ -197,9 +197,14 @@ def gleacf(path2ixml, path2iA, path2iC, path2ifacf, oprefix, action, nrows, stri
     ix = ifacf[:, 0]
     iy = ifacf[:, 1]
 
-    # computes the facf kernel
-    print "# computing the kernel."
-    ker = gleKernel(ix, Ap, Dp)
+    # loads/computes the facf kernel
+    if os.path.exists('./KERNEL.npy'):
+        print "# loading the kernel."
+        ker = np.load('KERNEL.npy')
+    else:
+        print "# computing the kernel."
+        ker = gleKernel(ix, Ap, Dp)
+        np.save('KERNEL.npy', ker)
 
     # (de-)convolutes the spectrum
     if(action == "conv"):
