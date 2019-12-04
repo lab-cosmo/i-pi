@@ -63,6 +63,7 @@ def compute_acf(input_file, output_prefix, maximum_lag, block_length, length_zer
         for l in labels:
             labelbool = np.logical_or(labelbool, rr['names'] == l)
     nspecies = labelbool.sum()
+    #scaling = np.repeat(np.sqrt(rr['masses']), 3).reshape((ndof / 3, 3))
 
     # initializes variables.
     nblocks = 0
@@ -96,12 +97,15 @@ def compute_acf(input_file, output_prefix, maximum_lag, block_length, length_zer
 
         try:
             # Reads the data in blocks.
-            for i in range(bsize):
-	    	if ifile_ext == "xyz" or ifile_ext == "pdb":
+	    if ifile_ext == "xyz" or ifile_ext == "pdb":
+                for i in range(bsize):
                     rr = read_file_raw(ifile_ext, ff)
                     data[i] = rr['data'].reshape((ndof / 3, 3))[labelbool]
-	    	else:
-		    data[i] = np.asarray(ff.readline().split()).astype(float).reshape((ndof / 3, 3))
+                    #data[i] = data[i] * scaling
+	    else:
+                for i in range(bsize):
+		    rr = ff.readline()
+                    data[i] = np.asarray(rr.split()).astype(float).reshape((ndof / 3, 3))
 
             if(der == True):
                 data = np.gradient(data, axis=0) / dt
@@ -133,7 +137,8 @@ def compute_acf(input_file, output_prefix, maximum_lag, block_length, length_zer
 
             nblocks += 1
 
-        except EOFError:
+        except Exception as e:
+	    print "# ", e 
             break
     ff.close()
 
