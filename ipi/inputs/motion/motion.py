@@ -32,6 +32,7 @@ from ipi.engine.motion import (
     ConstrainedDynamics,
     Replay,
     GeopMotion,
+    CeopMotion,
     NEBMover,
     DynMatrixMover,
     MultiMotion,
@@ -49,6 +50,7 @@ from ipi.utils.inputvalue import *
 from ipi.inputs.thermostats import *
 from ipi.inputs.initializer import *
 from .geop import InputGeop
+from .ceop import InputCeop
 from .instanton import InputInst
 from .neb import InputNEB
 from .dynamics import InputDynamics
@@ -91,6 +93,7 @@ class InputMotionBase(Input):
                 "options": [
                     "vibrations",
                     "minimize",
+                    "cell_minimize",
                     "replay",
                     "neb",
                     "dynamics",
@@ -130,6 +133,10 @@ class InputMotionBase(Input):
         "optimizer": (
             InputGeop,
             {"default": {}, "help": "Option for geometry optimization"},
+        ),
+        "cell_optimizer": (
+            InputCeop,
+            {"default": {}, "help": "Option for cell optimization"},
         ),
         "neb_optimizer": (
             InputNEB,
@@ -219,6 +226,10 @@ class InputMotionBase(Input):
             self.mode.store("minimize")
             self.optimizer.store(sc)
             tsc = 1
+        elif type(sc) is CeopMotion:
+            self.mode.store("cell_minimize")
+            self.optimizer.store(sc)
+            tsc = 1
         elif type(sc) is NEBMover:
             self.mode.store("neb")
             self.neb_optimizer.store(sc)
@@ -302,6 +313,12 @@ class InputMotionBase(Input):
             )
         elif self.mode.fetch() == "minimize":
             sc = GeopMotion(
+                fixcom=self.fixcom.fetch(),
+                fixatoms=self.fixatoms.fetch(),
+                **self.optimizer.fetch()
+            )
+        elif self.mode.fetch() == "cell_minimize":
+            sc = CeopMotion(
                 fixcom=self.fixcom.fetch(),
                 fixatoms=self.fixatoms.fetch(),
                 **self.optimizer.fetch()

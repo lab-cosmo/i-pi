@@ -668,6 +668,14 @@ class Forces(dobject):
             dependencies=[dd(ff).f for ff in self.mforces],
         )
 
+        # now must expose an interface that gives overall forces
+        dself.f_scaled = depend_array(
+            name="f_scaled",
+            value=np.zeros((self.nbeads, 3 * self.natoms)),
+            func=self.get_f_scaled,
+            dependencies=[dself.f, dself.cell.h],
+        )
+
         # collection of pots and virs from individual ff objects
         dself.pots = depend_array(
             name="pots",
@@ -1257,6 +1265,17 @@ class Forces(dobject):
                     * self.mforces[k].mts_weights.sum()
                     * self.mrpc[k].b2tob1(dstrip(self.mforces[k].f))
                 )
+        return rf
+
+    def get_f_scaled(self):
+        """Returns scaled forces in internal coordinates."""
+
+        f = dtsrip(self.f)
+        rf = dstrip(self.f) * 0.0
+        for i, f_bead in enumerate(f):
+            f_bead.reshape(self.natoms, 3)
+            f_bead = np.dot(dstrip(self.cell.h, f_bead.T))
+            rf[i] = f_bead.flatten()
         return rf
 
     def fvir_4th_order_combine(self):
