@@ -228,7 +228,7 @@ class InputMotionBase(Input):
             tsc = 1
         elif type(sc) is CeopMotion:
             self.mode.store("cell_minimize")
-            self.optimizer.store(sc)
+            self.cell_optimizer.store(sc)
             tsc = 1
         elif type(sc) is NEBMover:
             self.mode.store("neb")
@@ -321,7 +321,7 @@ class InputMotionBase(Input):
             sc = CeopMotion(
                 fixcom=self.fixcom.fetch(),
                 fixatoms=self.fixatoms.fetch(),
-                **self.optimizer.fetch()
+                **self.cell_optimizer.fetch()
             )
         elif self.mode.fetch() == "neb":
             sc = NEBMover(

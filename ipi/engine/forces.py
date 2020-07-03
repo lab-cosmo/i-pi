@@ -1270,11 +1270,11 @@ class Forces(dobject):
     def get_f_scaled(self):
         """Returns scaled forces in internal coordinates."""
 
-        f = dtsrip(self.f)
+        f = dstrip(self.f)
         rf = dstrip(self.f) * 0.0
         for i, f_bead in enumerate(f):
-            f_bead.reshape(self.natoms, 3)
-            f_bead = np.dot(dstrip(self.cell.h, f_bead.T))
+            f_bead  = f_bead.reshape((self.natoms, 3))
+            f_bead = np.dot(dstrip(self.cell.h), f_bead.T)
             rf[i] = f_bead.flatten()
         return rf
 

@@ -52,6 +52,15 @@ class Cell(dobject):
             func=self.get_ih,
             dependencies=[dself.h],
         )
+        dself.h0 = dself.h.copy()
+        dself.ih0 = dself.get_ih().copy()
+        dself.strain = depend_array(
+            name="strain",
+            value=np.zeros((3, 3), float),
+            func=self.get_strain,
+            dependencies=[dself.h],
+        )
+        dself.h0 = dself.h.copy()
         dself.V = depend_value(name="V", func=self.get_volume, dependencies=[dself.h])
 
     def copy(self):
@@ -61,6 +70,11 @@ class Cell(dobject):
         """Inverts the lattice vector matrix."""
 
         return invert_ut3x3(self.h)
+
+    def get_strain(self):
+        """Computes the strain using the initial cell as the reference."""
+
+        return np.dot(self.h, self.ih0) - np.eye(3)
 
     def get_volume(self):
         """Calculates the volume of the system box."""
@@ -107,6 +121,26 @@ class Cell(dobject):
         s = np.dot(dstrip(self.h), s).T
 
         pos[:] = s.reshape((len(s) * 3))
+
+    def get_scaled_positions(self, pos):
+        """Returns scaled positions in internal coordinates."""
+
+        s = pos.copy()
+        s_return = dstrip(pos).copy()
+        s.shape = (int(pos.shape[1] / 3), 3)
+        s = np.dot(dstrip(self.ih), s.T).T
+        s_return[:]= s.reshape((len(s) * 3)) 
+        return s_return
+
+    def get_absolute_positions(self, pos):
+        """Returns scaled positions in internal coordinates."""
+
+        s = pos.copy()
+        s_return = dstrip(pos).copy()
+        s.shape = (int(pos.shape[1] / 3), 3)
+        s = np.dot(s, dstrip(self.h).T)
+        s_return[:] = s.reshape((1, len(s) * 3)) 
+        return s_return
 
     def minimum_distance(self, atom1, atom2):
         """Takes two atoms and tries to find the smallest vector between two
