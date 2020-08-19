@@ -12,6 +12,7 @@ from .dynamics import Dynamics
 from .constrained_dynamics import ConstrainedDynamics
 from .replay import Replay
 from .geop import GeopMotion
+from .ceop import CeopMotion
 from .instanton import InstantonMotion
 from .neb import NEBMover
 from .phonons import DynMatrixMover
