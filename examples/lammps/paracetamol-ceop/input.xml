@@ -1,6 +1,6 @@
 <simulation mode='static' verbosity='high' threading='false'>
   <output prefix='simulation'>
-    <properties stride='1' filename='out'>  [ step, potential ] </properties>
+    <properties stride='1' filename='out'>  [ step, potential, cell_h ] </properties>
     <trajectory stride='1' filename='pos'>  positions  </trajectory>
   </output>
   <total_steps> 2000000 </total_steps>
