@@ -130,3 +130,38 @@ class Cell(dobject):
         for i in range(3):
             s[i] -= round(s[i])
         return np.dot(self.h, s)
+    def positions_abs_to_scaled(self, pos, forces=None):
+        """Uses the minimum image convention to return a list of particles to the
+           unit cell.
+
+        Args:
+           atom: An Atom object.
+
+        Returns:
+           An array giving the position of the image that is inside the
+           system box.
+        """
+        s = dstrip(pos).copy()
+        s_return = dstrip(pos).copy()
+        s.shape = (pos.shape[1] / 3, 3)
+        s = np.dot(dstrip(self.ih), s.T).T
+        s_return[:]= s.reshape((len(s) * 3))
+        return s_return
+    def positions_scaled_to_abs(self, pos):
+        """Uses the minimum image convention to return a list of particles to the
+           unit cell.
+
+        Args:
+           atom: An Atom object.
+
+        Returns:
+           An array giving the position of the image that is inside the
+           system box.
+        """
+
+        s = dstrip(pos).copy()
+        s_return = dstrip(pos).copy()
+        s.shape = (pos.shape[1] / 3, 3)
+        s = np.dot(s, dstrip(self.h).T)
+        s_return[:] = s.reshape((len(s) * 3))
+        return s_return

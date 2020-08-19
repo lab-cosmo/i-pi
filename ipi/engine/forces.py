@@ -580,6 +580,17 @@ class Forces(dobject):
         dself.pots.add_dependency(dforces.pots)
         dself.virs.add_dependency(dforces.virs)
         dself.extras.add_dependency(dforces.extras)
+    def forces_abs_to_scaled(self):
+        fats = dstrip(self.f[0]).copy()
+        fats.shape = (self.f[0].shape[0] / 3, 3)
+        fats = np.dot(dstrip(self.cell.h), fats.T).T#!
+        return fats.reshape((1, len(fats) * 3))
+
+    def forces_scaled_to_abs(self, fsta):
+        fsta = dstrip(fsta).copy()
+        fsta.shape = (self.f[0].shape[0] / 3, 3)
+        fsta = np.dot(fsta, dstrip(self.cell.ih).T)#!
+        return fsta.reshape((1, len(fsta) * 3))
 
     def bind(self, beads, cell, fcomponents, fflist, open_paths):
         """Binds beads, cell and forces to the forcefield.
