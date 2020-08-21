@@ -85,7 +85,7 @@ class CeopMotion(Motion):
         super(CeopMotion, self).__init__(fixcom=fixcom, fixatoms=fixatoms)
 
         # Optimization Options
-
+        #print("CeopMotion.init.invhessian_bfgs",invhessian_bfgs)
         self.mode = mode
         self.pressure = pressure
         self.conv_exit = exit_on_convergence
@@ -98,6 +98,7 @@ class CeopMotion(Motion):
         self.old_u = old_pot
         self.old_f = old_force
         self.d = old_direction
+        #print("INIT.old_pos:", old_pos)
 
         # Classes for minimization routines and specific attributes
         if self.mode == "bfgs":
@@ -250,7 +251,7 @@ class GradientMapper(object):
         self.dcell = dumop.cell.copy()
         self.dforces = dumop.forces.copy(self.dbeads, self.dcell)
         self.pressure = dumop.pressure
-
+        #print("GM.bind.cell:", dumop.cell)
         self.fixatoms_mask = np.ones(
             3 * dumop.beads.natoms, dtype=bool
         )  # Mask to exclude fixed atoms from 3N-arrays
@@ -261,16 +262,18 @@ class GradientMapper(object):
 
     def __call__(self, x):
         """computes energy and gradient for optimization step"""
-
         self.fcount += 1
         self.dcell.h = np.dot((np.eye(3) + x[:, 0:9].reshape(3,3)), dstrip(self.dcell.h0))
         self.dbeads.q[:, self.fixatoms_mask] = self.dcell.get_absolute_positions(x[:, 9:])
         # Energy
-        e = self.dforces.pot + self.pressure * self.dcell.V  
+        e = self.dforces.pot + self.pressure * self.dcell.V
         # Gradient
-        g = np.zeros((self.dbead.nbeads, 3 * self.dbeads.natoms + 9))
-        g[0:9] = -np.dot((self.dforces.vir + np.eye(3) * self.pressure * self.dcell.V),  np.linalg.inv(np.eye(3) + dstrip(self.dcell.strain).T)).reshape((self.dbeads.nbeads, 9))
-        g[9:] = -dstrip(self.dforces.f_scaled[:, self.fixatoms_mask])[0]
+        g = np.zeros((self.dbeads.nbeads, 3 * self.dbeads.natoms + 9))
+        g[:,0:9] = -np.dot((self.dforces.vir + np.eye(3) * self.pressure * self.dcell.V),  np.linalg.inv(np.eye(3) + dstrip(self.dcell.strain).T)).reshape((self.dbeads.nbeads, 9))
+        g[:,9:] = -dstrip(self.dforces.f_scaled[:, self.fixatoms_mask])[0]
+        #g[0:9] = -np.dot((self.dforces.vir + np.eye(3) * pV),invert_ut3x3( np.eye(3) + new_strain.reshape((3,3)).T)).flatten()
+        #g[9:] = -self.dforces.forces_abs_to_scaled()
+        #print("CALL.g:", g)
         return e, g
 
 
@@ -293,6 +296,7 @@ class DummyOptimizer(dobject):
         bind optimization options and call bind function of LineMapper and GradientMapper (get beads, cell,forces)
         check whether force size, direction size and inverse Hessian size from previous step match system size
         """
+        #print("DUMMY.bind.cell:", ceop.cell)
         self.beads = ceop.beads
         self.cell = ceop.cell
         self.forces = ceop.forces
@@ -351,6 +355,7 @@ class DummyOptimizer(dobject):
                     "Conjugate gradient direction size does not match system size"
                 )
 
+        #print("BIND.old_x:", ceop.old_x)
         self.old_x = ceop.old_x
         self.old_u = ceop.old_u
         self.old_f = ceop.old_f
@@ -392,7 +397,7 @@ class DummyOptimizer(dobject):
             verbosity.medium,
         )
 
-        if np.linalg.norm(self.forces.f.flatten() - self.old_f.flatten()) <= 1e-20:
+        if np.linalg.norm(self.forces.f.flatten() - self.old_f[:, 9:].flatten()) <= 1e-20:
             info(
                 "Something went wrong, the forces are not changing anymore."
                 " This could be due to an overly small tolerance threshold "
@@ -420,6 +425,7 @@ class BFGSOptimizer(DummyOptimizer):
             if ceop.invhessian.size == 0:
                 ceop.invhessian = np.eye(self.beads.q.size + 9, self.beads.q.size + 9, 0, float)
                 ceop.invhessian[0:9,0:9] = np.eye(9) / self.cell.V**(1. / 3.) * 0.0
+                #print("BFGSOptimizer.BIND.IF.invhessian:", ceop.invhessian)
                 #ceop.invhessian[-3 * self.beads.natoms, -3 * self.beads.natoms] = np.kron(np.eye(self.beads.natoms), np.dot(self.cell.h0.T, self.cell.h0))
             else:
                 raise ValueError("Inverse Hessian size does not match system size")
@@ -428,6 +434,7 @@ class BFGSOptimizer(DummyOptimizer):
         self.gm.bind(self)
         self.big_step = ceop.big_step
         self.ls_options = ceop.ls_options
+        #print("BFGS.bind.inhessian",ceop.invhessian )
 
     def step(self, step=None):
         """ Does one simulation time step.
@@ -442,17 +449,25 @@ class BFGSOptimizer(DummyOptimizer):
             info(" @GEOP: Initializing BFGS", verbosity.debug)
             f = self.d * 0.0
             f[:,0:9] = -np.dot((self.forces.vir + np.eye(3) * self.pressure * self.cell.V),  np.linalg.inv(np.eye(3) + dstrip(self.cell.strain).T)).reshape((self.beads.nbeads, 9))
+            #print("STEP=0.f[0:9]:", f[:,0:9])
+            #print("STEP=0.forces.vir:", self.forces.vir)
+            #print("STEP=0.pressure:", self.pressure)
+            #print("STEP=0.cell.V:", self.cell.V)
+            #print("STEP=0.cell.strain:", self.cell.strain)
             f[:,9:] = dstrip(self.forces.f_scaled)
             self.d += dstrip(f) / np.sqrt(
                 np.dot(f.flatten(), f.flatten())
             )
             self.d = self.d * 0.001
+            #print("STEP=0.invhessian:", self.invhessian)
             if len(self.fixatoms) > 0:
                 for dqb in self.d:
                     dqb[self.fixatoms * 3] = 0.0
                     dqb[self.fixatoms * 3 + 1] = 0.0
                     dqb[self.fixatoms * 3 + 2] = 0.0
-
+        #print("STEP.step:", step)
+        #print("STEP.step.cell.strain:", self.cell.strain)
+        #print("STEP.step.beads.q:",self.beads.q)
         self.old_x[:,0:9] = self.cell.strain.reshape((self.beads.nbeads, 9))
         self.old_x[:,9:] = self.cell.get_scaled_positions(self.beads.q)
         self.old_u[:] = self.forces.pot + self.pressure * self.cell.V
@@ -485,7 +500,10 @@ class BFGSOptimizer(DummyOptimizer):
         )  # This forces the update of the forces
 
         # Exit simulation step
-        d_x_max = np.amax(np.absolute(np.subtract(self.beads.q, self.old_x)))
+        #print("STEP.old_x.shape:",self.old_x.shape)
+        #print("STEP.old_x[:,:5]:",self.old_x[:,:5])
+        #print("STEP.abs(old_x[:,9:]):",self.cell.get_absolute_positions(self.old_x[:,9:]))
+        d_x_max = np.amax(np.absolute(np.subtract(self.beads.q, self.cell.get_absolute_positions(self.old_x[:,9:]))))
         self.exitstep(self.forces.pot, self.old_u, d_x_max)
 
 

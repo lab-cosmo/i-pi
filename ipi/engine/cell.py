@@ -41,10 +41,13 @@ class Cell(dobject):
         """
 
         if h is None:
+            print("Cell.init.h:", h)
             h = np.zeros((3, 3), float)
+            h = np.array([[1.31788404e+01, 1.05871284e-15 ,9.79497445e+00],
+ [0.00000000e+00, 1.72900927e+01, 8.82961161e-16],
+ [0.00000000e+00 ,0.00000000e+00 ,2.21453427e+01]])
 
         dself = dd(self)  # gets a direct-access view to self
-
         dself.h = depend_array(name="h", value=h)
         dself.ih = depend_array(
             name="ih",
@@ -54,6 +57,8 @@ class Cell(dobject):
         )
         dself.h0 = dself.h.copy()
         dself.ih0 = dself.get_ih().copy()
+        #print("CELL.init.h0:", dself.h0)
+        #print("CELL.init.ih0:", dself.ih0)
         dself.strain = depend_array(
             name="strain",
             value=np.zeros((3, 3), float),
@@ -68,12 +73,15 @@ class Cell(dobject):
 
     def get_ih(self):
         """Inverts the lattice vector matrix."""
-
+        #print("GET_IH.h:",self.h)
+        #print("GET_IH.invert_ut3x3:",invert_ut3x3(self.h))
         return invert_ut3x3(self.h)
 
     def get_strain(self):
         """Computes the strain using the initial cell as the reference."""
-
+        #print("GET_STRAIN.h:",self.h )
+        #print("GET_STRAIN.ih0:",self.ih0 )
+        #print("GET_STRAIN.dot:",np.dot(self.h, self.ih0) - np.eye(3) )
         return np.dot(self.h, self.ih0) - np.eye(3)
 
     def get_volume(self):
@@ -129,7 +137,7 @@ class Cell(dobject):
         s_return = dstrip(pos).copy()
         s.shape = (int(pos.shape[1] / 3), 3)
         s = np.dot(dstrip(self.ih), s.T).T
-        s_return[:]= s.reshape((len(s) * 3)) 
+        s_return[:]= s.reshape((len(s) * 3))
         return s_return
 
     def get_absolute_positions(self, pos):
@@ -139,7 +147,7 @@ class Cell(dobject):
         s_return = dstrip(pos).copy()
         s.shape = (int(pos.shape[1] / 3), 3)
         s = np.dot(s, dstrip(self.h).T)
-        s_return[:] = s.reshape((1, len(s) * 3)) 
+        s_return[:] = s.reshape((1, len(s) * 3))
         return s_return
 
     def minimum_distance(self, atom1, atom2):

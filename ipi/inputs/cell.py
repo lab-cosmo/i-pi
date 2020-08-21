@@ -58,5 +58,4 @@ class InputCell(InputArray):
 
         h = super(InputCell, self).fetch()
         h.shape = (3, 3)
-
         return Cell(h=h)
