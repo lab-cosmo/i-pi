@@ -1,0 +1,9 @@
+
+{
+  "pot_file": "./input/ml_pot.dat", # the committee potential file, must be in unit of eV!!!
+  "quant_file": "./input/rdf_list_O-O.dat", # the properties you need to reweight, the list of properties is presented in one row, one row for one snapshot. 
+  "temp": 300, # temperature in Kelvin
+  "reweight_method": "Asymptotic", # two method: "Direct" or "Asymptotic"
+  "new_alpha": 1.0, "the target alpha, if you don't want to change it, keep it same as the old_alpha"
+  "old_alpha": 1.0  "alpha used in i-pi committee input.xml"
+}
