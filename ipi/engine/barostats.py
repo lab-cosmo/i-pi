@@ -1322,10 +1322,10 @@ class BaroMTK(Barostat):
         """
         Makes the matrix isotropic along two directions.
         """
-        tr = np.trace(p)
+        tr = (p[0,0] + p[1,1]) / 2
         r = np.zeros((3,3))
-        r[a] = tr / 2
-        r[b] = tr / 2
+        r[a] = tr
+        r[b] = tr
         return r
         
 
