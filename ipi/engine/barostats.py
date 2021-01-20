@@ -1369,7 +1369,7 @@ class BaroMTK(Barostat):
         # now apply the mask (and accumulate the associated change in conserved quantity)
         # we use the thermostat conserved quantity accumulator, so we don't need to create a new one
         self.thermostat.ethermo += self.kin
-        if self.iso_array is not None:
+        if len(self.iso_array) != 0:
             self.p = self.iso_ab(self.p, self.iso_array[0], self.iso_array[1])
         self.p *= self.hmask
         self.thermostat.ethermo -= self.kin
@@ -1405,7 +1405,7 @@ class BaroMTK(Barostat):
         # now apply the mask (and accumulate the associated change in conserved quantity)
         # we use the thermostat conserved quantity accumulator, so we don't need to create a new one
         self.thermostat.ethermo += self.kin
-        if self.iso_array is not None:
+        if len(self.iso_array) != 0:
             self.p = self.iso_ab(self.p, self.iso_array[0], self.iso_array[1])
         self.p *= self.hmask
         self.thermostat.ethermo -= self.kin
