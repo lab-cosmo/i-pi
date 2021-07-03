@@ -41,6 +41,7 @@ from ipi.engine.motion import (
     PressureRamp,
     AtomSwap,
     Planetary,
+    GCMD,
     AlKMC,
     SCPhononsMover,
     NormalModeMover,
@@ -59,6 +60,7 @@ from .scphonons import InputSCPhonons
 from .alchemy import InputAlchemy
 from .atomswap import InputAtomSwap
 from .planetary import InputPlanetary
+from .gcmd import InputGCMD
 from .ramp import InputTemperatureRamp, InputPressureRamp
 from .al6xxx_kmc import InputAlKMC
 from ipi.utils.units import *
@@ -100,6 +102,7 @@ class InputMotionBase(Input):
                     "alchemy",
                     "atomswap",
                     "planetary",
+                    "gcmd",
                     "instanton",
                     "al-kmc",
                     "dummy",
@@ -202,6 +205,10 @@ class InputMotionBase(Input):
             InputPlanetary,
             {"default": {}, "help": "Option for planetary model calculator"},
         ),
+        "gcmd": (
+            InputGCMD,
+            {"default": {}, "help": "Option for Gaussian CMD"},
+        ),
     }
     dynamic = {}
 
@@ -265,6 +272,10 @@ class InputMotionBase(Input):
         elif type(sc) is Planetary:
             self.mode.store("planetary")
             self.planetary.store(sc)
+            tsc = 1
+        elif type(sc) is GCMD:
+            self.mode.store("gcmd")
+            self.gcmd.store(sc)
             tsc = 1
         elif type(sc) is TemperatureRamp:
             self.mode.store("t_ramp")
@@ -376,6 +387,12 @@ class InputMotionBase(Input):
                 fixcom=self.fixcom.fetch(),
                 fixatoms=self.fixatoms.fetch(),
                 **self.planetary.fetch()
+            )
+        elif self.mode.fetch() == "gcmd":
+            sc = GCMD(
+                fixcom=self.fixcom.fetch(),
+                fixatoms=self.fixatoms.fetch(),
+                **self.gcmd.fetch()
             )
         elif self.mode.fetch() == "t_ramp":
             sc = TemperatureRamp(**self.t_ramp.fetch())

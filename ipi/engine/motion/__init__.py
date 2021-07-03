@@ -20,6 +20,7 @@ from .multi import MultiMotion
 from .alchemy import AlchemyMC
 from .vscf import NormalModeMover
 from .planetary import Planetary
+from .gcmd import GCMD
 from .atomswap import AtomSwap
 from .ramp import TemperatureRamp, PressureRamp
 from .al6xxx_kmc import AlKMC
