@@ -76,7 +76,7 @@ class GCMD(Motion):
 
         # the planetary step just computes constrained-centroid properties so it
         # should not advance the timer
-        dself.dt = depend_value(name="dt", value=0.0)
+        dself.dt = depend_value(name="dt", value=timestep)
         # dset(self, "dt", depend_value(name="dt", value = 0.0) )
         self.fixatoms = np.asarray([])
         self.fixcom = True
@@ -118,6 +118,8 @@ class GCMD(Motion):
         self.prng = prng
         self.basebeads = beads
         self.basenm = nm
+        self.baseforce = bforce
+        
 
         # copies of all of the helper classes that are needed to bind the ccdyn object
         self.dbeads = beads.copy(nbeads=self.nbeads)
@@ -164,6 +166,8 @@ class GCMD(Motion):
 
         self.omaker = omaker
         self.fcmdcov = omaker.get_output("cmdcov")
+        self.mean_pot = 0
+        self.mean_f = np.zeros(natoms3)
 
     def increment(self, dnm):
 
@@ -175,6 +179,9 @@ class GCMD(Motion):
         for b in range(self.dbeads.nbeads):
             dq = q[b]-qc
             self.cmdcov += np.tensordot(dq, dq, axes=0)
+            
+        self.mean_f += dstrip(self.dforces.f).sum(axis=0)
+        self.mean_pot += dstrip(self.dforces.pots).sum(axis=0)
 
     def matrix_screen(self):
         """Computes a screening matrix to avoid the impact of
@@ -229,8 +236,21 @@ class GCMD(Motion):
         )
         self.dnm.pnm[0] = 0.0
 
-        # Resets the frequency matrix
+
+        # stoopid velocity verlet part 1
+        ### CHECK THIS IS THE RIGHT CONVERSION BETWEEN CENTROID FORCE AND NM[0] FORCE!!!!
+        print("mean_force", self.mean_f)
+        self.basenm.pnm[0] += self.mean_f * self.dt*0.5 *np.sqrt(self.nbeads)
+        print("momentum", np.linalg.norm(self.basenm.pnm[0]))        
+        self.basenm.qnm[0] += self.basenm.pnm[0]/ dstrip(self.basebeads.m3)[0] * self.dt
+        print("centroid ", self.basebeads.qc[:3])
+        print("bead ", self.basebeads.q[0,:3])
+        print("centroid nm ", self.dnm.qnm[0,:3])
+        
+        # Resets the frequency matrix and the PMF
         self.cmdcov[:] = 0.0
+        self.mean_pot = 0.0
+        self.mean_f[:] = 0.0
 
         self.tmtx -= time.time()
         self.increment(self.dnm)
@@ -265,9 +285,27 @@ class GCMD(Motion):
         # save as a sparse matrix in half precision
         save_cmdcov = sparse.csc_matrix(self.cmdcov.astype(np.float16))
 
-        # save the frequency matrix to the PLANETARY file
+        # save the frequency matrix to the covariance file
         self.save_matrix(save_cmdcov)
 
+        # computes the mean force and potential
+        self.mean_f /= self.dbeads.nbeads * (self.nsamples + 1)
+        self.mean_pot /= self.dbeads.nbeads * (self.nsamples + 1)
+        
+        # stoopid velocity verlet, part 2
+        print("mean f", self.mean_f[:3])
+        print("centroid nm, at end ", self.dnm.qnm[0,:3])
+        print("centroid, at end ", self.basebeads.qc[:3])
+        self.basenm.pnm[0] += self.mean_f * self.dt*0.5 *np.sqrt(self.nbeads)
+        
+        # copy the higher normal modes from the CMD propagator to the physical system
+        self.basenm.qnm[1:] = self.dnm.qnm[1:]
+        self.basenm.pnm[1:] = self.dnm.pnm[1:]
+        print("bead, at end ", self.basebeads.q[0,:3])
+        print("fin qui tutto bene")
+        print("forces? ", self.baseforce.pot)
+        print("fin qui tutto bene")
+        
         self.tsave += time.time()
         info(
             "@ GCMD Average timing: %f s, %f s, %f s\n"
