@@ -41,7 +41,7 @@
         </thermostat>
         <timestep units="femtosecond"> 0.50 </timestep>
         <stride> 2 </stride>
-        <nsamples> 128 </nsamples>
+        <nsamples> 4 </nsamples>
       </gcmd>
     </motion>
   </motion>

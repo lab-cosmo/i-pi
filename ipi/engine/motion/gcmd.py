@@ -145,11 +145,11 @@ class GCMD(Motion):
         )
         self.dens = ens.copy()
         self.dbias = ens.bias.copy(self.dbeads, self.dcell)
-        self.dens.bind(self.dbeads, self.dnm, self.dcell, self.dforces, self.dbias)
+        self.dens.bind(self.dbeads, self.dnm, self.dcell, self.dforces, self.dbias, omaker)
 
         self.natoms = self.dbeads.natoms
         natoms3 = self.dbeads.natoms * 3
-        self.omega2 = np.zeros((natoms3, natoms3), float)
+        self.cmdcov = np.zeros((natoms3, natoms3), float)
 
         # initializes counters
         self.tmc = 0
@@ -163,30 +163,25 @@ class GCMD(Motion):
         )
 
         self.omaker = omaker
-        self.fomega2 = omaker.get_output("omega2")
+        self.fcmdcov = omaker.get_output("cmdcov")
 
     def increment(self, dnm):
 
-        # accumulates an estimate of the frequency matrix
-        sm3 = dstrip(self.dbeads.sm3)
-        qms = dstrip(dnm.qnm) * sm3
-        fms = dstrip(dnm.fnm) / sm3
-        fms[0, :] = 0
-        qms[0, :] = 0
-        qms *= (dnm.omegak ** 2)[:, np.newaxis]
-
-        self.omega2 += np.tensordot(fms, fms, axes=(0, 0))
-        qffq = np.tensordot(fms, qms, axes=(0, 0))
-        qffq = qffq + qffq.T
-        qffq *= 0.5
-        self.omega2 -= qffq
+        # accumulates an estimate of the covariance of the bead positions
+        # around the centroid
+        qc = dstrip(self.dbeads.qc)
+        q = dstrip(self.dbeads.q)
+        
+        for b in range(self.dbeads.nbeads):
+            dq = q[b]-qc
+            self.cmdcov += np.tensordot(dq, dq, axes=0)
 
     def matrix_screen(self):
         """Computes a screening matrix to avoid the impact of
         noisy elements of the covariance and frequency matrices for
         far-away atoms"""
 
-        q = np.array(self.dbeads[0].q).reshape(self.natoms, 3)
+        q = np.array(dstrip(self.dbeads.qc)).reshape(self.natoms, 3)
         sij = q[:, np.newaxis, :] - q
         sij = sij.transpose().reshape(3, self.natoms ** 2)
         # find minimum distances between atoms (rigorous for cubic cell)
@@ -210,7 +205,7 @@ class GCMD(Motion):
         """Writes the compressed, sparse frequency matrix to a netstring encoded file"""
 
         sparse.save_npz(
-            self.fomega2, matrix, saver=netstring_encoded_savez, compressed=True
+            self.fcmdcov, matrix, saver=netstring_encoded_savez, compressed=True
         )
 
     def step(self, step=None):
@@ -235,7 +230,7 @@ class GCMD(Motion):
         self.dnm.pnm[0] = 0.0
 
         # Resets the frequency matrix
-        self.omega2[:] = 0.0
+        self.cmdcov[:] = 0.0
 
         self.tmtx -= time.time()
         self.increment(self.dnm)
@@ -252,32 +247,30 @@ class GCMD(Motion):
 
         self.neval += 1
 
-        self.omega2 /= (
+        self.cmdcov /= (
             self.dbeads.nbeads
-            * self.dens.temp
             * (self.nsamples + 1)
-            * (self.dbeads.nbeads - 1)
         )
         self.tsave -= time.time()
 
         if self.screen > 0.0:
             scr = self.matrix_screen()
-            self.omega2 *= scr
+            self.cmdcov *= scr
 
         # ensure perfect symmetry
-        self.omega2[:] = 0.5 * (self.omega2 + self.omega2.transpose())
+        self.cmdcov[:] = 0.5 * (self.cmdcov + self.cmdcov.transpose())
         # only save lower triangular part
-        self.omega2[:] = np.tril(self.omega2)
+        self.cmdcov[:] = np.tril(self.cmdcov)
 
         # save as a sparse matrix in half precision
-        save_omega2 = sparse.csc_matrix(self.omega2.astype(np.float16))
+        save_cmdcov = sparse.csc_matrix(self.cmdcov.astype(np.float16))
 
         # save the frequency matrix to the PLANETARY file
-        self.save_matrix(save_omega2)
+        self.save_matrix(save_cmdcov)
 
         self.tsave += time.time()
         info(
-            "@ PLANETARY MODEL Average timing: %f s, %f s, %f s\n"
+            "@ GCMD Average timing: %f s, %f s, %f s\n"
             % (self.tmc / self.neval, self.tmtx / self.neval, self.tsave / self.neval),
             verbosity.high,
         )

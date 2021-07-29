@@ -81,7 +81,7 @@ class InputGCMD(InputDictionary):
             {
                 "dtype": int,
                 "default": 0,
-                "help": "Number of samples to accumulate for each planetary step.",
+                "help": "Number of samples to accumulate for each PMF calculation step.",
             },
         ),
         "stride": (
@@ -89,7 +89,7 @@ class InputGCMD(InputDictionary):
             {
                 "dtype": int,
                 "default": 1,
-                "help": "How often the planetary calculation should actually be triggered.",
+                "help": "How often the PMF calculation should actually be triggered.",
             },
         ),
         "nbeads": (

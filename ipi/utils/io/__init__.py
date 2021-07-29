@@ -420,7 +420,7 @@ def open_backup(filename, mode="r", buffering=-1):
 
 
 def netstring_encoded_savez(ofile, compressed=True, **named_objs):
-    output = io.StringIO()
+    output = io.BytesIO()
     if compressed:
         # np.savez_compressed(output,*unnamed_objs,**named_objs)
         np.savez_compressed(output, **named_objs)
@@ -428,7 +428,7 @@ def netstring_encoded_savez(ofile, compressed=True, **named_objs):
         # np.savez(output,*unnamed_objs,**named_objs)
         np.savez(output, **named_objs)
     content = output.getvalue()
-    ofile.write(str(len(content)) + ":" + content + ",")
+    ofile.write(str(len(content)) + ":" + content.decode("latin-1") + ",")
 
 
 def netstring_encoded_loadz(ifile):
@@ -446,7 +446,7 @@ def netstring_encoded_loadz(ifile):
     if not ifile.read(1) == ",":
         raise ValueError("Invalid netstring delimiter")
 
-    istr = io.StringIO(content)
+    istr = io.StringIO(content.encode("latin-1"))
     npz = np.load(istr)
     rdic = {}
     for a in npz.files:
