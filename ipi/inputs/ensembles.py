@@ -82,7 +82,7 @@ class InputEnsemble(Input):
             {
                 "dtype": float,
                 "default": np.zeros(0),
-                "help": "Bias weights.",
+                "help": "Weights that are applied to the forcefields that are listed in <bias>. The total bias is computed as the weighted sum of the various terms. The order in the array matches the order by which the forcefields appear in the input.",
                 "dimension": "undefined",
             },
         ),
@@ -91,7 +91,7 @@ class InputEnsemble(Input):
             {
                 "dtype": float,
                 "default": np.zeros(0),
-                "help": "Hamiltonian weights.",
+                "help": "Weights that are applied to the forcefields that are listed in <forces>. The total potential is computed as the weighted sum of the various terms. The order in the array matches the order by which the forcefields appear in the input. Note that these are interpreted as a distortion of the physical potential, that is still output as the sum of the terms in <forces>, with full weights.",
                 "dimension": "undefined",
             },
         ),
