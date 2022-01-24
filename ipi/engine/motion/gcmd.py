@@ -126,8 +126,11 @@ class GCMD(Motion):
         self.dcell = cell.copy()
         self.dforces = bforce.copy(self.dbeads, self.dcell)
 
+        # TODO: give possibility of tuning the dynamical masses. 
+        self.dnm = nm.copy()
+        """
         # options for NM propagation - hardcoded frequencies unless using a GLE thermo
-        # for which frequencies matter
+        # for which frequencies matter        
         if isinstance(self.ccdyn.thermostat, (ThermoGLE, ThermoNMGLE, ThermoNMGLEG)):
             self.dnm = nm.copy()
             self.dnm.mode = "rpmd"
@@ -140,6 +143,7 @@ class GCMD(Motion):
                 / (beads.nbeads * np.sin(np.pi / beads.nbeads))
             )
             self.dnm.mode = "manual"
+        """
 
         self.dnm.bind(ens, self, beads=self.dbeads, forces=self.dforces)
         self.dnm.qnm[:] = (
@@ -169,7 +173,7 @@ class GCMD(Motion):
         self.mean_pot = 0
         self.mean_f = np.zeros(natoms3)
 
-    def increment(self, dnm):
+    def increment(self):
 
         # accumulates an estimate of the covariance of the bead positions
         # around the centroid
@@ -199,8 +203,8 @@ class GCMD(Motion):
         # take square magnitudes of distances
         sij = np.sum(sij * sij, axis=2)
         # screen with Heaviside step function
-        sij = (sij < self.screen ** 2).astype(float)
-        # sij = np.exp(-sij / (self.screen**2))
+        #sij = (sij < self.screen ** 2).astype(float)
+        sij = np.exp(-sij / (self.screen**2))
         # acount for 3 dimensions
         sij = np.concatenate((sij, sij, sij), axis=0)
         sij = np.concatenate((sij, sij, sij), axis=1)
@@ -217,16 +221,20 @@ class GCMD(Motion):
 
     def step(self, step=None):
 
-        if step is not None and step % self.stride != 0:
-            return
+        # call only every stride steps, useful to save just the PMF without integrating
+        #if step is not None and step % self.stride != 0:
+        #    return
+        print("Running step ", step)
+        # Initialize positions to the actual positions, TODO: add possibly of contraction?
+        if self.nbeads != self.basebeads.nbeads:
+            raise ValueError("RPC not implemented for GCMD. Use same nbeads")
 
-        # Initialize positions to the actual positions, possibly with contraction
-
-        self.dnm.qnm[:] = (
+        self.dnm.qnm[:] = self.basenm.qnm[:]
+        """(
             self.basenm.qnm[: self.nbeads]
             * np.sqrt(self.nbeads)
             / np.sqrt(self.basebeads.nbeads)
-        )
+        )"""
 
         # Randomized momenta
         self.dnm.pnm = (
@@ -243,6 +251,7 @@ class GCMD(Motion):
         self.basenm.pnm[0] += self.mean_f * self.dt*0.5 *np.sqrt(self.nbeads)
         print("momentum", np.linalg.norm(self.basenm.pnm[0]))        
         self.basenm.qnm[0] += self.basenm.pnm[0]/ dstrip(self.basebeads.m3)[0] * self.dt
+        self.dnm.qnm[0] = self.basenm.qnm[0] 
         print("centroid ", self.basebeads.qc[:3])
         print("bead ", self.basebeads.q[0,:3])
         print("centroid nm ", self.dnm.qnm[0,:3])
@@ -253,16 +262,16 @@ class GCMD(Motion):
         self.mean_f[:] = 0.0
 
         self.tmtx -= time.time()
-        self.increment(self.dnm)
+        self.increment()
         self.tmtx += time.time()
 
         # sample by constrained-centroid dynamics
         for istep in range(self.nsamples):
             self.tmc -= time.time()
-            self.ccdyn.step(step)
+            self.ccdyn.step(istep)
             self.tmc += time.time()
             self.tmtx -= time.time()
-            self.increment(self.dnm)
+            self.increment()
             self.tmtx += time.time()
 
         self.neval += 1
@@ -288,7 +297,8 @@ class GCMD(Motion):
         # save the frequency matrix to the covariance file
         self.save_matrix(save_cmdcov)
 
-        # computes the mean force and potential
+        # computes the mean force and potential. these are computed as the raw
+        # sum over beads and sampling steps, while we want to get the mean PMF
         self.mean_f /= self.dbeads.nbeads * (self.nsamples + 1)
         self.mean_pot /= self.dbeads.nbeads * (self.nsamples + 1)
         
@@ -296,6 +306,8 @@ class GCMD(Motion):
         print("mean f", self.mean_f[:3])
         print("centroid nm, at end ", self.dnm.qnm[0,:3])
         print("centroid, at end ", self.basebeads.qc[:3])
+        # since we evolve in the normal mode basis, where nm[0] is sqrt(nbeads)
+        # times the centroid, we have to scale the PMF accordingly        
         self.basenm.pnm[0] += self.mean_f * self.dt*0.5 *np.sqrt(self.nbeads)
         
         # copy the higher normal modes from the CMD propagator to the physical system
@@ -303,7 +315,8 @@ class GCMD(Motion):
         self.basenm.pnm[1:] = self.dnm.pnm[1:]
         print("bead, at end ", self.basebeads.q[0,:3])
         print("fin qui tutto bene")
-        print("forces? ", self.baseforce.pot)
+        print("three potentials>>> ", self.mean_pot, self.dforces.pot/self.nbeads, 
+                self.baseforce.pot/self.basebeads.nbeads)
         print("fin qui tutto bene")
         
         self.tsave += time.time()

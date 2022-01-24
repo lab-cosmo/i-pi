@@ -6,7 +6,7 @@
     <trajectory filename="pos" stride="2" format="xyz" cell_units="angstrom"> positions{angstrom} </trajectory>
     <trajectory filename="pc" stride="2" format="xyz"> p_centroid </trajectory>    
   </output>
-  <total_steps>32</total_steps>
+  <total_steps>100</total_steps>
   <prng>
     <seed>32345</seed>
   </prng>
@@ -31,8 +31,8 @@
           <pile_lambda> 0.5 </pile_lambda>
         </thermostat>
         <timestep units="femtosecond"> 0.50 </timestep>
-        <stride> 2 </stride>
-        <nsamples> 4 </nsamples>
+        <stride> 1 </stride>
+        <nsamples> 100 </nsamples>
       </gcmd>
     </motion>
   </system>
