@@ -135,6 +135,7 @@ class GCMD(Motion):
         self.basebeads = beads
         self.basenm = nm
         self.baseforce = bforce
+        self.basens = ens
 
         # we now create an "auxiliary system" which we can use to sample the constrained
         # centroid distribution. we can play fast and loose with these, because they do
@@ -371,6 +372,7 @@ class GCMD(Motion):
         # since we evolve in the normal mode basis, where nm[0] is sqrt(nbeads)
         # times the centroid, we have to scale the PMF accordingly
         self.basenm.pnm[0] += f_pmf * self.dt * 0.5 * np.sqrt(self.nbeads)
+        self.basens.time += self.dt  # increments time
 
         # copy the higher normal modes from the CMD propagator to the physical system.
         # note that we use the values saved after the constrained-centroid sampling,
