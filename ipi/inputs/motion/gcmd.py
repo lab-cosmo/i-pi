@@ -44,9 +44,9 @@ class InputGCMD(InputDictionary):
             InputAttribute,
             {
                 "dtype": str,
-                "default": "md",
+                "default": "cmd",
                 "help": "The constrained-centroid sampling mode. ",
-                "options": ["md"],
+                "options": ["cmd", "gcmd"],
             },
         )
     }
