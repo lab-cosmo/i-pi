@@ -1,6 +1,6 @@
 <simulation verbosity="medium">
-  <output prefix="gcmd-gauss-thermo">
-    <properties stride="1" filename="out"> [ step, time{picosecond}, conserved, temperature{kelvin}, kinetic_cv, potential] </properties>
+  <output prefix="cmd">
+    <properties stride="1" filename="out"> [ step, time{picosecond}, conserved, temperature{kelvin}, kinetic_cv, potential, kinetic_md] </properties>
     <trajectory filename="xc" stride="2" format="xyz" cell_units="angstrom"> x_centroid{angstrom} </trajectory>
     <trajectory filename="pos" stride="20" format="xyz" cell_units="angstrom"> positions{angstrom} </trajectory>
     <trajectory filename="pc" stride="2" format="xyz"> p_centroid </trajectory>    
@@ -25,14 +25,15 @@
       <temperature units="kelvin">100</temperature>
     </ensemble>
     <motion mode="gcmd">
-      <gcmd mode='gcmd'>
+        <fixcom> False </fixcom>  
+      <gcmd mode='cmd'>
         <thermostat mode="pile_l">
           <tau units="femtosecond">1e3</tau>
           <pile_lambda> 0.5 </pile_lambda>
         </thermostat>
-        <timestep units="femtosecond"> 0.50 </timestep>
+        <timestep units="femtosecond"> 0.25 </timestep>
         <stride> 1 </stride>
-        <nsamples> 400 </nsamples>
+        <nsamples> 100 </nsamples>
       </gcmd>
     </motion>
   </system>

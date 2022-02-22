@@ -18,22 +18,6 @@ from ipi.utils.mathtools import root_herm
 from ipi.utils.io import netstring_encoded_savez
 from ipi.utils.messages import verbosity, info
 
-
-def save_pmf_data(file, labels, cell, positions, potential, forces, virial):
-    """Writes information about the PMF in a netstring-encoded file"""
-
-    netstring_encoded_savez(
-        file,
-        compressed=True,
-        labels=labels,
-        cell=cell,
-        positions=positions,
-        potential=potential,
-        forces=forces,
-        virial=virial,
-    )
-
-
 class GCMD(Motion):
     """Gaussian-constraint centroid molecular dynamics class.
     Uses a nested motion class to evaluate the bead distribution around the
@@ -147,6 +131,11 @@ class GCMD(Motion):
         self.dens = ens.copy()
         self.dbias = ens.bias.copy(self.dbeads, self.dcell)
 
+        # copies to compute properties of the centroid only
+        self.dcpos = beads.copy(nbeads=1)
+        self.dcforces = bforce.copy(self.dcpos, self.dcell)
+        self.dcbias = ens.bias.copy(self.dcpos, self.dcell)
+
         # TODO: give possibility of tuning the dynamical masses.
         self.dnm = nm.copy()
         """
@@ -193,15 +182,14 @@ class GCMD(Motion):
 
         # creates files for outputting stuff
         self.omaker = omaker
-        self.fcmdpmf = omaker.get_output("cmd_pmf")
-        if self.mode == "gcmd":
-            self.fgcmdpmf = omaker.get_output("gcmd_pmf")
+        self.fpmf = omaker.get_output("centroid_pmf")
         self.mean_pot = 0
         self.mean_f = np.zeros(natoms3)
         self.mean_vir = np.zeros((3, 3))
         self.g_mean_pot = 0
         self.g_mean_f = np.zeros(natoms3)
         self.g_mean_vir = np.zeros((3, 3))
+        self.centroid_force = np.zeros(natoms3)
 
     def increment(self):
 
@@ -260,7 +248,7 @@ class GCMD(Motion):
         # Initialize positions to the actual positions, TODO: add possibly of contraction?
         if self.nbeads != self.basebeads.nbeads:
             raise ValueError("RPC not implemented for GCMD. Use same nbeads")
-
+        
         self.dnm.qnm[:] = self.basenm.qnm[:]
         """(
             self.basenm.qnm[: self.nbeads]
@@ -277,10 +265,8 @@ class GCMD(Motion):
         self.dnm.pnm[0] = 0.0
 
         # stoopid velocity verlet part 1
-        self.basenm.pnm[0] += self.mean_f * self.dt * 0.5 * np.sqrt(self.nbeads)
-        self.basenm.qnm[0] += (
-            self.basenm.pnm[0] / dstrip(self.basebeads.m3)[0] * self.dt
-        )
+        self.basenm.pnm[0] += self.centroid_force * self.dt * 0.5 * np.sqrt(self.nbeads)
+        self.basenm.qnm[0] += ( self.basenm.pnm[0] / dstrip(self.basebeads.m3)[0] * self.dt )
         self.dnm.qnm[0] = self.basenm.qnm[0]
 
         # Resets the frequency matrix and the PMF
@@ -321,16 +307,21 @@ class GCMD(Motion):
         # ensure perfect symmetry
         self.cmdcov[:] = 0.5 * (self.cmdcov + self.cmdcov.transpose())
 
-        # save PMF info
-        save_pmf_data(
-            self.fcmdpmf,
-            self.dbeads.names,
-            self.dcell.h,
-            self.dbeads.qc,
-            self.mean_pot,
-            self.mean_f,
-            self.mean_vir,
-        )
+        # PMF info
+        pmf_data = {
+            "labels": self.dbeads.names,
+            "cell": self.dcell.h,
+            "positions": self.dbeads.qc,
+            "cpmf_pot": self.mean_pot,
+            "cpmf_f" : self.mean_f,
+            "cpmf_vir": self.mean_vir,            
+        }
+
+        # computes raw centroid data
+        self.dcpos.q[:] = dstrip(self.basebeads.qc)
+        pmf_data["cent_pot"] = self.dcforces.pot
+        pmf_data["cent_f"] = self.dcforces.f
+        pmf_data["cent_vir"] = self.dcforces.vir
 
         if self.mode == "gcmd":
             # now we re-sample around the centroid based on the accumulated covariance
@@ -355,23 +346,20 @@ class GCMD(Motion):
             self.g_mean_pot /= self.dbeads.nbeads * self.nsamples
             self.g_mean_vir /= self.dbeads.nbeads * self.nsamples
             print(f"CMD mean pot {self.mean_pot}, GCMD mean pot {self.g_mean_pot}")
-            save_pmf_data(
-                self.fgcmdpmf,
-                self.dbeads.names,
-                self.dcell.h,
-                self.dbeads.qc,
-                self.g_mean_pot,
-                self.g_mean_f,
-                self.g_mean_vir,
-            )
-            f_pmf = self.g_mean_f
+            pmf_data["gpmf_pot"] = self.g_mean_pot
+            pmf_data["gpmf_f"] = self.g_mean_f
+            pmf_data["gpmf_vir"] = self.g_mean_vir
+            self.centroid_force[:] = self.g_mean_f
         else:  # do conventional CMD
-            f_pmf = self.mean_f
-
+            self.centroid_force[:] = self.mean_f
+        
+        print("POTENTIALS ", pmf_data["cent_pot"] , pmf_data["cpmf_pot"])
+        print("FORCE NORM ", np.linalg.norm(pmf_data["cent_f"]) , np.linalg.norm(pmf_data["cpmf_f"]), np.linalg.norm(self.dnm.fnm[0]) )
+        netstring_encoded_savez(self.fpmf, compressed=True, pmf_data=pmf_data)
         # stoopid velocity verlet, part 2
         # since we evolve in the normal mode basis, where nm[0] is sqrt(nbeads)
         # times the centroid, we have to scale the PMF accordingly
-        self.basenm.pnm[0] += f_pmf * self.dt * 0.5 * np.sqrt(self.nbeads)
+        self.basenm.pnm[0] += self.centroid_force * self.dt * 0.5 * np.sqrt(self.nbeads)
         self.basens.time += self.dt  # increments time
 
         # copy the higher normal modes from the CMD propagator to the physical system.
