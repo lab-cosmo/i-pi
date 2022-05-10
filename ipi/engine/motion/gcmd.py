@@ -18,6 +18,7 @@ from ipi.utils.mathtools import root_herm
 from ipi.utils.io import netstring_encoded_savez
 from ipi.utils.messages import verbosity, info
 
+
 class GCMD(Motion):
     """Gaussian-constraint centroid molecular dynamics class.
     Uses a nested motion class to evaluate the bead distribution around the
@@ -213,7 +214,7 @@ class GCMD(Motion):
 
         q = np.array(dstrip(self.dbeads.qc)).reshape(self.natoms, 3)
         sij = q[:, np.newaxis, :] - q
-        sij = sij.transpose().reshape(3, self.natoms ** 2)
+        sij = sij.transpose().reshape(3, self.natoms**2)
         # find minimum distances between atoms (rigorous for cubic cell)
         sij = np.matmul(self.dcell.ih, sij)
         sij -= np.around(sij)
@@ -223,7 +224,7 @@ class GCMD(Motion):
         sij = np.sum(sij * sij, axis=2)
         # screen with Heaviside step function
         # sij = (sij < self.screen ** 2).astype(float)
-        sij = np.exp(-sij / (self.screen ** 2))
+        sij = np.exp(-sij / (self.screen**2))
         # acount for 3 dimensions
         sij = np.concatenate((sij, sij, sij), axis=0)
         sij = np.concatenate((sij, sij, sij), axis=1)
@@ -248,7 +249,7 @@ class GCMD(Motion):
         # Initialize positions to the actual positions, TODO: add possibly of contraction?
         if self.nbeads != self.basebeads.nbeads:
             raise ValueError("RPC not implemented for GCMD. Use same nbeads")
-        
+
         self.dnm.qnm[:] = self.basenm.qnm[:]
         """(
             self.basenm.qnm[: self.nbeads]
@@ -266,7 +267,9 @@ class GCMD(Motion):
 
         # stoopid velocity verlet part 1
         self.basenm.pnm[0] += self.centroid_force * self.dt * 0.5 * np.sqrt(self.nbeads)
-        self.basenm.qnm[0] += ( self.basenm.pnm[0] / dstrip(self.basebeads.m3)[0] * self.dt )
+        self.basenm.qnm[0] += (
+            self.basenm.pnm[0] / dstrip(self.basebeads.m3)[0] * self.dt
+        )
         self.dnm.qnm[0] = self.basenm.qnm[0]
 
         # Resets the frequency matrix and the PMF
@@ -313,8 +316,8 @@ class GCMD(Motion):
             "cell": self.dcell.h,
             "positions": self.dbeads.qc,
             "cpmf_pot": self.mean_pot,
-            "cpmf_f" : self.mean_f,
-            "cpmf_vir": self.mean_vir,            
+            "cpmf_f": self.mean_f,
+            "cpmf_vir": self.mean_vir,
         }
 
         # computes raw centroid data
@@ -352,9 +355,14 @@ class GCMD(Motion):
             self.centroid_force[:] = self.g_mean_f
         else:  # do conventional CMD
             self.centroid_force[:] = self.mean_f
-        
-        print("POTENTIALS ", pmf_data["cent_pot"] , pmf_data["cpmf_pot"])
-        print("FORCE NORM ", np.linalg.norm(pmf_data["cent_f"]) , np.linalg.norm(pmf_data["cpmf_f"]), np.linalg.norm(self.dnm.fnm[0]) )
+
+        print("POTENTIALS ", pmf_data["cent_pot"], pmf_data["cpmf_pot"])
+        print(
+            "FORCE NORM ",
+            np.linalg.norm(pmf_data["cent_f"]),
+            np.linalg.norm(pmf_data["cpmf_f"]),
+            np.linalg.norm(self.dnm.fnm[0]),
+        )
         netstring_encoded_savez(self.fpmf, compressed=True, pmf_data=pmf_data)
         # stoopid velocity verlet, part 2
         # since we evolve in the normal mode basis, where nm[0] is sqrt(nbeads)
