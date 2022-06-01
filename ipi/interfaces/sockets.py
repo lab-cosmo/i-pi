@@ -151,15 +151,13 @@ class DriverSocket(socket.socket):
         Returns:
            The data read from the socket to be read into dest.
         """
-        print(dest)
+
         blen = dest.itemsize * dest.size
         if blen > len(self._buf):
             self._buf.resize(blen)
         bpos = 0
         ntimeout = 0
-        print("i-pi",bpos , blen )
-        import time
-        time.sleep(1)
+
         while bpos < blen:
             timeout = False
 

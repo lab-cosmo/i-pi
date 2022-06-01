@@ -8,7 +8,7 @@ from ipi.utils.units import unit_to_internal, unit_to_user
 
 #try:
     #from rascal.models.genericmd import GenericMDCalculator as RascalCalc
-sys.path.insert(0,"/home/lopanits/chemlearning/alchemical-learning/")
+sys.path.insert(0,"/home/michele/lavoro/code/alchemical-learning/")
 from utils.driver import GenericMDCalculator as AlchemicalCalc
     #print(AlchemicalCalc())
 
@@ -39,7 +39,7 @@ class Alchemical_driver(Dummy_driver):
             sys.exit(self.error_msg)
 
         if len(arglist) == 2:
-            self.model = 0 #arglist[0]
+            self.model = arglist[0]
             #here params for soap
             self.template = arglist[1]
         else:
@@ -52,15 +52,17 @@ class Alchemical_driver(Dummy_driver):
         # librascal expects ASE-format, cell-vectors-as-rows
         cell_calc = unit_to_user("length", "angstrom", cell.T)
         # Do the actual calculation
-        print("pos_calc",pos_calc.shape )
+        print("pos_calc", pos_calc.shape )
         pot, force, stress = self.alchemical_calc.calculate(pos_calc, cell_calc)
         print("hee")
-        print("pot, force, stress" ,pot, force, stress)
         pot_ipi = unit_to_internal("energy", "electronvolt", pot)
-        force_ipi = unit_to_internal("force", "ev/ang", force)
+        force_ipi = unit_to_internal("force", "ev/ang", force.reshape(-1,3) )
+        print(type(force_ipi), force_ipi.flags["OWNDATA"])
+        print("pot, force, stress" , pot, force_ipi.shape, stress.shape)        
         # The rascal stress is normalized by the cell volume (in rascal units)
         vir_calc = -1 * stress * det_ut3x3(cell_calc)
         vir_ipi = unit_to_internal("energy", "electronvolt", vir_calc.T)
         extras = ""
-        print("pot_ipi, force_ipi, vir_ipi, extras" ,pot_ipi, force_ipi, vir_ipi, extras)
+        
+        # print("pot_ipi, force_ipi, vir_ipi, extras" ,pot_ipi, force_ipi, vir_ipi, extras)
         return pot_ipi, force_ipi, vir_ipi, extras

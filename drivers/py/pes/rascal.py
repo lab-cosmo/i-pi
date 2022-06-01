@@ -55,4 +55,5 @@ class Rascal_driver(Dummy_driver):
         vir_rascal = -1 * stress * det_ut3x3(cell_rascal)
         vir_ipi = unit_to_internal("energy", "electronvolt", vir_rascal.T)
         extras = ""
+        print(pot, force_ipi.shape, vir_ipi.shape)
         return pot_ipi, force_ipi, vir_ipi, extras

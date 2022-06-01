@@ -17,7 +17,7 @@
   	</ffsocket> 
 	<system>
         	<initialize nbeads="1">
-                	<file mode="xyz"> hea.xyz </file>
+                	<file mode="xyz"> h5o2+.xyz </file>
                  	<velocities mode="thermal" units="kelvin"> 250.0 </velocities>
               	</initialize>
 	     	<forces>
