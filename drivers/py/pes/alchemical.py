@@ -8,7 +8,8 @@ from ipi.utils.units import unit_to_internal, unit_to_user
 
 #try:
     #from rascal.models.genericmd import GenericMDCalculator as RascalCalc
-sys.path.insert(0,"/home/michele/lavoro/code/alchemical-learning/")
+#sys.path.insert(0,"/home/michele/lavoro/code/alchemical-learning/")
+sys.path.insert(0,"/home/lopanits/chemlearning/alchemical-learning-3/")
 from utils.driver import GenericMDCalculator as AlchemicalCalc
     #print(AlchemicalCalc())
 
@@ -38,13 +39,14 @@ class Alchemical_driver(Dummy_driver):
         except ValueError:
             sys.exit(self.error_msg)
 
-        if len(arglist) == 2:
+        if len(arglist) == 3:
             self.model = arglist[0]
+            self.hypers = arglist[1]
             #here params for soap
-            self.template = arglist[1]
+            self.template = arglist[2]
         else:
             sys.exit(self.error_msg)
-        self.alchemical_calc = AlchemicalCalc(self.model, True, self.template)
+        self.alchemical_calc = AlchemicalCalc(self.model, self.hypers , True, self.template)
 
     def __call__(self, cell, pos):
         """Get energies, forces, and stresses from the librascal model"""
@@ -52,9 +54,7 @@ class Alchemical_driver(Dummy_driver):
         # librascal expects ASE-format, cell-vectors-as-rows
         cell_calc = unit_to_user("length", "angstrom", cell.T)
         # Do the actual calculation
-        print("pos_calc", pos_calc.shape )
         pot, force, stress = self.alchemical_calc.calculate(pos_calc, cell_calc)
-        print("hee")
         pot_ipi = unit_to_internal("energy", "electronvolt", pot)
         force_ipi = unit_to_internal("force", "ev/ang", force.reshape(-1,3) )
         print(type(force_ipi), force_ipi.flags["OWNDATA"])
