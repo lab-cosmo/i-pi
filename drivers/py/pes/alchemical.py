@@ -6,10 +6,7 @@ from .dummy import Dummy_driver
 from ipi.utils.mathtools import det_ut3x3
 from ipi.utils.units import unit_to_internal, unit_to_user
 
-#try:
-    #from rascal.models.genericmd import GenericMDCalculator as RascalCalc
-#sys.path.insert(0,"/home/michele/lavoro/code/alchemical-learning/")
-sys.path.insert(0,"/home/lopanits/chemlearning/alchemical-learning-3/")
+sys.path.insert(0,"./alchemical-learning/")   #<-- git clone the repo in this folder 
 from utils.driver import GenericMDCalculator as AlchemicalCalc
     #print(AlchemicalCalc())
 
