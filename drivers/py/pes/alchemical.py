@@ -7,7 +7,7 @@ from ipi.utils.mathtools import det_ut3x3
 from ipi.utils.units import unit_to_internal, unit_to_user
 
 sys.path.insert(0,"./alchemical-learning/")   #<-- git clone the repo in this folder 
-from utils.driver import GenericMDCalculator as AlchemicalCalc
+from driver import GenericMDCalculator as AlchemicalCalc
     #print(AlchemicalCalc())
 
 #except:

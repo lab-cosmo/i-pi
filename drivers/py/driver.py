@@ -6,6 +6,7 @@ import numpy as np
 try:
     from pes import *
 except ImportError:
+    raise
     # when in an installed i-PI package
     from ipi._driver.pes import *
 

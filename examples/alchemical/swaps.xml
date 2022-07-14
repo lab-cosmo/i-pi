@@ -1,6 +1,6 @@
-<simulation verbosity= "high">
-<output prefix="hea-md"> 
-<properties stride="5" filename="out">  [ step, time{picosecond},  conserved{electronvolt}, 
+<simulation verbosity="high">
+<output prefix="hea-swaps"> 
+<properties stride="1" filename="out">  [ step, time{picosecond},  conserved{electronvolt}, 
 	temperature{kelvin}, kinetic_md{electronvolt}, potential{electronvolt}, pressure_md{bar}, volume{angstrom3}, 
 	ensemble_temperature{kelvin}, cell_abcABC] </properties>
 	<trajectory filename="xc" stride="5" cell_units="angstrom"> x_centroid{angstrom} </trajectory>
@@ -18,11 +18,12 @@
 	<system>
         	<initialize nbeads="1">
                 	<file mode="xyz"> hea.xyz </file>
-                 	<velocities mode="thermal" units="kelvin"> 500.0 </velocities>
+                 	<velocities mode="thermal" units="kelvin"> 250.0 </velocities>
               	</initialize>
 	     	<forces>
       			<force forcefield='driver'/>
-   		 </forces>
+            </forces>
+        <motion mode="multi">
 		<motion mode="dynamics">
                 	<dynamics mode="nvt">
                     		<timestep units="femtosecond"> 5 </timestep>
@@ -38,9 +39,15 @@
                        		</A>
                         	</thermostat>
                  	</dynamics>
-              	</motion>
+                </motion>
+                <motion mode="atomswap">
+                    <atomswap>
+                        <names> [ Au, Mn, Co, Fe, Ni, Zn, Ag, Mo, Pd, Zr, Ir]  </names>
+                    </atomswap>        
+          </motion>
+        </motion>
 	   	<ensemble>
-                	<temperature units="kelvin"> 500.0 </temperature>
+                	<temperature units="kelvin"> 250.0 </temperature>
            	</ensemble>
          </system>
 </simulation>

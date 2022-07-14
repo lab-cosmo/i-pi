@@ -1,0 +1,44 @@
+{
+"prefix": "test-base",
+"seed": 12345,
+"n_epochs": 100,
+"n_test": 500,
+"n_train" :15000,
+"n_train_forces": 100,
+"force_weight" : 1.0,
+"per_center_ps" : false,
+"restart" : true,
+"n_pseudo_species": 4,
+"regularizer_x": 1e-9,
+"regularizer_rs": 1e-4,
+"regularizer_ps": 1e-4,
+"hypers_ps": {
+    "cutoff": 4.5,
+    "max_angular": 4,
+    "max_radial": 8, 
+    "atomic_gaussian_width": 0.35,
+    "cutoff_function": {"ShiftedCosine": {"width": 0.5}},
+    "radial_basis": {"SplinedGto": {"accuracy": 1e-6}},
+    "gradients": false,
+    "center_atom_weight": 1.0,
+    "radial_scaling":  {"Willatt2018": { "scale": 2.0, "rate": 0.8, "exponent": 2}},
+    "radial_per_angular": {
+     "0": 8,
+     "1": 6,
+     "2": 4,
+     "3": 2,
+     "4": 1
+     }
+},
+"hypers_rs": {
+    "cutoff": 6.0,
+    "max_angular": 0,
+    "max_radial": 12,
+    "atomic_gaussian_width": 0.25,
+    "cutoff_function": {"ShiftedCosine": {"width": 0.5}},
+    "radial_basis": {"SplinedGto": {"accuracy": 1e-6}},
+    "gradients": false,
+    "center_atom_weight": 1.0,    
+    "radial_scaling":  {"Willatt2018": { "scale": 2.0, "rate": 0.8, "exponent": 2}}
+}
+}
