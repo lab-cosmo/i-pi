@@ -19,7 +19,6 @@
     "atomic_gaussian_width": 0.35,
     "cutoff_function": {"ShiftedCosine": {"width": 0.5}},
     "radial_basis": {"SplinedGto": {"accuracy": 1e-6}},
-    "gradients": false,
     "center_atom_weight": 1.0,
     "radial_scaling":  {"Willatt2018": { "scale": 2.0, "rate": 0.8, "exponent": 2}},
     "radial_per_angular": {
@@ -37,7 +36,6 @@
     "atomic_gaussian_width": 0.25,
     "cutoff_function": {"ShiftedCosine": {"width": 0.5}},
     "radial_basis": {"SplinedGto": {"accuracy": 1e-6}},
-    "gradients": false,
     "center_atom_weight": 1.0,    
     "radial_scaling":  {"Willatt2018": { "scale": 2.0, "rate": 0.8, "exponent": 2}}
 }
