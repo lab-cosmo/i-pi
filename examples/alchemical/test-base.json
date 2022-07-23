@@ -4,7 +4,7 @@
 "n_epochs": 100,
 "n_test": 500,
 "n_train" :15000,
-"n_train_forces": 100,
+"n_train_forces": 200,
 "force_weight" : 1.0,
 "per_center_ps" : false,
 "restart" : true,
