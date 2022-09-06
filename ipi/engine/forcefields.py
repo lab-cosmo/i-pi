@@ -126,6 +126,7 @@ class ForceField(dobject):
 
         self.output_maker = output_maker
 
+    @profile
     def queue(self, atoms, cell, reqid=-1, template=None):
         """Adds a request.
 

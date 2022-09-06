@@ -194,7 +194,7 @@ class Ensemble(dobject):
 
         # pipes the weights to the list of weight vectors
         i = 0
-        for fc in self.bias.mforces:
+        for fc in self.bias.mforces:            
             if fc.weight != 1:
                 warning(
                     "The weight given to forces used in an ensemble bias are given a weight determined by bias_weight"

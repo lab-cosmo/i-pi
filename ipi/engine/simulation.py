@@ -255,6 +255,7 @@ class Simulation(dobject):
 
         self.chk.write(store=False)
 
+    @profile
     def run(self):
         """Runs the simulation.
 
