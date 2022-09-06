@@ -28,7 +28,7 @@ __all__ = ["InterfaceSocket"]
 
 HDRLEN = 12
 UPDATEFREQ = 10
-TIMEOUT = 0.02
+TIMEOUT = 0.1
 SERVERTIMEOUT = 5.0 * TIMEOUT
 NTIMEOUT = 20
 

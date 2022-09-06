@@ -450,11 +450,14 @@
                ALLOCATE(msgbuffer(3*nat))
                ALLOCATE(atoms(nat,3), datoms(nat,3))
                ALLOCATE(forces(nat,3))
-               ALLOCATE(friction(3*nat,3*nat))
+               IF (vstyle .eq. 24 .or. vstyle .eq. 25) THEN              
+                  ! only allocate huge friction matrix if needed
+                  ALLOCATE(friction(3*nat,3*nat))
+                  friction = 0.0d0               
+               ENDIF
                atoms = 0.0d0
                datoms = 0.0d0
                forces = 0.0d0
-               friction = 0.0d0
                msgbuffer = 0.0d0
             ENDIF
 
