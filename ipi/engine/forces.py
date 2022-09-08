@@ -29,6 +29,7 @@ __all__ = ["Forces", "ForceComponent"]
 
 fbuid = 0
 
+
 class ForceBead(dobject):
 
     """Base force helper class.
@@ -132,7 +133,7 @@ class ForceBead(dobject):
         dcopy(dself.f, dself.fx)
         dcopy(dself.f, dself.fy)
         dcopy(dself.f, dself.fz)
-    
+
     def queue(self):
         """Sends the job to the interface queue directly.
 
@@ -144,7 +145,7 @@ class ForceBead(dobject):
         with self._threadlock:
             if self.request is None and dd(self).ufvx.tainted():
                 self.request = self.ff.queue(self.atoms, self.cell, reqid=self.uid)
-    
+
     def get_all(self):
         """Driver routine.
 
@@ -1005,7 +1006,7 @@ class Forces(dobject):
 
         for ff in self.mforces:
             ff.stop()
-    
+
     def queue(self):
         """Submits all the required force calculations to the forcefields."""
 
@@ -1088,11 +1089,10 @@ class Forces(dobject):
                 len(self.mforces[index].mts_weights) > level
                 and self.mforces[index].mts_weights[level] != 0
                 and self.mforces[index].weight != 0
-            ):                
+            ):
                 fk += (
-                    (self.mforces[index].weight* self.mforces[index].mts_weights[level])
-                    * self.mrpc[index].b2tob1(dstrip(self.mforces[index].f))
-                )
+                    self.mforces[index].weight * self.mforces[index].mts_weights[level]
+                ) * self.mrpc[index].b2tob1(dstrip(self.mforces[index].f))
         return fk
 
     def forcesvirs_4th_order(self, index):

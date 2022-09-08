@@ -25,6 +25,7 @@ import ipi.inputs.simulation as isimulation
 
 __all__ = ["Simulation"]
 
+
 class Simulation(dobject):
     """Main simulation object.
 

@@ -14,20 +14,25 @@
  class class_to_profile:
 """
 
-import builtins 
+import builtins
 
 try:
     builtins.profile
 except AttributeError:
     # No line profiler, provide a pass-through version
-    def profile(func): return func
+    def profile(func):
+        return func
+
     builtins.profile = profile
 
+
 def profile_class(cls):
-    for attr in cls.__dict__: # there's propably a better way to do this
+    for attr in cls.__dict__:  # there's propably a better way to do this
         print("attaching ", attr)
         if callable(getattr(cls, attr)):
             print("attached")
             setattr(cls, attr, profile(getattr(cls, attr)))
-    return cls    
+    return cls
+
+
 builtins.profile_class = profile_class

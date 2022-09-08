@@ -9,7 +9,7 @@ import numpy as np
 
 from ipi.utils.depend import dstrip
 from ipi.utils.messages import verbosity, info
-import ipi.utils.profiler 
+import ipi.utils.profiler
 
 __all__ = [
     "nm_noop",
@@ -439,7 +439,7 @@ class nm_fft(
             qnm[:, 3 * io + 1] = np.dot(self._b2o_nm, q[:, 3 * io + 1])
             qnm[:, 3 * io + 2] = np.dot(self._b2o_nm, q[:, 3 * io + 2])
         return qnm
-    
+
     def nm2b(self, qnm):
         """Transforms a matrix to the bead representation.
 

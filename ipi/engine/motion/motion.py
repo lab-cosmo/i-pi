@@ -11,6 +11,7 @@ from ipi.utils.depend import depend_value
 from ipi.utils.depend import dd
 from ipi.utils.depend import dobject
 
+
 class Motion(dobject):
 
     """Base motion calculation class.
