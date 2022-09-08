@@ -9,7 +9,6 @@ import numpy as np
 
 from ipi.utils.depend import dstrip
 from ipi.utils.messages import verbosity, info
-import ipi.utils.profiler
 
 __all__ = [
     "nm_noop",

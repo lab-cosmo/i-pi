@@ -25,7 +25,6 @@ from ipi.utils.depend import dstrip
 from ipi.utils.io import read_file
 from ipi.utils.units import unit_to_internal, UnitMap
 from ipi.utils.distance import vector_separation
-import ipi.utils.profiler
 
 try:
     import plumed
