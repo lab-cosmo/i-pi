@@ -18,9 +18,7 @@ from ipi.engine.thermostats import Thermostat
 from ipi.engine.barostats import Barostat
 from ipi.utils.softexit import softexit
 
-
 # __all__ = ['Dynamics', 'NVEIntegrator', 'NVTIntegrator', 'NPTIntegrator', 'NSTIntegrator', 'SCIntegrator`']
-
 
 class Dynamics(Motion):
 
@@ -237,7 +235,6 @@ class Dynamics(Motion):
 
         return self.ensemble.temp * self.beads.nbeads
 
-    @profile
     def step(self, step=None):
         """Advances the dynamics by one time step"""
 
@@ -407,7 +404,6 @@ class NVEIntegrator(DummyIntegrator):
             potential energy, and the spring potential energy.
     """
 
-    @profile
     def pstep(self, level=0):
         """Velocity Verlet momentum propagator."""
 
@@ -416,7 +412,6 @@ class NVEIntegrator(DummyIntegrator):
         if level == 0:  # adds bias in the outer loop
             self.beads.p += dstrip(self.bias.f) * self.pdt[level]
 
-    @profile
     def qcstep(self):
         """Velocity Verlet centroid position propagator."""
         # dt/inmts

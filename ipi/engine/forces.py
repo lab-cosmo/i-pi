@@ -24,12 +24,10 @@ from ipi.utils.depend import *
 from ipi.utils.nmtransform import nm_rescale
 from ipi.engine.beads import Beads
 
-
 __all__ = ["Forces", "ForceComponent"]
 
 
 fbuid = 0
-
 
 class ForceBead(dobject):
 
@@ -134,8 +132,7 @@ class ForceBead(dobject):
         dcopy(dself.f, dself.fx)
         dcopy(dself.f, dself.fy)
         dcopy(dself.f, dself.fz)
-
-    @profile
+    
     def queue(self):
         """Sends the job to the interface queue directly.
 
@@ -147,7 +144,7 @@ class ForceBead(dobject):
         with self._threadlock:
             if self.request is None and dd(self).ufvx.tainted():
                 self.request = self.ff.queue(self.atoms, self.cell, reqid=self.uid)
-
+    
     def get_all(self):
         """Driver routine.
 
@@ -410,7 +407,6 @@ class ForceComponent(dobject):
             dependencies=[dself.virs],
         )
 
-    @profile
     def queue(self):
         """Submits all the required force calculations to the interface."""
 
@@ -1010,7 +1006,6 @@ class Forces(dobject):
         for ff in self.mforces:
             ff.stop()
     
-    @profile
     def queue(self):
         """Submits all the required force calculations to the forcefields."""
 
@@ -1069,7 +1064,6 @@ class Forces(dobject):
             )
         return self.mforces[index].extras
 
-    @profile
     def queue_mts(self, level):
         """Submits all the required force calculations to the forcefields."""
 
@@ -1083,7 +1077,6 @@ class Forces(dobject):
                 # do not queue forces which have zero weight
                 ff.queue()
 
-    @profile
     def forces_mts(self, level):
         """Fetches ONLY the forces associated with a given MTS level."""
 
@@ -1095,14 +1088,11 @@ class Forces(dobject):
                 len(self.mforces[index].mts_weights) > level
                 and self.mforces[index].mts_weights[level] != 0
                 and self.mforces[index].weight != 0
-            ):
-                if self.mrpc[index].noop:
-                    fk+= (self.mforces[index].weight* self.mforces[index].mts_weights[level])*dstrip(self.mforces[index].f)
-                else:
-                    fk += (
-                        (self.mforces[index].weight* self.mforces[index].mts_weights[level])
-                        * self.mrpc[index].b2tob1(dstrip(self.mforces[index].f))
-                    )
+            ):                
+                fk += (
+                    (self.mforces[index].weight* self.mforces[index].mts_weights[level])
+                    * self.mrpc[index].b2tob1(dstrip(self.mforces[index].f))
+                )
         return fk
 
     def forcesvirs_4th_order(self, index):

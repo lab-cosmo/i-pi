@@ -25,6 +25,7 @@ from ipi.utils.depend import dstrip
 from ipi.utils.io import read_file
 from ipi.utils.units import unit_to_internal, UnitMap
 from ipi.utils.distance import vector_separation
+import ipi.utils.profiler
 
 try:
     import plumed
@@ -126,7 +127,6 @@ class ForceField(dobject):
 
         self.output_maker = output_maker
 
-    @profile
     def queue(self, atoms, cell, reqid=-1, template=None):
         """Adds a request.
 
@@ -161,7 +161,8 @@ class ForceField(dobject):
         else:
             par_str = " "
 
-        pbcpos = dstrip(atoms.q).copy()
+        dq = dstrip(atoms.q)
+        pbcpos = dq.copy()
 
         # Indexes come from input in a per atom basis and we need to make a per atom-coordinate basis
         # Reformat indexes for full system (default) or piece of system

@@ -23,9 +23,7 @@ from ipi.utils.softexit import softexit
 import ipi.engine.outputs as eoutputs
 import ipi.inputs.simulation as isimulation
 
-
 __all__ = ["Simulation"]
-
 
 class Simulation(dobject):
     """Main simulation object.
@@ -255,7 +253,6 @@ class Simulation(dobject):
 
         self.chk.write(store=False)
 
-    @profile
     def run(self):
         """Runs the simulation.
 

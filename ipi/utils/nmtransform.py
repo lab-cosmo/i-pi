@@ -9,7 +9,7 @@ import numpy as np
 
 from ipi.utils.depend import dstrip
 from ipi.utils.messages import verbosity, info
-
+import ipi.utils.profiler 
 
 __all__ = [
     "nm_noop",
@@ -264,7 +264,6 @@ class nm_rescale(object):
             self._o_b1tob2 = mk_o_rs_matrix(nbeads1, nbeads2)
             self._o_b2tob1 = self._o_b1tob2.T * (float(nbeads1) / float(nbeads2))
 
-    @profile
     def b1tob2(self, q):
         """Transforms a matrix from one value of beads to another.
 
@@ -299,7 +298,6 @@ class nm_rescale(object):
 
         return q_scal
 
-    @profile
     def b2tob1(self, q):
         """Transforms a matrix from one value of beads to another.
 
@@ -441,7 +439,7 @@ class nm_fft(
             qnm[:, 3 * io + 1] = np.dot(self._b2o_nm, q[:, 3 * io + 1])
             qnm[:, 3 * io + 2] = np.dot(self._b2o_nm, q[:, 3 * io + 2])
         return qnm
-
+    
     def nm2b(self, qnm):
         """Transforms a matrix to the bead representation.
 
