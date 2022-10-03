@@ -1005,7 +1005,7 @@ class InputValue(InputAttribute):
         self.value = value
         if self._dimension != "undefined":
             self.value *= unit_to_user(self._dimension, units, 1.0)
-        
+
     def fetch(self):
         """Returns the stored data in the user defined units."""
 
