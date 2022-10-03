@@ -43,7 +43,7 @@ class Alchemical_driver(Dummy_driver):
             self.template = arglist[2]
         else:
             sys.exit(self.error_msg)
-        self.alchemical_calc = AlchemicalCalc(self.model, self.hypers , True, self.template)
+        self.alchemical_calc = AlchemicalCalc(self.model, self.hypers, self.template)
 
     def __call__(self, cell, pos):
         """Get energies, forces, and stresses from the librascal model"""
@@ -54,10 +54,10 @@ class Alchemical_driver(Dummy_driver):
         pot, force, stress = self.alchemical_calc.calculate(pos_calc, cell_calc)
         pot_ipi = unit_to_internal("energy", "electronvolt", pot)
         force_ipi = unit_to_internal("force", "ev/ang", force.reshape(-1,3) )
-        print(type(force_ipi), force_ipi.flags["OWNDATA"])
+        
         print("pot, force, stress" , pot, force_ipi.shape, stress.shape)        
-        # The rascal stress is normalized by the cell volume (in rascal units)
-        vir_calc = -1 * stress * det_ut3x3(cell_calc)
+        # rascaline returns the stress in energy units already (i.e. as dV/deps)
+        vir_calc = stress
         vir_ipi = unit_to_internal("energy", "electronvolt", vir_calc.T)
         extras = ""
         

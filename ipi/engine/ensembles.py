@@ -248,13 +248,15 @@ class Ensemble(dobject):
     def add_xlkin(self, k):
         self._xlkin.append(k)
         dd(self).lpens.add_dependency(k)
-
+    
     def get_econs(self):
         """Calculates the conserved energy quantity for constant energy
         ensembles.
         """
 
-        eham = self.nm.vspring + self.nm.kin + self.forces.pot
+        eham = self.nm.vspring 
+        eham += self.nm.kin 
+        eham += self.forces.pot
 
         eham += self.bias.pot  # bias
 

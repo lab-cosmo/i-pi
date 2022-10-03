@@ -1002,11 +1002,10 @@ class InputValue(InputAttribute):
                 units
             )  # User can define in the code the units to be printed
 
+        self.value = value
         if self._dimension != "undefined":
-            self.value = value * unit_to_user(self._dimension, units, 1.0)
-        else:
-            self.value = value
-
+            self.value *= unit_to_user(self._dimension, units, 1.0)
+        
     def fetch(self):
         """Returns the stored data in the user defined units."""
 
@@ -1125,7 +1124,7 @@ class InputArray(InputValue):
         """
 
         super(InputArray, self).store(
-            value=np.array(value, dtype=self.type).flatten().copy(), units=units
+            value=np.array(value, dtype=self.type, copy=True).flatten(), units=units
         )
         self.shape.store(value.shape)
 
