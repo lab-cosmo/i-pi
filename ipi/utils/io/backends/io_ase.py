@@ -71,8 +71,6 @@ def read_ase(filedesc):
 
     from ase.io import read
 
-    #    from ase.build import niggli_reduce
-
     # A check to avoid getting stuck in an infinite reading loop with some
     # readers
 
@@ -84,21 +82,25 @@ def read_ase(filedesc):
         raise EOFError()
 
     try:
-        atoms = read(filedesc)
+        atoms = read(filedesc, 0)
+        print("as read", atoms.cell, atoms.positions[0])
     except ValueError:
         raise EOFError()
 
     if all(atoms.get_pbc()):
         # We want to make the cell conform
         a = atoms.cell[0]
+        print(atoms.cell, atoms.positions[0])
         atoms.rotate(a, "x", rotate_cell=True)  # a along x
         b = atoms.cell[1]
         b = b.copy() / np.linalg.norm(b)
         ang = -np.arctan2(b[2], b[1]) * 180 / np.pi
+        print(atoms.cell, atoms.positions[0])        
         atoms.rotate(ang, "x", rotate_cell=True)  # b in xy
-
+        print(atoms.cell, atoms.positions[0])
+        
     comment = "Structure read with ASE with composition %s" % atoms.symbols.formula
-    cell = atoms.cell.array
+    cell = atoms.cell.array.T
     qatoms = atoms.positions.reshape((-1))
     names = list(atoms.symbols)
     masses = atoms.get_masses() * Constants.amu
