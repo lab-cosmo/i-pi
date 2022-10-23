@@ -84,7 +84,7 @@ class AtomSwap(Motion):
     def step(self, step=None):
 
         # picks number of attempted exchanges
-        ntries = self.nxc #self.prng.rng.poisson(self.nxc)
+        ntries = int(self.nxc) #self.prng.rng.poisson(self.nxc)
         if ntries == 0:
             return
 
