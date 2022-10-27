@@ -14,7 +14,7 @@ import numpy as np
 from ipi.engine.motion import Motion
 from ipi.utils.depend import *
 from ipi.utils.units import Constants
-
+from ipi.utils.messages import verbosity, info
 
 class AtomSwap(Motion):
 
@@ -69,6 +69,8 @@ class AtomSwap(Motion):
         self.dbeads = self.beads.copy()
         self.dcell = self.cell.copy()
         self.dforces = self.forces.copy(self.dbeads, self.dcell)
+        self._xc_stats_tries = 0
+        self._xc_stats_accept = 0
 
     def AXlist(self, atomtype):
         """This compile a list of atoms ready for exchanges."""
@@ -99,7 +101,6 @@ class AtomSwap(Motion):
 
         # does the exchange
         betaP = 1.0 / (Constants.kb * self.ensemble.temp * nb)
-        nexch = 0
 
         # this would be double-counting, we already have a bail-out condition above
         # if (1.0/self.nxc < self.prng.u) : return  # tries a round of exhanges with probability 1/nmc
@@ -107,6 +108,7 @@ class AtomSwap(Motion):
             self.cell.h
         )  # just in case the cell gets updated in the other motion classes
         for x in range(ntries):
+            self._xc_stats_tries += 1
             i = self.prng.rng.randint(lenlist)
             j = self.prng.rng.randint(lenlist)
             while self.beads.names[axlist[i]] == self.beads.names[axlist[j]]:
@@ -122,7 +124,7 @@ class AtomSwap(Motion):
 
             # attemps the exchange, and actually propagate the exchange if something has happened
             if pexchange > self.prng.u:
-                nexch += 1
+                self._xc_stats_accept += 1
 
                 # copy the exchanged beads position
                 self.beads.q[:] = self.dbeads.q[:]
@@ -130,3 +132,7 @@ class AtomSwap(Motion):
                 self.forces.transfer_forces(self.dforces)
 
                 self.ealc += -(new_energy - old_energy)
+            info( 
+                    " Attempted exchange %3s <-> %3s. Totals: Accepted % 7d / % 7d " %(self.beads.names[axlist[i]], self.beads.names[axlist[j]], self._xc_stats_accept, self._xc_stats_tries) ,
+                    verbosity.medium,
+                )
