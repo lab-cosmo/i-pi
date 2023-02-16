@@ -16,6 +16,7 @@ from ipi.utils.depend import *
 from ipi.utils.units import Constants
 from ipi.utils.messages import verbosity, info
 
+
 class AtomSwap(Motion):
 
     """Swap atom positions (typically useful to exchange species in
@@ -84,9 +85,8 @@ class AtomSwap(Motion):
         return np.asarray(atomexchangelist)
 
     def step(self, step=None):
-
         # picks number of attempted exchanges
-        ntries = int(self.nxc) #self.prng.rng.poisson(self.nxc)
+        ntries = int(self.nxc)  # self.prng.rng.poisson(self.nxc)
         if ntries == 0:
             return
 
@@ -132,7 +132,13 @@ class AtomSwap(Motion):
                 self.forces.transfer_forces(self.dforces)
 
                 self.ealc += -(new_energy - old_energy)
-            info( 
-                    " Attempted exchange %3s <-> %3s. Totals: Accepted % 7d / % 7d " %(self.beads.names[axlist[i]], self.beads.names[axlist[j]], self._xc_stats_accept, self._xc_stats_tries) ,
-                    verbosity.medium,
-                )
+            info(
+                " Attempted exchange %3s <-> %3s. Totals: Accepted % 7d / % 7d "
+                % (
+                    self.beads.names[axlist[i]],
+                    self.beads.names[axlist[j]],
+                    self._xc_stats_accept,
+                    self._xc_stats_tries,
+                ),
+                verbosity.medium,
+            )
