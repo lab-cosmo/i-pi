@@ -8,6 +8,7 @@ tree, or fetched as
 After having obtained the potential file, the example can be run as usual
 
 # this does not work because model and dataset does not match, but you get the idea
-git install git+https://github.com/agoscinski/i-pi.git@equistore-potentials-draft2
+pip install git+https://github.com/agoscinski/i-pi.git@equistore-potentials-draft
+pip install git+https://github.com/lab-cosmo/equisolve.git@equistore-pair-potential-draft
 i-pi input.xml
-i-pi-py_driver -m equisolve -a water -u -o multi_spectra_script-water.zip,h5o2+.extxyz
+i-pi-py_driver -m equisolve -a water -u -o multi_spectra_script-water-dummy.zip,h5o2+.extxyz
