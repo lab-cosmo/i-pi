@@ -12,7 +12,8 @@ from ipi.utils.inputvalue import (
     InputArray,
     input_default,
 )
-
+from ipi.engine.initializer import InitFile
+from ipi.inputs.initializer import InputInitFile
 
 __all__ = ["InputAtomSwap"]
 
@@ -51,6 +52,15 @@ class InputAtomSwap(InputDictionary):
                 "help": "The names of the atoms to be to exchanged, in the format [name1, name2, ... ].",
             },
         ),
+        "reference_lattice": (
+            InputInitFile,
+            {
+                "default": input_default(
+                    factory=InitFile, kwargs={"mode": "xyz"}
+                ),
+                "help": "Structure file to be used to extract reference lattice positions for the atom swaps",
+            },
+        ),
         "nxc": (
             InputValue,
             {
@@ -85,6 +95,7 @@ class InputAtomSwap(InputDictionary):
             return
 
         self.names.store(alc.names)
+        self.file.store(alc.lattice_file)
         self.nxc.store(alc.nxc)
         self.ealc.store(alc.ealc)
 

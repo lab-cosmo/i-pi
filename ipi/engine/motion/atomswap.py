@@ -26,7 +26,7 @@ class AtomSwap(Motion):
     """
 
     def __init__(
-        self, fixcom=False, fixatoms=None, mode=None, names=[], nxc=1, ealc=None
+        self, fixcom=False, fixatoms=None, mode=None, names=[], nxc=1, ealc=None, reference_lattice=None
     ):
         """Initialises a "alchemical exchange" motion object.
 
@@ -47,6 +47,7 @@ class AtomSwap(Motion):
             self.ealc = ealc
         else:
             self.ealc = 0.0
+        self.lattice_file = reference_lattice
 
     def bind(self, ens, beads, cell, bforce, nm, prng, omaker):
         """Binds ensemble beads, cell, bforce, and prng to the dynamics.
