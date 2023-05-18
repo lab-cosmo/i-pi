@@ -64,6 +64,7 @@ from .planetary import InputPlanetary
 from .ramp import InputTemperatureRamp, InputPressureRamp
 from .al6xxx_kmc import InputAlKMC
 from ipi.utils.units import *
+from ipi.utils.messages import verbosity, warning
 
 __all__ = ["InputMotion"]
 
@@ -295,9 +296,9 @@ class InputMotionBase(Input):
             raise ValueError("Cannot store Mover calculator of type " + str(type(sc)))
 
         if (sc.fixcom is True) and (len(sc.fixatoms) > 0):
-            softexit.trigger(
-                status="bad",
-                message="Fixed atoms break translational invariance, and so should be used with <fixcom> False </fixcom>. You can disable this error if you know what you are doing.",
+            warning(
+                "Fixed atoms break translational invariance, and so should be used with <fixcom> False </fixcom>.",
+                verbosity.low
             )
 
         if tsc == 0:

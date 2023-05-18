@@ -703,6 +703,8 @@ class FFPlumed(ForceField):
             mycell = myframe["cell"]
             myatoms.q *= unit_to_internal("length", self.init_file.units, 1.0)
             mycell.h *= unit_to_internal("length", self.init_file.units, 1.0)
+        else:
+            raise ValueError("PLUMED interface expects an xyz file to initialize parameters")
 
         self.natoms = myatoms.natoms
         self.plumed.cmd("setNatoms", self.natoms)
