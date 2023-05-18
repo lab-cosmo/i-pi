@@ -61,6 +61,16 @@ class InputAtomSwap(InputDictionary):
                 "help": "Structure file to be used to extract reference lattice positions for the atom swaps",
             },
         ),
+        "lattice_idx": (
+            InputArray,
+            {
+                "dtype": int,
+                "default": input_default(
+                    factory=np.zeros, args=(0,), kwargs={"dtype": np.int}
+                ),
+                "help": "The indices mapping the atoms to be to exchanged to the corresponding lattice sites.",
+            },
+        ),
         "nxc": (
             InputValue,
             {
@@ -95,7 +105,8 @@ class InputAtomSwap(InputDictionary):
             return
 
         self.names.store(alc.names)
-        self.file.store(alc.lattice_file)
+        self.reference_lattice.store(alc.lattice_file)
+        self.lattice_idx.store(alc.lattice_idx)
         self.nxc.store(alc.nxc)
         self.ealc.store(alc.ealc)
 

@@ -14,7 +14,7 @@ import numpy as np
 from ipi.engine.motion import Motion
 from ipi.utils.depend import *
 from ipi.utils.units import Constants
-
+from ipi.utils.io import read_file
 
 class AtomSwap(Motion):
 
@@ -26,7 +26,8 @@ class AtomSwap(Motion):
     """
 
     def __init__(
-        self, fixcom=False, fixatoms=None, mode=None, names=[], nxc=1, ealc=None, reference_lattice=None
+        self, fixcom=False, fixatoms=None, mode=None, names=[], nxc=1, 
+        ealc=None, reference_lattice=None, lattice_idx=[]
     ):
         """Initialises a "alchemical exchange" motion object.
 
@@ -47,7 +48,25 @@ class AtomSwap(Motion):
             self.ealc = ealc
         else:
             self.ealc = 0.0
+                
         self.lattice_file = reference_lattice
+        self.lattice_idx = lattice_idx
+        if self.lattice_file is not None and self.lattice_file.value != "":
+            mode = self.lattice_file.mode
+            units = self.lattice_file.units
+            cell_units = self.lattice_file.cell_units
+            rfile = open(self.lattice_file.value, "r")
+            ret = read_file(
+                mode, rfile, dimension="length", units=units, cell_units=cell_units
+            )
+            self.reference_lattice = ret["atoms"].q.reshape((-1,3))
+            if len(self.lattice_idx) == 0 :
+                self.lattice_idx = np.array(list(range(len(self.reference_lattice))))
+            print(self.reference_lattice)
+            print(self.lattice_idx)
+        else:
+            self.reference_lattice = None
+
 
     def bind(self, ens, beads, cell, bforce, nm, prng, omaker):
         """Binds ensemble beads, cell, bforce, and prng to the dynamics.
@@ -113,10 +132,29 @@ class AtomSwap(Motion):
                 j = self.prng.rng.randint(lenlist)  # makes sure we pick a real exchange
 
             old_energy = self.forces.pot
+            
             # swap the atom positions
             self.dbeads.q[:] = self.beads.q[:]
-            self.dbeads.q[:, 3 * i : 3 * i + 3] = self.beads.q[:, 3 * j : 3 * j + 3]
-            self.dbeads.q[:, 3 * j : 3 * j + 3] = self.beads.q[:, 3 * i : 3 * i + 3]
+            if self.reference_lattice is None:
+                self.dbeads.q[:, 3 * i : 3 * i + 3] = self.beads.q[:, 3 * j : 3 * j + 3]
+                self.dbeads.q[:, 3 * j : 3 * j + 3] = self.beads.q[:, 3 * i : 3 * i + 3]
+            else:
+                l_idx_i = self.lattice_idx[i]
+                l_idx_j = self.lattice_idx[j]
+                print(i, j, l_idx_i, l_idx_j)
+                print("delta i", self.beads.q[:, 3 * i : 3 * i + 3]
+                                                       -self.reference_lattice[l_idx_i])
+                print("delta j", self.beads.q[:, 3 * j : 3 * j + 3]
+                                                       -self.reference_lattice[l_idx_j])
+                print("OVERALL DISPLACEMENT: ", 
+                      (self.dbeads.q.reshape((1,-1,3))-self.reference_lattice[self.lattice_idx]).sum(axis=1)
+                )
+                self.dbeads.q[:, 3 * i : 3 * i + 3] = (self.reference_lattice[l_idx_j]+
+                                                       self.beads.q[:, 3 * i : 3 * i + 3]
+                                                       -self.reference_lattice[l_idx_i])                                                      
+                self.dbeads.q[:, 3 * j : 3 * j + 3] = (self.reference_lattice[l_idx_i]+
+                                                       self.beads.q[:, 3 * j : 3 * j + 3]
+                                                       -self.reference_lattice[l_idx_j])
             new_energy = self.dforces.pot
             pexchange = np.exp(-betaP * (new_energy - old_energy))
 
@@ -129,4 +167,11 @@ class AtomSwap(Motion):
                 # transfers the (already computed) status of the force, so we don't need to recompute
                 self.forces.transfer_forces(self.dforces)
 
+                if self.reference_lattice is not None:
+                    # swaps lattice indices too
+                    self.lattice_idx[i], self.lattice_idx[j] = self.lattice_idx[j], self.lattice_idx[i]
+                    l_idx_i = self.lattice_idx[i]
+                    l_idx_j = self.lattice_idx[j]
+                    
                 self.ealc += -(new_energy - old_energy)
+        print("attempts", ntries, nexch)          

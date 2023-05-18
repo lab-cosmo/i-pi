@@ -28,7 +28,7 @@
         </forces>
         <motion mode="multi">
             <motion mode="dynamics">
-                <fixcom> False </fixcom>   
+             <fixcom> True </fixcom>   
              <fixatoms> [121, 122, 123, 124] </fixatoms>    		
             <dynamics mode="nvt">            
                	<timestep units="femtosecond"> 2 </timestep>
@@ -47,13 +47,14 @@
             </motion>
             <motion mode="atomswap">
                  <atomswap>
-                    <nxc> 1 </nxc>
+                    <nxc> 2 </nxc>
                     <names>  [ Al, Si, Mg, V ]  </names>
+                    <reference_lattice mode="ase"> init.extxyz </reference_lattice>
                  </atomswap>        
             </motion>
         </motion>
         <ensemble>
-            <temperature units="kelvin"> 400 </temperature>
+            <temperature units="kelvin"> 200 </temperature>
         </ensemble>
     </system>
 </simulation>
