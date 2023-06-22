@@ -396,7 +396,7 @@ class Properties(dobject):
                 "dimension": "unknown",
                 "help": "A component from the additional data returned by a calculation. ",
                 "longhelp": """Extracts one component from the additional data that can be returned, asa JSON-formatted string, by some forcefield calculations. Takes mandatory arguments `key` (the name of the property) and `index` (the index of the component that should be  in which should be returned). The optional argument 'bead' will print the property associated with the specified bead. If unspecified, the mean over beads will be computed. """,
-                "func": self.get_extra_property
+                "func": self.get_extra_property,
             },
             "forcemod": {
                 "dimension": "force",
@@ -1053,21 +1053,20 @@ class Properties(dobject):
                 self.beads.p[:, 3 * i : 3 * i + 3] = 0.0
 
         return 2.0 * kemd / (Constants.kb * 3.0 * float(ncount) * self.beads.nbeads)
-       
-    def get_extra_property(self, key, index, bead="-1"):
 
+    def get_extra_property(self, key, index, bead="-1"):
         if key not in self.forces.extras:
-            raise IndexError("Key "+key+" not found in extras")
-        
+            raise IndexError("Key " + key + " not found in extras")
+
         b = int(bead)
-        i = int(index)        
-        if b<0:
+        i = int(index)
+        if b < 0:
             extra = self.forces.extras[key][b][i]
         else:
             extra = np.mean([eb[i] for eb in self.forces.extras[key]])
 
         return extra
-                
+
     def get_kincv(self, atom=""):
         """Calculates the quantum centroid virial kinetic energy estimator.
 

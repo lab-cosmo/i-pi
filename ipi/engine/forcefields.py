@@ -1271,9 +1271,9 @@ class FFCommittee(ForceField):
             for x in xtrs:
                 r["result"][3][("committee_" + k)].append(x[k])
 
-        # create "raw" output string 
+        # create "raw" output string
         r["result"][3]["raw"] = json.dumps(r["result"][3], cls=NumpyEncoder)
-        
+
         if self.active_thresh > 0.0 and std_pot > self.active_thresh:
             dumps = json.dumps(
                 {
