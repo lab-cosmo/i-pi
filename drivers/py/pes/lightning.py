@@ -38,7 +38,7 @@ class Lightning_driver(Dummy_driver):
 
         if len(arglist) == 2:
             self.model = arglist[0]
-            self.hypers = arglist[1]
+            self.template = arglist[1]
         else:
             sys.exit(self.error_msg)
         self.alchemical_calc = PytorchLightningCalculator(self.model, self.template)
