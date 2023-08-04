@@ -55,14 +55,11 @@ class Lightning_driver(Dummy_driver):
         pot_ipi = unit_to_internal("energy", "electronvolt", pot)
         force_ipi = unit_to_internal("force", "ev/ang", force.reshape(-1, 3))
 
-        print("pot, force, stress", pot, force_ipi.shape, stress.shape)
-        
         # rascaline returns the stress in energy units already (i.e. as dV/deps)
         # TODO: implement actual virial calculation
         vir_calc = stress
         vir_ipi = unit_to_internal("energy", "electronvolt", vir_calc.T)
         extras = ""
-
-        # print("pot_ipi, force_ipi, vir_ipi, extras" ,pot_ipi, force_ipi, vir_ipi, extras)
+        
         return pot_ipi, force_ipi, vir_ipi, extras
 
