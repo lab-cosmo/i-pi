@@ -2,7 +2,7 @@
 import sys
 import os
 
-LIGHNING_CALCULATOR_PATH = "/Users/matthiaskellner/Documents/PhD/H2O/driver"
+LIGHNING_CALCULATOR_PATH = "/Users/matthiaskellner/Documents/PhD/H2O/driver/"
 
 sys.path.append(LIGHNING_CALCULATOR_PATH)
 
@@ -13,7 +13,7 @@ from ipi.utils.units import unit_to_internal, unit_to_user
 
 sys.path.append(LIGHNING_CALCULATOR_PATH)
 
-from driver import PytorchLightningCalculator
+from ipi_calculator import PytorchLightningCalculator
 
 class Lightning_driver(Dummy_driver):
     def __init__(self, args=None):
