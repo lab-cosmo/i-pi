@@ -81,7 +81,6 @@ class AtomSwap(Motion):
         else:
             self.region_lattice = None
 
-
     def bind(self, ens, beads, cell, bforce, nm, prng, omaker):
         """Binds ensemble beads, cell, bforce, and prng to the dynamics.
 
@@ -258,5 +257,8 @@ class AtomSwap(Motion):
                     l_idx_j = self.lattice_idx[j]
                     
                 self.ealc += -(new_energy - old_energy)
+<<<<<<< HEAD
                 print("EXCHANGE!")
+=======
+>>>>>>> db008e1612f3cb407b44dd8dc169a249226cce3f
         print("attempts", ntries, nexch)          
