@@ -71,6 +71,32 @@ class InputAtomSwap(InputDictionary):
                 "help": "The indices mapping the atoms to be to exchanged to the corresponding lattice sites.",
             },
         ),
+        "region_lattice": (
+            InputInitFile,
+            {
+                "default": input_default(
+                    factory=InitFile, kwargs={"mode": "xyz"}
+                ),
+                "help": "Structure file to be used to read positions of potential vacancy sites",
+            },
+        ),
+        "region_radius": (
+            InputValue,
+            {
+                "dtype": float,
+                "default": 0.0,
+                "help": "The size of the region around each vacancy site to be considered for exchanges",
+                "dimension": "length",
+            },
+        ),
+        "region_force_change": (
+            InputValue,
+            {
+                "dtype": bool,
+                "default": False,
+                "help": "Only try swaps that change number or type of particles in a region",
+            },
+        ),
         "nxc": (
             InputValue,
             {
@@ -107,6 +133,9 @@ class InputAtomSwap(InputDictionary):
         self.names.store(alc.names)
         self.reference_lattice.store(alc.lattice_file)
         self.lattice_idx.store(alc.lattice_idx)
+        self.region_lattice.store(alc.region_file)
+        self.region_radius.store(alc.region_radius)
+        self.region_force_change.store(alc.region_force_change)
         self.nxc.store(alc.nxc)
         self.ealc.store(alc.ealc)
 

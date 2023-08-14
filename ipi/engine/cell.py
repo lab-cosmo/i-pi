@@ -87,15 +87,15 @@ class Cell(dobject):
         return np.dot(self.h, s)
 
     def array_pbc(self, pos):
-        """Uses the minimum image convention to return a list of particles to the
-           unit cell.
+        """Uses the minimum image convention to 
+           return a list of particles to the unit cell.
 
         Args:
            atom: An Atom object.
 
         Returns:
-           An array giving the position of the image that is inside the
-           system box.
+           The list of positions is modified in place to the image that is inside the
+           system box. Returns nothing
         """
 
         s = dstrip(pos).copy()
