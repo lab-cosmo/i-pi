@@ -173,6 +173,7 @@ class AtomSwap(Motion):
                 # pick actual atom indices
                 i = axlist[i]
                 j = axlist[j]
+                print(f"Trying {self.beads.names[i]} <--> {self.beads.names[j]}")
 
                 # swap the atom positions
                 if self.reference_lattice is None:
@@ -223,23 +224,24 @@ class AtomSwap(Motion):
                 new_q[axlist[region_i[0]]] = self.region_lattice[j] + region_i[1]
                 new_q[axlist[region_j[0]]] = self.region_lattice[i] + region_j[1]
                 self.dbeads.q[:] = new_q.flatten()
+                
+                
+                for i in axlist[region_i[0]]:
+                    mc = self.MinContact(i)
+                    if mc<2:
+                        print("XXXXX", end=" ")
+                    print(mc, end=" ")
+
+                for i in axlist[region_j[0]]:
+                    mc = self.MinContact(i)
+                    if mc<2:
+                        print("XXXXX", end=" ")
+                    print(mc, end=" ")
+                print(" << contacts")
 
             new_energy = self.dforces.pot            
             pexchange = np.exp(-betaP * (new_energy - old_energy))
             print(" ", pexchange)
-
-            for i in axlist[region_i[0]]:
-                mc = self.MinContact(i)
-                if mc<2:
-                    print("XXXXX", end=" ")
-                print(mc, end=" ")
-
-            for i in axlist[region_j[0]]:
-                mc = self.MinContact(i)
-                if mc<2:
-                    print("XXXXX", end=" ")
-                print(mc, end=" ")
-            print(" << contacts")
 
             # attemps the exchange, and actually propagate the exchange if something has happened
             if pexchange > self.prng.u:
@@ -257,8 +259,5 @@ class AtomSwap(Motion):
                     l_idx_j = self.lattice_idx[j]
                     
                 self.ealc += -(new_energy - old_energy)
-<<<<<<< HEAD
                 print("EXCHANGE!")
-=======
->>>>>>> db008e1612f3cb407b44dd8dc169a249226cce3f
         print("attempts", ntries, nexch)          
