@@ -170,8 +170,9 @@ class DriverSocket(socket.socket):
                 ntimeout += 1
                 if ntimeout > NTIMEOUT:
                     warning(
-                        " @SOCKET:  Couldn't receive within %5d attempts. Time to give up!"
-                        % (NTIMEOUT),
+                        """ @SOCKET:  Couldn't receive within %5d attempts. Time to give up! 
+ @SOCKET:  Current data stream: %d / %d - %s """
+                        % (NTIMEOUT, bpos, blen, self._buf),
                         verbosity.low,
                     )
                     raise Disconnected()

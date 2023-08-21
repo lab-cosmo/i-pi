@@ -62,8 +62,8 @@ class PET_driver(Dummy_driver):
         
         # Do the actual calculation
         pot, force = self.pet_calc.forward(pet_structure)
-        pot_ipi = unit_to_internal("energy", "electronvolt", pot)
-        force_ipi = unit_to_internal("force", "ev/ang", force)
+        pot_ipi = np.asarray(unit_to_internal("energy", "electronvolt", pot), np.float64)
+        force_ipi = np.asarray(unit_to_internal("force", "ev/ang", force), np.float64)
         # The rascal stress is normalized by the cell volume (in rascal units)
         vir_pet = 0*np.eye(3) #-1 * stress * det_ut3x3(cell_pet)
         vir_ipi = unit_to_internal("energy", "electronvolt", vir_pet.T)
