@@ -102,16 +102,30 @@ class AtomSwap(Motion):
         self.dbeads = self.beads.copy()
         self.dcell = self.cell.copy()
         self.dforces = self.forces.copy(self.dbeads, self.dcell)
+        self.axlist = None
 
-    def AXlist(self, atomtype):
+    def AXlist(self, atomtypes, check_xc=True):
         """This compile a list of atoms ready for exchanges."""
 
-        # selects the types of atoms for exchange
+        if check_xc and len(atomtypes) == 1:
+            raise ValueError("Cannot make alchemical exchanges with a single atomic type")
+        
         atomexchangelist = []
+        typecount = { a:0 for a in atomtypes }
         for i in range(self.beads.natoms):
-            if self.beads.names[i] in atomtype:
+            if self.beads.names[i] in atomtypes:
+                typecount[self.beads.names[i]] += 1
                 atomexchangelist.append(i)
+        
+        typecount = np.asarray(list(typecount.values()))
+        
+        if typecount.sum() ==0:
+            raise ValueError("Atoms exchange list is empty in MC atom swapper.")
 
+        if check_xc and typecount.max()==typecount.sum():
+            raise ValueError("Cannot make alchemical exchanges if a single atom type is present in the structure")
+
+        
         return np.asarray(atomexchangelist)
 
     def RXList(self, i, axlist):
@@ -135,9 +149,6 @@ class AtomSwap(Motion):
         d2ij[i] = 1e100
         return np.sqrt(d2ij.min())
 
-        
-        
-
     def step(self, step=None):
         """Does one round of alchemical exchanges."""
         # picks number of attempted exchanges
@@ -146,10 +157,10 @@ class AtomSwap(Motion):
             return
 
         nb = self.beads.nbeads
-        axlist = self.AXlist(self.names)
+        if self.axlist is None: # computes list of target atoms just once
+            self.axlist = self.AXlist(self.names, self.region_lattice is None)
+        axlist = self.axlist
         lenlist = len(axlist)
-        if lenlist == 0:
-            raise ValueError("Atoms exchange list is empty in MC atom swapper.")
 
         ## does the exchange
         betaP = 1.0 / (Constants.kb * self.ensemble.temp * nb)
@@ -168,7 +179,8 @@ class AtomSwap(Motion):
                 i = self.prng.rng.randint(lenlist)
                 j = self.prng.rng.randint(lenlist)
                 while self.beads.names[axlist[i]] == self.beads.names[axlist[j]]:
-                    j = self.prng.rng.randint(lenlist)  # makes sure we pick a real exchange
+                    # makes sure we pick a real exchange
+                    j = self.prng.rng.randint(lenlist)
                 
                 # map the "subset" indices back to the "absolute" atom indices
                 i = axlist[i]
