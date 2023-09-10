@@ -165,11 +165,15 @@
                ELSEIF (trim(cmdbuffer) == "qtip4pf-sr") THEN
                   vstyle = 27
                ELSEIF (trim(cmdbuffer) == "qtip4pf-c-1") THEN
-                  vstyle = 28
+                  vstyle = 60
                ELSEIF (trim(cmdbuffer) == "qtip4pf-c-2") THEN
-                  vstyle = 29
+                  vstyle = 61
                ELSEIF (trim(cmdbuffer) == "qtip4pf-c-json") THEN
-                  vstyle = 30
+                  vstyle = 62
+               ELSEIF (trim(cmdbuffer) == "qtip4pf-c-1-delta") THEN
+                  vstyle = 63
+               ELSEIF (trim(cmdbuffer) == "qtip4pf-c-2-delta") THEN
+                  vstyle = 64
                ELSEIF (trim(cmdbuffer) == "gas") THEN
                   vstyle = 0  ! ideal gas
                ELSEIF (trim(cmdbuffer) == "dummy") THEN
@@ -600,7 +604,7 @@
                   STOP "ENDED"
                ENDIF
                CALL qtip4pf_sr(atoms,nat,forces,pot,virial)
-            ELSEIF (vstyle == 28 .or. vstyle == 29 .or. vstyle == 30) THEN 
+            ELSEIF (vstyle .ge. 60 .and. vstyle .le. 64 ) THEN 
                ! qtip4pf committee potential. adds two different types of (small)
                ! LJ potentials just to have variations on a theme
 
@@ -615,7 +619,13 @@
                   WRITE(*,*) " qtip4pf PES only works with orthorhombic cells", cell_h(1,2), cell_h(1,3), cell_h(2,3)
                   STOP "ENDED"
                ENDIF
-               CALL qtip4pf(vpars(1:3),atoms,nat,forces,pot,virial)
+               IF (vstyle == 63 .or. vstyle == 64) THEN
+                  pot = 0.0
+                  forces = 0.0
+                  virial = 0.0
+               ELSE
+                  CALL qtip4pf(vpars(1:3),atoms,nat,forces,pot,virial)
+               ENDIF 
 
                ! adds a small LJ potential to give different committee values
                ! we have to replicate the code to make neighbor lists
@@ -647,11 +657,11 @@
                   ENDIF
                ENDDO
 
-               IF (vstyle == 28) THEN ! type 1
+               IF (vstyle == 60 .or. vstyle == 63) THEN ! type 1
                   CALL LJ_getall(rc, 2.5d0, 2d-6, nat, atoms, cell_h, cell_ih, index_list, n_list, pot, forces, virial)
-               ELSEIF (vstyle == 29) THEN ! type 2
+               ELSEIF (vstyle == 61 .or. vstyle == 64) THEN ! type 2
                   CALL LJ_getall(rc, 2.1d0, 24d-6, nat, atoms, cell_h, cell_ih, index_list, n_list, pot, forces, virial)
-               ELSEIF (vstyle == 30) THEN ! returns both as json
+               ELSEIF (vstyle == 62) THEN ! returns both as json
                   ! return both the committee members as a JSON extra string
                   CALL LJ_getall(rc, 2.5d0, 2d-6, nat, atoms, cell_h, cell_ih, index_list, n_list, pot, forces, virial)
                   
@@ -865,7 +875,7 @@
                CALL writebuffer(socket,initbuffer,cbuf)
                IF (verbose > 1) WRITE(*,*) "    !write!=> extra: ", &
      &         initbuffer
-            ELSEIF (vstyle==30) THEN ! returns committee data
+            ELSEIF (vstyle==62) THEN ! returns committee data
                cbuf = LEN_TRIM(initbuffer)
                CALL writebuffer(socket,cbuf)
                CALL writebuffer(socket,initbuffer,cbuf)
