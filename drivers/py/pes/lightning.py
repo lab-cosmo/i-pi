@@ -2,22 +2,21 @@
 import sys
 import os
 
-LIGHNING_CALCULATOR_PATH = "/Users/matthiaskellner/Documents/PhD/H2O/driver/"
-
-sys.path.append(LIGHNING_CALCULATOR_PATH)
+# Get the driver path from an environment variable
+LIGHTNING_CALCULATOR_PATH = os.environ.get('LIGHTNING_CALCULATOR_PATH')
+if LIGHTNING_CALCULATOR_PATH is not None:
+    sys.path.append(LIGHTNING_CALCULATOR_PATH)
 
 from .dummy import Dummy_driver
 
 from ipi.utils.mathtools import det_ut3x3
 from ipi.utils.units import unit_to_internal, unit_to_user
 
-sys.path.append(LIGHNING_CALCULATOR_PATH)
-
 from ipi_calculator import PytorchLightningCalculator
 
 class Lightning_driver(Dummy_driver):
     def __init__(self, args=None):
-        self.error_msg = """Rascal driver requires specification of a .json model file fitted with librascal, 
+        self.error_msg = """Lightning driver requires specification of a .json model file fitted with librascal, 
                             and a template file that describes the chemical makeup of the structure. 
                             Example: python driver.py -m rascal -u -o example.chk,template.xyz"""
 
