@@ -1,9 +1,9 @@
-
 import sys
 import os
+import json
 
 # Get the driver path from an environment variable
-LIGHTNING_CALCULATOR_PATH = os.environ.get('LIGHTNING_CALCULATOR_PATH')
+LIGHTNING_CALCULATOR_PATH = os.environ.get("LIGHTNING_CALCULATOR_PATH")
 if LIGHTNING_CALCULATOR_PATH is not None:
     sys.path.append(LIGHTNING_CALCULATOR_PATH)
 
@@ -13,6 +13,7 @@ from ipi.utils.mathtools import det_ut3x3
 from ipi.utils.units import unit_to_internal, unit_to_user
 
 from ipi_calculator import PytorchLightningCalculator
+
 
 class Lightning_driver(Dummy_driver):
     def __init__(self, args=None):
@@ -48,9 +49,11 @@ class Lightning_driver(Dummy_driver):
         # librascal expects ASE-format, cell-vectors-as-rows
         cell_calc = unit_to_user("length", "angstrom", cell.T)
         # Do the actual calculation
-        
-        pot, force, stress = self.alchemical_calc.calculate(pos_calc, cell_calc)
-        
+
+        pot, force, stress, committee = self.alchemical_calc.calculate(
+            pos_calc, cell_calc
+        )
+
         pot_ipi = unit_to_internal("energy", "electronvolt", pot)
         force_ipi = unit_to_internal("force", "ev/ang", force.reshape(-1, 3))
 
@@ -58,7 +61,23 @@ class Lightning_driver(Dummy_driver):
         # TODO: implement actual virial calculation
         vir_calc = stress
         vir_ipi = unit_to_internal("energy", "electronvolt", vir_calc.T)
-        extras = ""
-        
-        return pot_ipi, force_ipi, vir_ipi, extras
 
+        if len(committee) == 0:
+            extras = ""
+        else:
+            extras = dict(committee_pot=[], committee_force=[], committee_virial=[])
+
+            for p, f, v in committee:
+                extras["committee_pot"].append(
+                    unit_to_internal("energy", "electronvolt", p)
+                )
+                extras["committee_force"].append(
+                    unit_to_internal("force", "ev/ang", f).tolist()
+                )
+                extras["committee_virial"].append(
+                    unit_to_internal("energy", "electronvolt", v).tolist()
+                )
+
+            extras = json.dumps(extras)
+
+        return pot_ipi, force_ipi, vir_ipi, extras
