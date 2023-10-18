@@ -66,7 +66,7 @@ class InputAtomSwap(InputDictionary):
             {
                 "dtype": int,
                 "default": input_default(
-                    factory=np.zeros, args=(0,), kwargs={"dtype": np.int}
+                    factory=np.zeros, args=(0,), kwargs={"dtype": int}
                 ),
                 "help": "The indices mapping the atoms to be to exchanged to the corresponding lattice sites.",
             },
