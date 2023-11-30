@@ -1,6 +1,6 @@
-<simulation verbosity='low' threading='true' safe_stride='100'>
+<simulation verbosity='low' threading='true' safe_stride='1000'>
     <ffsocket mode='unix' name='dummy.1' pbc='false'>
-         <latency>  1.00000000e-04</latency>
+         <latency> 1.00000000e-04</latency>
          <address> gas </address>
          <exit_on_disconnect> False </exit_on_disconnect>
    </ffsocket>
@@ -9,8 +9,8 @@
    </fflj>
    <total_steps>2000</total_steps>
    <output prefix='simulation'>
-      <trajectory stride='2000' filename='pos'> positions </trajectory>
-      <properties stride='2000'> [ step, time, conserved, temperature, kinetic_md, potential, pressure_md, volume ] </properties>
+      <trajectory stride='1000' filename='pos'> positions </trajectory>
+      <properties stride='200'> [ step, time, conserved, temperature, kinetic_md, potential, pressure_md, volume ] </properties>
    </output>
    <prng>
       <seed>18885</seed>
@@ -20,12 +20,22 @@
      <instance> [ REF00, init.xyz, 1, 1 ] </instance>
      <instance> [ REF01, init.xyz, 2, 1 ] </instance>
      <instance> [ REF02, init.xyz, 5, 1 ] </instance>
-     <instance> [ REF10, init.xyz, 1, 10 ] </instance>
-     <instance> [ REF11, init.xyz, 2, 10 ] </instance>
-     <instance> [ REF12, init.xyz, 5, 10 ] </instance>
+     <instance> [ REF03, init.xyz, 10, 1 ] </instance>
+     <instance> [ REF10, init.xyz, 1, 2 ] </instance>
+     <instance> [ REF11, init.xyz, 2, 2 ] </instance>
+     <instance> [ REF12, init.xyz, 5, 2 ] </instance>
+     <instance> [ REF13, init.xyz, 10, 2 ] </instance>
+     <instance> [ REF20, init.xyz, 1, 5 ] </instance>
+     <instance> [ REF21, init.xyz, 2, 5 ] </instance>
+     <instance> [ REF22, init.xyz, 5, 5 ] </instance>
+     <instance> [ REF23, init.xyz, 10, 5 ] </instance>
+     <instance> [ REF30, init.xyz, 1, 10 ] </instance>
+     <instance> [ REF31, init.xyz, 2, 10 ] </instance>
+     <instance> [ REF32, init.xyz, 5, 10 ] </instance>
+     <instance> [ REF33, init.xyz, 10, 10 ] </instance>    
      <template>          
           <system prefix="PREFIX">
-            <initialize nbeads="4">
+            <initialize nbeads="8">
               <file mode="xyz"> FILENAME </file>
               <cell> [10.0, 0, 0, 0, 10.0, 0, 0, 0, 10.0] </cell>
               <masses mode='manual'> [1.0] </masses>
