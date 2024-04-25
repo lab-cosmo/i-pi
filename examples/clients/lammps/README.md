@@ -15,3 +15,5 @@
        reset args = none = reset electrostatics at each call
 
    Check a more detailed documentation at https://docs.lammps.org/fix_ipi.html
+
+`classical_md_gas` contains a basic setup in which LAMMPS does not compute any energy, and can be used to profile the overhead associated with i-PI communication, similar to what done in the `ipi_tests/profiling` folders using the built-in driver.
