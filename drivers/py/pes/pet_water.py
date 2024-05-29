@@ -19,11 +19,11 @@ except ImportError:
     warning("Could not find or import the PET module")
     PETCalc = None
 
-__DRIVER_NAME__ = "pet"
-__DRIVER_CLASS__ = "PET_driver"
+__DRIVER_NAME__ = "petw"
+__DRIVER_CLASS__ = "PETW_driver"
 
 
-class PET_driver(Dummy_driver):
+class PETW_driver(Dummy_driver):
     def __init__(self, args=None, verbose=False):
         self.error_msg = """
 The PET driver requires (a) a path to the results/experiment_name folder emitted by pet_train
@@ -76,29 +76,35 @@ Example: python driver.py -m pet -u -o "path/to/results/name,template.xyz,device
         pot_ipi = np.zeros(1)
         force_ipi = np.zeros(pos.shape)
         vir_ipi = np.zeros((3,3))
-#        mirrorlist = np.asarray([[1,1,1],[1,1,-1],[1,-1,1],[1,-1,-1],[-1,1,1],[-1,1,-1],[-1,-1,1],[-1,-1,-1]])
-        mirrorlist = np.asarray([[1,1,1]])
-        for multi in mirrorlist:
             
-            pos_pet = unit_to_user("length", "angstrom", pos*multi[np.newaxis,:])
-            # PET expects ASE-format, cell-vectors-as-rows
-            cell_pet = unit_to_user("length", "angstrom", (cell*multi[np.newaxis,:]).T)
-            # applies the cell and positions to the template
-            pet_structure = self.template_ase.copy()
-            pet_structure.positions = pos_pet
-            pet_structure.cell = cell_pet
+        pos_pet = unit_to_user("length", "angstrom", pos)
 
-            # Do the actual calculation
-            pot, force = self.pet_calc.forward(pet_structure)
-            pot_ipi += np.asarray(
-                unit_to_internal("energy", "electronvolt", pot), np.float64
-            )
-            force_ipi += np.asarray(unit_to_internal("force", "ev/ang", force), np.float64)*multi[np.newaxis,:]
-            # PET does not yet compute stress
-            vir_pet = 0 * np.eye(3)
-            vir_ipi += unit_to_internal("energy", "electronvolt", vir_pet.T)*multi[np.newaxis,:]
-            extras = ""
-        pot_ipi /= len(mirrorlist)
-        force_ipi /= len(mirrorlist)
-        vir_ipi /= len(mirrorlist)
+        # reference frame formed by the two O->H vectors
+        U = np.zeros((3,3))
+        U[0] = pos[1] - pos[0]
+        U[1] = pos[2] - pos[0]
+        U[0] /= np.sqrt(U[0]@U[0])
+        U[1] /= np.sqrt(U[1]@U[1])
+        U[2] = np.cross(U[0], U[1])
+        U[2] /= np.sqrt(U[2]@U[2])
+        U[1] = np.cross(U[0], U[2])
+        pos_pet = unit_to_user("length", "angstrom", pos@U.T)
+
+        # PET expects ASE-format, cell-vectors-as-rows
+        cell_pet = unit_to_user("length", "angstrom", (cell@U.T).T)
+        # applies the cell and positions to the template
+        pet_structure = self.template_ase.copy()
+        pet_structure.positions = pos_pet
+        pet_structure.cell = cell_pet
+
+        # Do the actual calculation
+        pot, force = self.pet_calc.forward(pet_structure)
+        pot_ipi = np.asarray(
+            unit_to_internal("energy", "electronvolt", pot), np.float64
+        )
+        force_ipi = np.asarray(unit_to_internal("force", "ev/ang", force), np.float64)@U.T
+        # PET does not yet compute stress
+        vir_pet = 0 * np.eye(3)
+        vir_ipi = unit_to_internal("energy", "electronvolt", vir_pet.T)@U
+        extras = ""
         return pot_ipi, force_ipi, vir_ipi, extras
