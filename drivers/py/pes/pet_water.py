@@ -91,7 +91,7 @@ Example: python driver.py -m pet -u -o "path/to/results/name,template.xyz,device
         pos_pet = unit_to_user("length", "angstrom", pos@U.T)
 
         # PET expects ASE-format, cell-vectors-as-rows
-        cell_pet = unit_to_user("length", "angstrom", (cell@U.T).T)
+        cell_pet = unit_to_user("length", "angstrom", (cell).T)
         # applies the cell and positions to the template
         pet_structure = self.template_ase.copy()
         pet_structure.positions = pos_pet
@@ -102,7 +102,7 @@ Example: python driver.py -m pet -u -o "path/to/results/name,template.xyz,device
         pot_ipi = np.asarray(
             unit_to_internal("energy", "electronvolt", pot), np.float64
         )
-        force_ipi = np.asarray(unit_to_internal("force", "ev/ang", force), np.float64)@U.T
+        force_ipi = np.asarray(unit_to_internal("force", "ev/ang", force), np.float64)@U
         # PET does not yet compute stress
         vir_pet = 0 * np.eye(3)
         vir_ipi = unit_to_internal("energy", "electronvolt", vir_pet.T)@U
