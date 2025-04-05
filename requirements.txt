@@ -1,9 +1,8 @@
-black>=23.1
+black==24.8.0
 numpy
 pathlib
 pytest
 pytest-mock
 pytest-cov
 mock
-coverage
 flake8>=3.8.4
