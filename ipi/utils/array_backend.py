@@ -107,7 +107,12 @@ def _load_backend(name):
 
     `device` and `dtype` are the resolved defaults (strings / backend
     dtype objects, or None where the backend has no notion of them).
+    Also stashes ``name`` in the module-level ``backend_name`` so
+    helpers like ``maybe_compile`` can branch on it without re-parsing
+    ``xp``.
     """
+    global backend_name
+    backend_name = name
     if name == "numpy":
         import array_api_compat.numpy as _numpy_backend
 
@@ -154,6 +159,7 @@ def _load_backend(name):
     raise ValueError(f"Unknown array backend: {name!r}")
 
 
+backend_name = "numpy"  # overwritten by _load_backend
 xp, device, dtype = _load_backend(os.environ.get("IPI_ARRAY_BACKEND", "numpy"))
 
 
@@ -173,6 +179,52 @@ def set_array_backend(backend):
         xp, device, dtype = _load_backend(backend)
     else:
         xp = backend
+
+
+def maybe_compile(fn=None, **compile_kwargs):
+    """Decorator: ``torch.compile`` the function only when torch + CUDA.
+
+    Identity in all other cases (numpy, jax, or torch-cpu). The
+    compile path targets the launch-overhead bottleneck on GPU; on CPU
+    we measured torch.compile making a small Langevin kernel 2x slower
+    (31 us/call eager → 61 us/call compiled) because dynamo's per-call
+    dispatch exceeds the fusion benefit for tiny graphs. Override with
+    ``IPI_TORCH_COMPILE=1`` if you want to force the compile path
+    everywhere (e.g. to test on CPU).
+
+    Usage::
+
+        @maybe_compile
+        def _kernel(...):
+            ...
+
+        @maybe_compile(fullgraph=False)
+        def _other_kernel(...):
+            ...
+
+    Default kwargs are ``dynamic=False, fullgraph=True`` — i-PI MD runs
+    are shape-stable across steps (natoms/nbeads fixed), so disabling
+    dynamic shapes avoids recompilation, and ``fullgraph=True``
+    surfaces accidental graph breaks instead of silently falling back
+    to eager.
+    """
+
+    def _wrap(target):
+        if backend_name != "torch":
+            return target
+        force = os.environ.get("IPI_TORCH_COMPILE", "")
+        on_cuda = isinstance(device, str) and device.startswith("cuda")
+        if not (on_cuda or force):
+            return target
+        import torch
+
+        kwargs = {"dynamic": False, "fullgraph": True}
+        kwargs.update(compile_kwargs)
+        return torch.compile(target, **kwargs)
+
+    if fn is None:
+        return _wrap
+    return _wrap(fn)
 
 
 def array_namespace(*xs):

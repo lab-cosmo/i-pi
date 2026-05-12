@@ -20,7 +20,7 @@ import math
 
 import numpy as np
 
-from ipi.utils.array_backend import xp
+from ipi.utils.array_backend import xp, maybe_compile
 from ipi.utils.depend import *
 from ipi.utils.units import *
 from ipi.utils.mathtools import (
@@ -422,6 +422,58 @@ dproperties(
 )
 
 
+@maybe_compile
+def _baro_bzp_pstep_inner_kernel(stress, V, dt):
+    """Piston momentum update for an inner MTS level (no kinetic term).
+
+    Returns ``delta`` to be added to ``self.p``. The pressure is
+    extracted as a sum over the diagonal — equivalent to ``trace`` on a
+    3x3 but expressed as elementary ops so the compiled graph stays
+    small.
+    """
+    press = (stress[0, 0] + stress[1, 1] + stress[2, 2]) / 3.0
+    return dt * 3.0 * (V * press)
+
+
+@maybe_compile
+def _baro_bzp_pstep_outer_kernel(stress, V, dt, nbeads, pext, kbT, pc, fc, m3_0):
+    """Piston momentum update for the outermost MTS level.
+
+    Adds the kinetic-pressure term, the centroid-force cross-term and a
+    cubic-in-dt correction on top of the stress contribution. ``fc`` is
+    the sum over beads of the level-force; the per-bead average is
+    folded into the dt^2 coefficient (``dt2 = dt*dt*nbeads``) so the
+    kernel doesn't need a separate division.
+    """
+    press = (stress[0, 0] + stress[1, 1] + stress[2, 2]) / 3.0
+    delta = dt * 3.0 * (V * press)
+    delta = delta + 3.0 * dt * (-V * nbeads * pext + kbT)
+    fc_m = fc / (m3_0 * nbeads)  # equivalent to (fc/nbeads)/m3_0
+    dt2 = dt * dt * nbeads
+    dt3 = dt / 3.0
+    fc_dot = fc @ fc_m
+    delta = delta + (pc @ fc_m + dt3 * fc_dot) * dt2
+    return delta
+
+
+@maybe_compile
+def _baro_bzp_qcstep_kernel(p0, m0, halfdt, m3_0, qnm0, pnm0):
+    """Cell-volume + centroid propagator (BZP, isotropic).
+
+    Returns updated centroid normal-mode position, centroid normal-mode
+    momentum and ``expq`` (so the caller can do the in-place cell-h
+    multiply). Stays in 0-d tensor land — never converts to a Python
+    float — which avoids a per-step CUDA sync on GPU.
+    """
+    v = p0 / m0
+    expq = xp.exp(v * halfdt)
+    expp = xp.exp(-v * halfdt)
+    sinh_coef = (expq - expp) / (2.0 * v)
+    new_qnm0 = qnm0 * expq + sinh_coef * (pnm0 / m3_0)
+    new_pnm0 = expp * pnm0
+    return new_qnm0, new_pnm0, expq
+
+
 class BaroBZP(Barostat):
     """Bussi-Zykova-Parrinello barostat class.
 
@@ -567,45 +619,57 @@ class BaroBZP(Barostat):
         return self.thermostat.ethermo + self.kin + self.pot + self.cell_jacobian
 
     def pstep(self, level=0):
-        """Propagates the momentum of the barostat."""
+        """Propagates the momentum of the barostat.
+
+        Thin adapter around the compile-friendly kernels: pulls the
+        stress (which has bias/MTS branches that aren't compile-stable)
+        eagerly, then defers to the pure inner/outer kernel for the
+        arithmetic. ``self.p += delta`` happens once, through the
+        depend-array setter.
+        """
 
         # we are assuming then that p the coupling between p^2 and dp/dt only involves the fast force
         dt = self.pdt[level]
         V = self.cell.V
-
-        # accumulate all three contributions and apply to the piston once
-        press = xp.linalg.trace(self.stress_mts(level)) / 3.0
-        delta = dt * 3.0 * (V * press)
+        stress = self.stress_mts(level)
 
         if level == self.nmtslevels - 1:
-            nbeads = self.beads.nbeads
-            delta += 3.0 * dt * (-V * nbeads * self.pext + Constants.kb * self.temp)
             pc = self.beads.pc.value
-            fc = xp.sum(self.forces.mts_forces[level].f.value, axis=0) / nbeads
-            fc_m = fc / self.beads.m3[0]
-            dt2 = dt * dt * nbeads
-            dt3 = dt / 3.0
-            delta += (pc @ fc_m + dt3 * (fc @ fc_m)) * dt2
+            fc = xp.sum(self.forces.mts_forces[level].f.value, axis=0)
+            delta = _baro_bzp_pstep_outer_kernel(
+                stress,
+                V,
+                dt,
+                self.beads.nbeads,
+                self.pext,
+                Constants.kb * self.temp,
+                pc,
+                fc,
+                self.beads.m3[0],
+            )
+        else:
+            delta = _baro_bzp_pstep_inner_kernel(stress, V, dt)
 
         self.p += delta
 
     def qcstep(self):
-        """Propagates the centroid position and momentum and the volume."""
+        """Propagates the centroid position and momentum and the volume.
 
-        # Stay in the array namespace: xp.exp on a 0-d tensor avoids the
-        # per-step cudaStreamSynchronize that float() would force.
-        v = self.p[0] / self.m[0]
-        halfdt = self.qdt
-        expq = xp.exp(v * halfdt)
-        expp = xp.exp(-v * halfdt)
-        sinh_coef = (expq - expp) / (2.0 * v)
+        Stay in the array namespace: ``xp.exp`` on 0-d tensors avoids
+        the per-step ``cudaStreamSynchronize`` that ``float()`` would
+        force on CUDA.
+        """
 
-        m = self.beads.m3[0]
-        qnm0 = self.nm.qnm[0, :]
-        pnm0 = self.nm.pnm[0, :]
-        self.nm.qnm[0, :] = qnm0 * expq + sinh_coef * (pnm0 / m)
-        self.nm.pnm[0, :] = expp * pnm0
-
+        new_qnm0, new_pnm0, expq = _baro_bzp_qcstep_kernel(
+            self.p[0],
+            self.m[0],
+            self.qdt,
+            self.beads.m3[0],
+            self.nm.qnm[0, :],
+            self.nm.pnm[0, :],
+        )
+        self.nm.qnm[0, :] = new_qnm0
+        self.nm.pnm[0, :] = new_pnm0
         self.cell.h *= expq
 
 

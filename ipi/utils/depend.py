@@ -35,10 +35,10 @@ import numpy as np
 
 from ipi.utils.array_backend import xp, xp_size
 
-# NOTE: the info()/warning() calls below are disabled because they
+# NOTE: the info() calls below are disabled because they
 # add measurable cost in the hot path. Re-enable
 # manually when debugging tainting/synchronizer issues.
-# from ipi.utils.messages import verbosity, warning, info
+from ipi.utils.messages import verbosity, warning #, info
 
 
 __all__ = [
@@ -162,11 +162,10 @@ class depend_base(object):
     def __deepcopy__(self, memo):
         """Slot-aware deepcopy.
 
-        Mirrors the historical behaviour: rebuild a fresh instance, copy
-        every slot, but (a) share `_func` by reference (bound methods
-        often carry unpicklable state like threading.Lock on the
-        ``__self__``), and (b) give the copy a fresh threadlock inside
-        the copied `depend_status`.
+        Rebuild a fresh instance, copy every slot, but (a) share `_func`
+        by reference (bound methods often carry unpicklable state like 
+        threading.Lock on the ``__self__``), and (b) give the copy a 
+        fresh threadlock inside the copied `depend_status`.
         """
         newone = type(self).__new__(type(self))
         for cls in type(self).__mro__:
@@ -259,13 +258,13 @@ class depend_base(object):
                 self.set(self._func[synchro.manual](), manual=False)
                 # info(f" @depend: Set value for {self._name} (syncro)", verbosity.debug)
             else:
-                # warning(self._name + " probably shouldn't be tainted (synchro)", verbosity.low)
+                warning(self._name + " probably shouldn't be tainted (synchro)", verbosity.low)
                 pass
         elif self._func is not None:
             self.set(self._func(), manual=False)
             # info(f" @depend: Set value for {self._name} (auto)", verbosity.debug)
         else:
-            # warning(self._name + " probably shouldn't be tainted (value)", verbosity.low)
+            warning(self._name + " probably shouldn't be tainted (value)", verbosity.low)
             pass
 
     def update_man(self):

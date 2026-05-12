@@ -14,7 +14,7 @@ import math
 
 import numpy as np
 
-from ipi.utils.array_backend import xp
+from ipi.utils.array_backend import xp, maybe_compile
 from ipi.utils.depend import *
 
 
@@ -167,6 +167,25 @@ class Thermostat:
 dproperties(Thermostat, ["temp", "dt", "ethermo", "p", "m", "sm", "dt"])
 
 
+@maybe_compile
+def _langevin_kernel(p_src, T_on_sm, sm, S, T, noise):
+    """Pure-tensor OU step in mass-scaled coords.
+
+    Returns the updated physical momentum and the heat balance
+    ``(KE_pre - KE_post)`` (×2, so callers multiply by 0.5 themselves to
+    save one op). ``invT2`` is computed inside so the kernel takes the
+    same scalar (``T``) the eager code used and the compiled graph
+    stays small.
+    """
+    invT2 = 1.0 / (T * T)
+    p = p_src * T_on_sm
+    pre = (p @ p) * invT2
+    p = p + S * noise
+    post = p @ p
+    p = p * sm
+    return p, (pre - post) * 0.5
+
+
 class ThermoLangevin(Thermostat):
     """Represents a langevin thermostat.
 
@@ -245,28 +264,15 @@ class ThermoLangevin(Thermostat):
         that `H + ethermo` is conserved.
         """
 
-        # Cache raw tensors once per call.
-        p_src = self.p.value  # physical momentum
-        T_on_sm = self.T_on_sm  # T / sm (depend_value → already raw via dproperties)
-        sm = self.sm.value  # sqrt(mass)
-        S = self.S  # sqrt(kT (1 - T^2))
-        invT2 = 1.0 / (self.T * self.T)  # 1 / T^2
-
-        # Damping + switch to ms coords.
-        p = p_src * T_on_sm
-        # Pre-noise KE (x2). `* invT2` strips the extra T^2 factor
-        # introduced by computing p@p on the already-damped vector,
-        # so we don't need a second pass over p_src.
-        pre = (p @ p) * invT2
-        # OU noise in ms coords.
-        p += S * self.prng.gvec(p_src.shape[0])
-        # Post-noise KE (x2).
-        post = p @ p
-        # Back to physical momenta.
-        p *= sm
-        self.p[:] = p
-        # Heat exchanged with the bath.
-        self.ethermo += (pre - post) * 0.5
+        # Adapter: pull raw tensors / scalars, draw noise, call the
+        # compiled kernel, write results back through the depend graph.
+        p_src = self.p.value
+        noise = self.prng.gvec(p_src.shape[0])
+        new_p, ke_delta = _langevin_kernel(
+            p_src, self.T_on_sm, self.sm.value, self.S, self.T, noise
+        )
+        self.p[:] = new_p
+        self.ethermo += ke_delta
 
 
 dproperties(ThermoLangevin, ["tau", "T", "S", "T_on_sm"])
